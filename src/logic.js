@@ -98,7 +98,12 @@ export function targetFor(state, actor, action = {}) {
   const fits = o => o.kind === 'plant' || o.kind === 'mover' || (o.kind === 'crate' && (actor === STILL || o.frozen));
   const candidates = state.objects.filter(o => fits(o) && free(o) && dist(p, anchor(o)) <= meta.controls.range);
   if (action.target) return candidates.find(o => o.id === action.target);
-  const sorted = candidates.sort((a, b) => dist(p, anchor(a)) - dist(p, anchor(b)));
+  const moving = o => !o.frozen && (o.kind === 'crate' ? Math.abs(o.vx) + Math.abs(o.vy) > 0.5 : o.speed > 0 && !o.withered);
+  const score = o => {
+    const a = anchor(o);
+    return dist(p, a) + (o.id === p.on ? 1000 : 0) + ((a.x - p.x) * p.facing < -10 ? 120 : 0) - (actor === STILL && moving(o) ? 150 : 0);
+  };
+  const sorted = candidates.sort((a, b) => score(a) - score(b));
   return actor === STILL ? sorted[0] : sorted.find(o => o.frozen || o.speed < meta.time.maxSpeed) || sorted[0];
 }
 
@@ -114,7 +119,7 @@ export function validateAction(state, playerId, action) {
   if (['tick', 'switch', 'pause', 'restart', 'rewind', 'next', 'level'].includes(action.type)) {
     if (action.type === 'tick' && playerId !== state.playerIds[0]) return no('host');
     if (action.type === 'next' && state.status !== 'won') return no('unfinished');
-    if (action.type === 'level' && (!Number.isInteger(action.level) || action.level < 0 || action.level > state.unlocked || action.level > 3)) return no('locked');
+    if (action.type === 'level' && (!Number.isInteger(action.level) || action.level < 0 || action.level >= LEVELS.length)) return no('invalid');
     if (action.type === 'rewind' && state.status !== 'playing') return no('paused');
     if (action.type === 'rewind' && state.rewindsLeft <= 0) return no('noRewinds');
     if (action.type === 'rewind' && !state.history.length) return no('history');

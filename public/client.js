@@ -98,7 +98,7 @@ function updateUI() {
   document.querySelector('#stage-count').textContent = `0${state.level + 1} / 04`;
   const chapterKey = `${state.level}:${state.unlocked}`;
   if (chapterKey !== uiChapter) {
-    document.querySelector('#chapter-nav').innerHTML = [0, 1, 2, 3].map(i => `<button class="chapter-button ${i < state.unlocked ? 'done' : ''}" data-level="${i}" ${i > state.unlocked ? 'disabled' : ''} aria-label="${S.levels[i].name}" ${i === state.level ? 'aria-current="step"' : ''}><span>${String(i + 1).padStart(2, '0')}</span></button>`).join('');
+    document.querySelector('#chapter-nav').innerHTML = [0, 1, 2, 3].map(i => `<button class="chapter-button ${i < state.unlocked ? 'done' : ''}" data-level="${i}" aria-label="${S.levels[i].name}" ${i === state.level ? 'aria-current="step"' : ''}><span>${String(i + 1).padStart(2, '0')}</span></button>`).join('');
     uiChapter = chapterKey;
   }
   const progress = `${state.level}:${state.needs.map(k => Number(state.flags[k])).join('')}`;

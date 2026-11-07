@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { setup, validateAction, applyAction, isGameOver, viewFor, hintLevel, meta } from '../src/logic.js';
+import { setup, validateAction, applyAction, isGameOver, viewFor, hintLevel, meta, targetFor } from '../src/logic.js';
 
 function step(state, n = 1) { for (let i = 0; i < n; i++) state = applyAction(state, 'local', { type: 'tick' }); return state; }
 function action(state, value) { expect(validateAction(state, 'local', value).valid).toBe(true); return applyAction(state, 'local', value); }
@@ -199,6 +199,49 @@ describe('still', () => {
   });
 });
 
+describe('auto-targeting', () => {
+  const crate = (id, x, y, extra = {}) => ({ kind: 'crate', id, x, y, vx: 0, vy: 0, frozen: false, held: null, spawnX: x, spawnY: y, ...extra });
+  const onMover = () => { const s = setup({ level: 3 }); Object.assign(s.actors[0], { x: 600, y: 290, on: 'mover-0', grounded: true, facing: 1 }); return s; };
+
+  test('the platform you stand on loses to anything else in range', () => {
+    const s = onMover();
+    Object.assign(get(s, 'crate-0'), { x: 760, y: 263 });
+    expect(targetFor(s, 0).id).toBe('crate-0');
+  });
+
+  test('the platform you stand on is still chosen when nothing else is in range', () => {
+    const s = onMover();
+    s.objects = s.objects.filter(o => o.id === 'mover-0');
+    expect(targetFor(s, 0).id).toBe('mover-0');
+  });
+
+  test('objects in front of the actor beat slightly closer ones behind', () => {
+    const s = setup();
+    s.objects = [crate('behind', 190, 493), crate('front', 330, 493)];
+    Object.assign(s.actors[0], { x: 250, facing: 1 });
+    expect(targetFor(s, 0).id).toBe('front');
+    s.actors[0].facing = -1;
+    expect(targetFor(s, 0).id).toBe('behind');
+  });
+
+  test('still prefers a crate in flight over a closer resting one', () => {
+    const s = setup();
+    s.objects = [crate('resting', 320, 493), crate('flying', 400, 420, { vx: 6.8, vy: -2 })];
+    Object.assign(s.actors[0], { x: 250, facing: 1 });
+    expect(targetFor(s, 0).id).toBe('flying');
+  });
+
+  test('bloom ignores the motion bonus and still skips the platform underfoot', () => {
+    const s = onMover();
+    Object.assign(s.actors[1], { x: 600, y: 290, on: 'mover-0', grounded: true, facing: 1 });
+    s.objects.find(o => o.id === 'mover-0').speed = 1;
+    s.actors[1].x = 640;
+    const plant = { kind: 'plant', id: 'p', pit: 'pit-0', x: 760, base: 520, age: 0, height: 0, withered: false, speed: 0, frozen: false, barrier: false };
+    s.objects.push(plant);
+    expect(targetFor(s, 1).id).toBe('p');
+  });
+});
+
 describe('crate collision', () => {
   test('an actor walking into a resting crate stops at its side', () => {
     let s = setup();
@@ -322,6 +365,13 @@ describe('room rules', () => {
     expect(validateAction(s, 'one', { type: 'echo', actor: 0 }).valid).toBe(false);
     expect(validateAction(s, 'one', null).valid).toBe(false);
     expect(viewFor(s, 'stranger')).toBe(null); expect(isGameOver(s)).toBe(null);
+  });
+
+  test('any chamber can be chosen directly, without unlocking it first', () => {
+    const s = setup();
+    expect(s.unlocked).toBe(0);
+    for (const level of [1, 2, 3]) expect(action(s, { type: 'level', level }).level).toBe(level);
+    for (const level of [-1, 4, 1.5, '2']) expect(validateAction(s, 'local', { type: 'level', level }).error).toBe('invalid');
   });
 
   test('replaying a chamber never farms duplicate collectibles', () => {
