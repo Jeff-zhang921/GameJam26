@@ -3,16 +3,17 @@ export function createMusic() {
   let context, buffer, loading, source, gain, offset = 0, startedAt = 0, wanted = false;
   function stop() {
     if (!source) return;
-    offset = (offset + context.currentTime - startedAt) % 50;
+    offset += context.currentTime - startedAt;
+    if (offset >= 50) offset = 2 + (offset - 2) % 48;
     source.stop(); source.disconnect(); source = null;
   }
   function play() {
     if (!wanted || !buffer || source || context.state !== 'running') return;
     source = context.createBufferSource(); source.buffer = buffer;
-    source.loop = true; source.loopStart = 0; source.loopEnd = 50;
+    source.loop = true; source.loopStart = 2; source.loopEnd = 50;
     source.connect(gain); startedAt = context.currentTime;
     gain.gain.setValueAtTime(0, startedAt);
-    gain.gain.linearRampToValueAtTime(.12, startedAt + .8);
+    gain.gain.linearRampToValueAtTime(.08, startedAt + .8);
     source.start(0, offset);
   }
   return {
@@ -29,17 +30,21 @@ export function createMusic() {
               if (decoded.duration < 50) throw new Error('Music too short');
               const length = Math.round(decoded.sampleRate * 50);
               buffer = context.createBuffer(decoded.numberOfChannels, length, decoded.sampleRate);
-              const fade = Math.round(decoded.sampleRate * .03);
+              // Blend seconds 48–50 with 0–2; then continue at second 2.
+              // Linear complementary weights keep the overlap from boosting volume.
+              const overlap = Math.round(decoded.sampleRate * 2);
               for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+                const original = decoded.getChannelData(channel);
                 const samples = buffer.getChannelData(channel);
-                samples.set(decoded.getChannelData(channel).subarray(0, length));
-                for (let i = 0; i < fade; i++) {
-                  samples[i] *= i / fade;
-                  samples[length - 1 - i] *= i / fade;
+                samples.set(original.subarray(0, length));
+                for (let i = 0; i < overlap; i++) {
+                  const mix = i / overlap;
+                  const tail = length - overlap + i;
+                  samples[tail] = original[tail] * (1 - mix) + original[i] * mix;
                 }
               }
               play();
-            }).catch(() => {}).finally(() => { loading = null; });
+            }).catch(error => { console.warn('Background music failed to load:', error); }).finally(() => { loading = null; });
         }
       } catch { /* Audio support is optional. */ }
     },

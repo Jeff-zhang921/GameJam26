@@ -175,9 +175,10 @@ function ageObjects(state) {
         event(state, 'vanish', o.x, o.base - o.height);
         continue;
       }
-      if (!o.withered && o.age > growTicks + matureTicks) { o.withered = true; if (o.barrier) state.flags.withered = true; }
+      if (!o.withered && o.age > growTicks + matureTicks) { event(state, 'wither', o.x, o.base); o.withered = true; if (o.barrier) state.flags.withered = true; }
       const rise = heightAt(o.age) - o.height;
       o.height += rise;
+      if (rise > 0 && state.tick % 30 === 0) event(state, 'growth', o.x, o.base - o.height);
       if (rise) for (const p of state.actors) if (p.on === o.id && p.grounded) {
         p.y -= rise;
         if (o.height > meta.plant.springHeight) state.flags.treeLifted = true;
@@ -207,6 +208,7 @@ function moveItems(state) {
     const previous = o.y + half;
     o.vy += 0.3; o.x += o.vx; o.y += o.vy;
     for (const f of all) if (f.id !== o.id) if (o.vy >= 0 && previous <= f.y + 3 && o.y + half >= f.y && o.x + half > f.x && o.x - half < f.x + f.w) {
+      if (o.vy > 1) event(state, crate ? 'crateLand' : 'seedLand', o.x, f.y);
       o.y = f.y - half; o.vy = 0; o.vx *= 0.88;
     }
     if (o.y > 720 || o.x < 20 || o.x > 1260) { o.x = o.spawnX; o.y = o.spawnY; o.vx = 0; o.vy = 0; event(state, 'return', o.x, o.y); }
@@ -236,12 +238,16 @@ function moveActors(state) {
     for (const f of state.platforms) if (rectOverlap(body(), f) && p.y > f.y + 9) p.x = oldX;
     for (const c of crates) if (!inside.includes(c) && rectOverlap(body(), c) && p.y > c.y + 9) p.x = oldX;
     for (const o of state.objects) if (o.kind === 'plant' && o.barrier && !o.withered && rectOverlap(body(), { x: o.x - 42, y: o.base - o.height, w: 84, h: o.height })) p.x = oldX;
+    if (p.move && state.tick % 18 === 0) {
+      if (p.x === oldX) event(state, 'collision', p.x, p.y, { actor: p.id });
+      else if (p.grounded) event(state, 'step', p.x, p.y, { actor: p.id });
+    }
     const previousY = p.y;
     p.vy = Math.min(meta.controls.maxFall, p.vy + (p.vy < 0 ? meta.controls.gravity : meta.controls.fallGravity));
     const impact = p.vy;
     const airborne = !p.grounded;
     p.y += p.vy;
-    if (p.vy < 0) for (const c of crates) if (!inside.includes(c) && p.x + 15 > c.x && p.x - 15 < c.x + c.w && previousY - 52 >= c.y + c.h && p.y - 52 < c.y + c.h) { p.y = c.y + c.h + 52; p.vy = 0; }
+    if (p.vy < 0) for (const c of crates) if (!inside.includes(c) && p.x + 15 > c.x && p.x - 15 < c.x + c.w && previousY - 52 >= c.y + c.h && p.y - 52 < c.y + c.h) { p.y = c.y + c.h + 52; p.vy = 0; event(state, 'collision', p.x, p.y, { actor: p.id }); }
     p.grounded = false; p.on = null;
     for (const f of solid) {
       if (f.id === p.carrying) continue;

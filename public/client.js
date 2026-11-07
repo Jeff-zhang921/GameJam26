@@ -1,10 +1,10 @@
+import { playEffect } from './sfx.js';
 import { createMusic } from './music.js';
 import { setup, applyAction, validateAction, viewFor, targetFor, hintLevel } from '../src/logic.js';
 import { S } from './strings.js';
 import { createRenderer } from './render.js';
 
 const music = createMusic();
-let journeyStarted = false;
 const icons = {
   moon: '<path d="M19 15.5A8 8 0 0 1 8.5 5a8.5 8.5 0 1 0 10.5 10.5Z"/><path d="m17 3 .5 2.5L20 6l-2.5.5L17 9l-.5-2.5L14 6l2.5-.5Z"/>',
   leaf: '<path d="M19 4C7 3 3 10 7 16c6 4 13 0 12-12Z"/><path d="M5 21 17 7M10 15l-1-5m5 1 4 1"/>',
@@ -69,10 +69,8 @@ function toast(text) { const el = document.querySelector('#toast'); el.textConte
 function initAudio() {
   music.unlock();
  if (!audioContext && sound) { try { audioContext = new (window.AudioContext || window.webkitAudioContext)(); } catch { } } if (audioContext?.state === 'suspended' && sound) audioContext.resume(); }
-function chime(kind) {
-  if (!sound || !audioContext || !['freeze', 'unfreeze', 'grow', 'wake', 'plant', 'vanish', 'shard', 'win', 'throw', 'return', 'rewind'].includes(kind)) return;
-  const now = audioContext.currentTime; const notes = kind === 'win' ? [392, 493.88, 587.33, 783.99] : kind === 'grow' || kind === 'wake' ? [392, 587.33] : kind === 'freeze' ? [880, 1320] : kind === 'plant' ? [293.66, 440] : kind === 'vanish' ? [220] : [440];
-  notes.forEach((frequency, i) => { const osc = audioContext.createOscillator(), gain = audioContext.createGain(); osc.type = 'sine'; osc.frequency.setValueAtTime(frequency, now + i * .075); gain.gain.setValueAtTime(0, now + i * .075); gain.gain.linearRampToValueAtTime(.025, now + i * .075 + .01); gain.gain.exponentialRampToValueAtTime(.0001, now + i * .075 + .55); osc.connect(gain); gain.connect(audioContext.destination); osc.start(now + i * .075); osc.stop(now + i * .075 + .6); });
+function chime(event) {
+  if (sound && audioContext) playEffect(audioContext, event);
 }
 function dispatch(action, quiet = false) {
   if (action.actor === undefined && ['move', 'jump', 'jumpRelease', 'grab', 'ability'].includes(action.type)) action = { ...action, actor: state.active };
@@ -80,12 +78,13 @@ function dispatch(action, quiet = false) {
   if (!result.valid) { if (!quiet) toast(S.errors[result.error]); return result; }
   const oldLevel = state.level, oldStatus = state.status;
   state = applyAction(state, 'local', action);
+  if (action.type === 'switch') chime({ kind: 'switch' });
   if (state.level !== oldLevel || ['restart', 'rewind', 'level', 'next'].includes(action.type)) {
     seenEvent = action.type === 'rewind' ? state.eventSeq - 1 : state.eventSeq;
     sceneKey++; if (action.type !== 'rewind') cameraReset++;
     shownHint = 0;
   }
-  for (const e of state.events) if (e.id > seenEvent) { chime(e.kind); if (e.kind === 'return' && e.actor !== undefined) cameraReset++; seenEvent = e.id; }
+  for (const e of state.events) if (e.id > seenEvent) { chime(e); if (e.kind === 'return' && e.actor !== undefined) cameraReset++; seenEvent = e.id; }
   if (state.status === 'won' && oldStatus !== 'won') { held.clear(); best[state.level] = Math.min(best[state.level] ?? Infinity, state.elapsed); modal = 'win'; persist(); renderModal(); }
   if (action.type !== 'tick' || state.status !== oldStatus) updateUI();
   return { valid: true };
@@ -146,12 +145,21 @@ function renderModal() {
   if (modal === 'pause') contents = `<div class="intro-icon">${icon('moon')}</div><div class="eyebrow">A MOMENT OF STILLNESS</div><h2>${S.focus}</h2><p>${S.levels[state.level].goal}</p><button class="primary" data-action="close" data-testid="resume">${S.resume}${icon('play')}</button><div class="modal-actions"><button class="text-button" data-action="help">${S.help}</button><button class="text-button" data-action="restart">${S.restart}</button></div>`;
   if (modal === 'win') contents = `<div class="intro-icon">${icon('leaf')}</div><div class="eyebrow">CHAMBER 0${state.level + 1} · RESTORED</div><h2>${state.level === 3 ? S.complete : S.chamberComplete}</h2><p>${state.level === 3 ? S.completeBody : S.chamberCompleteBody}</p><p>${S.clear} ${clock(state.elapsed)} · ${S.best} ${clock(best[state.level] ?? state.elapsed)}</p><div class="win-stars">✦ ${state.shards[0].taken ? '✦' : '◇'} ✦</div><p>${S.memory} ${state.shards.filter(s => s.taken).length} / ${state.shards.length}</p><button class="primary" data-action="next" data-testid="next">${state.level === 3 ? S.replay : S.next}${icon('arrow')}</button>`;
   if (modal === 'intro') {
-    root.innerHTML = `<section class="entry-screen" role="dialog" aria-modal="true" aria-label="${S.title}"><div class="entry-content"><div class="entry-mark">${icon('moon')}</div><div class="eyebrow">${S.english}</div><h1>${S.title}</h1><p>${S.subtitle}</p><div class="mode-selector"><button data-mode="solo" class="${mode === 'solo' ? 'selected' : ''}" aria-pressed="${mode === 'solo'}">${S.solo}</button><button data-mode="coop" class="${mode === 'coop' ? 'selected' : ''}" aria-pressed="${mode === 'coop'}">${S.coop}</button></div><button class="primary" data-action="start" data-testid="start">${saved.unlocked ? S.continue : S.start}${icon('arrow')}</button></div><span class="entry-footer">A COOPERATIVE TIME TALE</span></section>`;
+    root.innerHTML = `<section class="entry-screen" role="dialog" aria-modal="true" aria-label="${S.title}"><div class="entry-content"><div class="entry-mark">${icon('moon')}</div><div class="eyebrow">${S.english}</div><h1>${S.title}</h1><p>${S.subtitle}</p><div class="mode-selector"><button data-mode="solo" class="${mode === 'solo' ? 'selected' : ''}" aria-pressed="${mode === 'solo'}">${S.solo}</button><button data-mode="coop" class="${mode === 'coop' ? 'selected' : ''}" aria-pressed="${mode === 'coop'}">${S.coop}</button></div><button class="primary" data-action="start" data-testid="start">${saved.unlocked ? S.continue : S.start}${icon('arrow')}</button></div><span class="entry-footer"><button class="text-button" data-action="sound" aria-pressed="${sound}">${icon(sound ? 'sound' : 'mute')} Music ${sound ? 'On' : 'Off'}</button> · A COOPERATIVE TIME TALE</span></section>`;
     root.querySelector('.primary').focus({ preventScroll: true }); return;
   }
   root.innerHTML = `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="${modal === 'intro' ? S.title : S[modal] || S.title}">${contents}</section></div>`;
   root.querySelector('.primary')?.focus({ preventScroll: true });
 }
+// Unlock entry music on the first gesture, including clicks on the backdrop.
+function unlockEntryMusic() {
+  if (modal === 'intro' && sound) {
+    music.sync(!document.hidden);
+    music.unlock();
+  }
+}
+document.addEventListener('pointerdown', unlockEntryMusic, { capture: true });
+document.addEventListener('keydown', unlockEntryMusic, { capture: true });
 document.addEventListener('click', event => {
   const button = event.target.closest('[data-action], [data-level], [data-mode]'); if (!button) return;
   if (entering) return;
@@ -161,7 +169,7 @@ document.addEventListener('click', event => {
   const action = button.dataset.action;
   if (action === 'start') {
     if (entering) return;
-    journeyStarted = true; entering = true; clearInputs(); initAudio();
+    entering = true; clearInputs(); initAudio();
     const entry = document.querySelector('.entry-screen');
     entry.classList.add('departing');
     const duration = reduced ? 200 : 2000;
@@ -176,7 +184,7 @@ document.addEventListener('click', event => {
     }
     requestAnimationFrame(advance); return;
   }
-  if (action === 'sound') { sound = !sound; if (!sound) audioContext?.suspend(); initAudio(); updateUI(); persist(); if (modal === 'settings') renderModal(); else if (!modal) canvas.focus({ preventScroll: true }); return; }
+  if (action === 'sound') { sound = !sound; if (!sound) audioContext?.suspend(); initAudio(); updateUI(); persist(); if (modal === 'settings' || modal === 'intro') renderModal(); else if (!modal) canvas.focus({ preventScroll: true }); return; }
   if (action === 'motion') { reduced = !reduced; updateUI(); persist(); renderModal(); return; }
   if (action === 'close') { resume(); return; }
   if (['help', 'settings', 'pause'].includes(action)) { setModal(action); return; }
@@ -262,7 +270,7 @@ window.__moonclock = {
   dispatch: action => { if (action.type === 'tick' && action.count) { for (let i = 0; i < Math.min(1800, action.count); i++) dispatch({ type: 'tick' }, true); } else dispatch(action); return window.__moonclock.snapshot(); },
 };
 function frame(time) {
-  music.sync(sound && journeyStarted && !document.hidden && document.hasFocus() && (entering || !modal || modal === 'win'));
+  music.sync(sound && !document.hidden && (modal === 'intro' || entering || !modal || modal === 'win'));
   if (lastTime === 0) lastTime = time;
   accumulator += Math.min(100, time - lastTime); lastTime = time;
   if (!modal && state.status === 'playing') { while (accumulator >= 1000 / 60) { dispatch({ type: 'tick' }, true); accumulator -= 1000 / 60; } } else accumulator = 0;
@@ -271,4 +279,10 @@ function frame(time) {
   if (debug) { const el = document.querySelector('#debug'); el.hidden = false; el.textContent = `tick ${state.tick} | phase ${modal || state.status}\nentities ${state.actors.length + state.objects.length}\nactor ${state.active} | ${Math.round(state.actors[state.active].x)},${Math.round(state.actors[state.active].y)}`; }
   requestAnimationFrame(frame);
 }
-updateUI(); renderModal(); requestAnimationFrame(frame);
+updateUI(); renderModal();
+// Try immediately; trusted gestures remain a fallback for autoplay restrictions.
+if (sound) {
+  music.sync(!document.hidden);
+  music.unlock();
+}
+requestAnimationFrame(frame);
