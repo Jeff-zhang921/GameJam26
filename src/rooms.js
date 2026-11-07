@@ -11,7 +11,14 @@ export function createRoomManager({ now = Date.now, countdownMs = 3000, reconnec
   const rooms = new Map();
   let lastAdvance = now(), accumulator = 0;
   function send(ws, message) { if (ws) { try { ws.send(JSON.stringify(message)); } catch { } } }
-  function error(ws, code, message, seq) { send(ws, { type: 'error', code, message, ...(seq === undefined ? {} : { seq }) }); }
+  function error(ws, code, message, seq) {
+    send(ws, { type: 'error', code, message, ...(seq === undefined ? {} : { seq }) });
+    if (code.startsWith('INVALID') || code === 'NOT_JOINED') {
+      const time = now();
+      if (time - (ws.data.invalidAt ?? -Infinity) >= 60000) { ws.data.invalidAt = time; ws.data.invalidCount = 0; }
+      if (++ws.data.invalidCount >= 20) ws.close?.(1008, 'Invalid message limit');
+    }
+  }
   function actorOf(player) { return characters[player.character]; }
   function publicRoom(room) {
     const disconnected = room.players.filter(p => !p.connected);
@@ -34,6 +41,7 @@ export function createRoomManager({ now = Date.now, countdownMs = 3000, reconnec
     return result;
   }
   function broadcast(room, type = 'room') {
+    if (!room.players.some(player => player.connected)) return;
     const message = envelope(room, type);
     for (const p of room.players) if (p.connected) send(p.ws, message);
   }
@@ -108,6 +116,8 @@ export function createRoomManager({ now = Date.now, countdownMs = 3000, reconnec
     if (['create', 'join', 'resume'].includes(message.type)) {
       if (membership) { error(ws, 'ALREADY_JOINED', 'Leave the current room first.'); return; }
       if (message.type === 'create') {
+        if (time - (ws.data.createAt ?? -Infinity) >= 60000) { ws.data.createAt = time; ws.data.createCount = 0; }
+        if (++ws.data.createCount > 10) { error(ws, 'CREATE_LIMIT', 'Wait before creating another room.'); return; }
         if (rooms.size >= maxRooms) { error(ws, 'ROOM_LIMIT', 'The server has no free rooms.'); return; }
         let code;
         do { code = Array.from(randomBytes(6), byte => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'[byte % 36]).join(''); } while (rooms.has(code));
@@ -217,7 +227,7 @@ export function createRoomManager({ now = Date.now, countdownMs = 3000, reconnec
         for (let i = 0; i < ticks && room.game.status === 'playing'; i++) { room.game = applyAction(room.game, room.game.playerIds[0], { type: 'tick' }); updateAnimations(room); }
         if (room.game.status === 'won') { room.status = 'FINISHED'; broadcast(room, 'snapshot'); }
       }
-      if (room.game && time - room.lastBroadcast >= 50) { room.lastBroadcast = time; broadcast(room, 'snapshot'); }
+      if (room.game && room.players.some(player => player.connected) && time - room.lastBroadcast >= 50) { room.lastBroadcast = time; broadcast(room, 'snapshot'); }
     }
   }
   return { rooms, receive, disconnect, advance, publicRoom, gameView };

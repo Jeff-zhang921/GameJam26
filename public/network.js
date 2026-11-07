@@ -15,7 +15,7 @@ export function interpolateGame(older, newer, alpha, ownActor) {
 }
 
 export function createNetwork({ onRoom, onState, onConnection, onError }) {
-  let socket, generation = 0, retryTimer, reconnectAttempt = 0, credentials = null;
+  let socket, generation = 0, retryTimer, reconnectAttempt = 0, credentials = null, pendingIntent = null;
   let room = null, playerId = null, actor = 0, connected = false, active = false, seq = 0;
   let latest = null, predicted = null, pending = [], frames = [], accumulator = 0, epoch = null;
   let renderActor = null, lastMove = null;
@@ -43,6 +43,8 @@ export function createNetwork({ onRoom, onState, onConnection, onError }) {
   }
   function connect(intent) {
     clearTimeout(retryTimer);
+    if (navigator.onLine === false) { pendingIntent = intent; active = true; connected = false; onConnection(intent.type === 'resume' ? 'reconnecting' : 'connecting'); onConnection('offline'); onError('You are offline. Online rooms need an internet connection.'); return; }
+    pendingIntent = null;
     const ownGeneration = ++generation;
     socket?.close(); connected = false; active = true; lastMove = null;
     onConnection(intent.type === 'resume' ? 'reconnecting' : 'connecting');
@@ -87,8 +89,8 @@ export function createNetwork({ onRoom, onState, onConnection, onError }) {
     socket.addEventListener('close', () => {
       if (ownGeneration !== generation || !active) return;
       connected = false; lastMove = null; pending = []; frames = []; predicted = latest;
-      onConnection(credentials ? 'reconnecting' : 'offline');
-      if (credentials && reconnectAttempt < 12) {
+      onConnection(navigator.onLine === false ? 'offline' : credentials ? 'reconnecting' : 'offline');
+      if (credentials && reconnectAttempt < 12 && navigator.onLine !== false) {
         retryTimer = setTimeout(() => { reconnectAttempt++; connect(credentials); }, Math.min(5000, 500 * 2 ** Math.min(4, reconnectAttempt)));
       } else onError('Connection lost. Retry, or leave this room.');
     });
@@ -108,6 +110,15 @@ export function createNetwork({ onRoom, onState, onConnection, onError }) {
     if (pending.length > 120) { socket.close(); return false; }
     predict(input); return true;
   }
+  function wake() {
+    if (!active || navigator.onLine === false) return;
+    if (socket?.readyState === WebSocket.OPEN) {
+      if (Date.now() - lastMessage > 10000) socket.close();
+      else send({ type: 'ping' });
+    } else if ((credentials || pendingIntent) && socket?.readyState !== WebSocket.CONNECTING) { reconnectAttempt = 0; connect(credentials || pendingIntent); }
+  }
+  window.addEventListener('online', wake);
+  window.addEventListener('offline', () => { if (active) { socket?.close(); connected = false; onConnection('offline'); } });
   return {
     get room() { return room; }, get playerId() { return playerId; }, get actor() { return actor; },
     get active() { return active; }, get connected() { return connected; },
@@ -122,10 +133,11 @@ export function createNetwork({ onRoom, onState, onConnection, onError }) {
     selectCharacter(character) { send({ type: 'select', character }); },
     setReady(ready) { send({ type: 'ready', ready }); }, start() { send({ type: 'start' }); },
     returnToLobby() { send({ type: 'returnLobby' }); },
-    retry() { reconnectAttempt = 0; if (credentials) connect(credentials); },
+    retry() { reconnectAttempt = 0; if (credentials || pendingIntent) connect(credentials || pendingIntent); },
+    wake,
     leave() {
       send({ type: 'leave' }); active = connected = false; generation++; clearTimeout(retryTimer); socket?.close();
-      credentials = null; room = null; playerId = null; latest = predicted = renderActor = null; frames = []; pending = []; epoch = null; save();
+      credentials = pendingIntent = null; room = null; playerId = null; latest = predicted = renderActor = null; frames = []; pending = []; epoch = null; save();
     },
     action,
     pause(paused) { return connected && send({ type: 'pause', paused }); },
