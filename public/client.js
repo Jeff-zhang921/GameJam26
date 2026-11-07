@@ -10,6 +10,7 @@ import { readJoystick, skillAimOffset } from './joystick.js';
 import { createLobby } from './lobby.js';
 import { createEntrance } from './entrance.js';
 import { createPWA } from './pwa.js';
+import { createViewport } from './viewport.js';
 
 // One music player: menus play MENU_MUSIC, a courtyard plays the track its theme names (themes.js).
 const music = createMusic();
@@ -55,6 +56,7 @@ let modal = 'intro', seenEvent = 0, shownHint = 0, toastTimer, audioContext;
 const clock = ticks => { const sec = Math.floor(ticks / 60); return `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`; };
 let lastTime = 0, accumulator = 0, frameCount = 0, sceneKey = 0, cameraReset = 0;
 let onlineMode = false, networkEpoch = null, networkStatus = 'offline';
+let viewport;
 const held = new Set();
 const touchPointers = new Map();
 let touchJumpActor = null, uiChapter = '', uiProgress = '', uiMode = '', touchKey = '';
@@ -215,9 +217,16 @@ const entrance = createEntrance({
   onCancel() { lobby.setEntering(false); syncStage(); },
 });
 const pwa = createPWA({ isBusy: () => onlineMode || stageBusy() || modal !== 'intro' });
-const orientationTip = document.createElement('aside'); orientationTip.className = 'orientation-tip'; orientationTip.setAttribute('role', 'status');
-orientationTip.innerHTML = '<span>Rotate to landscape for a wider view. You can keep playing.</span><button type="button" aria-label="Dismiss orientation tip">×</button>';
-orientationTip.querySelector('button').addEventListener('click', () => { orientationTip.hidden = true; }); document.body.append(orientationTip);
+viewport = createViewport({
+  isMobile: touchDevice,
+  onResize: measureControls,
+  onBlocked(blocked) {
+    clearInputs(); freezePreview = tapEffect = null;
+    accumulator = 0; previousTick = null;
+    app.inert = blocked;
+    syncStage();
+  },
+});
 function enterOnline() {
   clearInputs(); onlineMode = true; modal = 'online'; awaitingOnlineState = true;
   document.body.classList.add('online-mode'); renderModal();
@@ -255,8 +264,10 @@ function chime(event) {
   if (sound && audioContext) playEffect(audioContext, event);
 }
 function dispatch(action, quiet = false) {
-  if (rewind && action.type !== 'tick') return { valid: false };
-  if (stageBusy() && ['tick', 'move', 'jump', 'jumpRelease', 'grab', 'ability', 'switch'].includes(action.type)) return { valid: false };
+  const releasing = action.type === 'jumpRelease' || (action.type === 'move' && action.dir === 0);
+  if (viewport?.blocked && !releasing && ['tick', 'move', 'jump', 'grab', 'ability', 'switch', 'pause'].includes(action.type)) return { valid: false };
+  if (rewind && action.type !== 'tick' && !releasing) return { valid: false };
+  if (stageBusy() && !releasing && ['tick', 'move', 'jump', 'grab', 'ability', 'switch'].includes(action.type)) return { valid: false };
   if (onlineMode) {
     if (action.actor !== undefined && action.actor !== network.actor) return { valid: false };
     if (['switch', 'tick'].includes(action.type)) return { valid: false };
@@ -316,8 +327,9 @@ function updateUI() {
   document.body.classList.toggle('reduced-motion', reduced);
   document.body.classList.toggle('touch-enabled', touchControls);
   document.body.classList.toggle('touch-device', touchDevice());
-  document.body.classList.toggle('touch-layout', touchLayout());
-  measureControls();
+  const layout = touchLayout(), layoutChanged = document.body.classList.contains('touch-layout') !== layout;
+  document.body.classList.toggle('touch-layout', layout);
+  if (layoutChanged) viewport?.refresh();
   noticeWaiting();
   const charges = state.freezeCharges ?? 0, freezeCount = document.querySelector('#freeze-count');
   freezeCount.textContent = S.freezeCount(charges); freezeCount.classList.toggle('empty', charges <= 0);
@@ -357,7 +369,7 @@ function clearInputs() {
 }
 const smoothFade = t => t * t * (3 - 2 * t);
 function syncStage() {
-  shell.inert = modalRoot.inert = stageBusy();
+  shell.inert = modalRoot.inert = stageBusy() || !!viewport?.blocked;
   document.body.classList.toggle('celebrating', !!celebration);
   document.body.classList.toggle('scene-changing', !!sceneFade);
 }
@@ -510,6 +522,7 @@ document.addEventListener('pointerdown', unlockEntryMusic, { capture: true });
 document.addEventListener('keydown', unlockEntryMusic, { capture: true });
 document.addEventListener('click', event => {
   const button = event.target.closest('[data-action], [data-level]'); if (!button) return;
+  if (viewport.blocked) return;
   if (stageBusy()) return;
   if (['start', 'create-room', 'join-room'].includes(button.dataset.action) && !pwa.sessionAllowed()) return;
   if (button.dataset.action === 'create-room') { enterOnline(); network.create(); return; }
@@ -559,12 +572,13 @@ document.addEventListener('click', event => {
   dispatch({ type: action });
 });
 function movement() {
-  if (modal || stageBusy() || state.status !== 'playing') return;
+  if (viewport.blocked || modal || stageBusy() || state.status !== 'playing') return;
   const touching = (actor, dir) => joy.actor === actor && joy.dir === dir;
   dispatch({ type: 'move', dir: Number(held.has('KeyD') || held.has('ArrowRight') || touching(state.active, 1)) - Number(held.has('KeyA') || held.has('ArrowLeft') || touching(state.active, -1)) }, true);
 }
 document.addEventListener('keydown', event => {
   const code = event.code;
+  if (viewport.blocked) return;
   if (rewind) return;
   if (stageBusy()) { event.preventDefault(); return; }
   if (code === 'Escape' && (skillAim || throwAim || mouseAim)) { event.preventDefault(); clearSkillAim(); clearThrowAim(); mouseAim = null; return; }
@@ -635,7 +649,7 @@ function releaseStick() {
   movement();
 }
 joystick.addEventListener('pointerdown', event => {
-  if (modal || stageBusy() || rewind || event.button !== 0 || joy.pointer !== null) return;
+  if (viewport.blocked || modal || stageBusy() || rewind || event.button !== 0 || joy.pointer !== null) return;
   event.preventDefault(); initAudio();
   try { joystick.setPointerCapture(event.pointerId); } catch { }
   joy.pointer = event.pointerId; joy.actor = touchActor(); joystick.classList.add('active'); readStick(event);
@@ -649,6 +663,7 @@ function releaseTouchJump() {
 }
 
 function touchAction(type) {
+  if (viewport.blocked) return;
   if (type === 'switch') {
     if (onlineMode) return;
     const stick = joy.pointer !== null && joystick.hasPointerCapture?.(joy.pointer) ? { pointer: joy.pointer, dx: joy.dx, dy: joy.dy } : null;
@@ -744,7 +759,7 @@ function finishSkillAim(event, released) {
   const { actor, active, overCancel } = skillAim;
   const preview = aimPreview(lastView);
   clearSkillAim();
-  if (!released || overCancel || modal || stageBusy() || rewind || actor !== touchActor()) return;
+  if (!released || overCancel || viewport.blocked || modal || stageBusy() || rewind || actor !== touchActor()) return;
   if (!active) { toast(S.aimTouch); return; } // a tap alone picks nothing: drag to aim
   castSkill(preview);
 }
@@ -802,7 +817,7 @@ function finishThrowAim(event, released) {
   updateThrowAim(event);
   const { actor, active, overCancel } = throwAim, aim = active ? throwVelocity() : null;
   clearThrowAim();
-  if (!released || overCancel || modal || stageBusy() || rewind || actor !== touchActor()) return;
+  if (!released || overCancel || viewport.blocked || modal || stageBusy() || rewind || actor !== touchActor()) return;
   dispatch(aim ? { type: 'grab', actor, aim } : { type: 'grab', actor });
 }
 
@@ -811,7 +826,7 @@ function startMouseAim(kind, key, actor) {
 }
 function finishMouseAim() {
   const aim = mouseAim, view = lastView; mouseAim = null;
-  if (!aim || !view || modal || stageBusy() || rewind || view.status !== 'playing') return;
+  if (!aim || !view || viewport.blocked || modal || stageBusy() || rewind || view.status !== 'playing') return;
   if (aim.actor !== (onlineMode ? network.actor : state.active)) return; // switched character mid-aim
   if (aim.kind === 'skill') { castSkill(skillPreview(view, aim.actor, mouseWorld())); return; }
   if (view.actors[aim.actor]?.carrying === null) return;
@@ -825,7 +840,7 @@ cancelAimButton.addEventListener('click', () => cancelAim());
 // Each circle captures only its own pointer, so presses coexist with held movement and with each other.
 for (const button of document.querySelectorAll('[data-touch]')) {
   button.addEventListener('pointerdown', event => {
-    if (modal || stageBusy() || rewind || event.button !== 0 || touchPointers.has(button)) return;
+    if (viewport.blocked || modal || stageBusy() || rewind || event.button !== 0 || touchPointers.has(button)) return;
     event.preventDefault(); initAudio();
     try { button.setPointerCapture(event.pointerId); } catch { }
     if (button === abilityButton) {
@@ -847,7 +862,7 @@ for (const button of document.querySelectorAll('[data-touch]')) {
   // Keyboard / switch-access activation (pointer taps were already handled on pointerdown).
   button.addEventListener('keydown', event => { if (event.repeat && ['Enter', ' '].includes(event.key)) event.preventDefault(); });
   button.addEventListener('click', event => {
-    if (event.detail !== 0 || modal || stageBusy() || rewind || touchPointers.has(button)) return;
+    if (event.detail !== 0 || viewport.blocked || modal || stageBusy() || rewind || touchPointers.has(button)) return;
     touchAction(button.dataset.touch);
     if (button.dataset.touch === 'jump') releaseTouchJump();
   });
@@ -918,6 +933,7 @@ function tapWorld(clientX, clientY) {
 // Locally that is always Still's power; online only the Still player's clicks cast.
 const mouseCasts = () => !document.body.classList.contains('touch-layout') && (!onlineMode || network.actor === 0);
 canvas.addEventListener('pointerdown', event => {
+  if (viewport.blocked) return;
   canvas.focus({ preventScroll: true });
   if (modal || stageBusy() || rewind || skillAim || mouseAim || event.button !== 0) return;
   if (document.body.classList.contains('touch-layout')) { event.preventDefault(); initAudio(); tapWorld(event.clientX, event.clientY); return; }
@@ -926,23 +942,23 @@ canvas.addEventListener('pointerdown', event => {
   if (point && lastView?.status === 'playing') { initAudio(); toggleFreeze(lastView, point); }
 });
 canvas.addEventListener('pointermove', event => {
-  freezePreview = event.pointerType === 'mouse' && mouseCasts() && !mouseAim && !modal && !stageBusy() && !rewind ? renderer.worldPoint(event.clientX, event.clientY) : null;
+  freezePreview = !viewport.blocked && event.pointerType === 'mouse' && mouseCasts() && !mouseAim && !modal && !stageBusy() && !rewind ? renderer.worldPoint(event.clientX, event.clientY) : null;
 });
 window.addEventListener('pointermove', event => { if (event.pointerType === 'mouse') mouseClient = { x: event.clientX, y: event.clientY }; });
 canvas.addEventListener('pointerleave', () => { freezePreview = null; });
-window.addEventListener('blur', () => { clearInputs(); if (!onlineMode && !modal && state.status === 'playing') setModal('pause'); audioContext?.suspend(); });
+window.addEventListener('blur', () => { clearInputs(); if (!viewport.blocked && !onlineMode && !modal && state.status === 'playing') setModal('pause'); audioContext?.suspend(); });
 window.addEventListener('orientationchange', () => clearInputs());
 // A hidden tab stops drawing frames. A local rewind picks up where it left off; an online one follows the
 // server's clock, so it simply catches up (the server has already installed the start).
 let hiddenAt = null;
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { hiddenAt = performance.now(); clearInputs(); if (!onlineMode && !modal && state.status === 'playing') setModal('pause'); audioContext?.suspend(); return; }
+  if (document.hidden) { hiddenAt = performance.now(); clearInputs(); if (!viewport.blocked && !onlineMode && !modal && state.status === 'playing') setModal('pause'); audioContext?.suspend(); return; }
   if (rewind && !rewind.online && hiddenAt !== null) rewind.start += performance.now() - hiddenAt;
   hiddenAt = null;
   if (onlineMode) network.wake();
 });
 window.addEventListener('pageshow', () => { if (onlineMode) network.wake(); });
-touchMedia.addEventListener('change', updateUI);
+touchMedia.addEventListener('change', () => { updateUI(); viewport.refresh(); });
 window.__moonclock = {
   snapshot: () => ({ ...viewFor(state, onlineMode ? network.playerId : 'local'), phase: modal || state.status, players: structuredClone(state.actors) }),
   presentation: () => renderer.inspect(),
@@ -968,7 +984,7 @@ let entranceDrawAt = null;
 function frame(time) {
   const musicEnabled = sound && !document.hidden && (menuScreen() || stageBusy() || !modal || modal === 'win');
   music.select(currentTrack()); music.sync(musicEnabled);
-  const growthEnabled = sound && !document.hidden && document.hasFocus() && !rewind && state.status === 'playing' && !modal && (!onlineMode || (network.connected && !network.room?.suspended));
+  const growthEnabled = sound && !viewport.blocked && !document.hidden && document.hasFocus() && !rewind && state.status === 'playing' && !modal && (!onlineMode || (network.connected && !network.room?.suspended));
   growthAudio.sync(audioContext, growthEnabled ? state.objects.filter(o => o.kind === 'plant' && o.speed > 0 && o.age < meta.plant.growTicks && !o.withered).map(o => ({ id: o.id, rate: o.speed * (o.frozen ? meta.time.frozenRate : 1) })) : []);
   pwa.refresh();
   if (lastTime === 0) lastTime = time;
@@ -977,7 +993,7 @@ function frame(time) {
   advanceStage(time);
   checkFirstShore();
   const step = 1000 / 60;
-  if (!onlineMode && !modal && !stageBusy() && !rewind && state.status === 'playing') {
+  if (!onlineMode && !viewport.blocked && !modal && !stageBusy() && !rewind && state.status === 'playing') {
     while (accumulator >= step && !celebration) { previousTick = state; dispatch({ type: 'tick' }, true); history.record(state); accumulator -= step; }
   } else accumulator = 0;
   let rewindView = null, rewindInfo = null;
@@ -987,19 +1003,19 @@ function frame(time) {
     rewindView = { ...state, ...rewindFrame(rewind.frames, u), status: 'rewinding', events: [] };
     rewindInfo = { progress: u, ghosts: [.035, .07].map(d => rewindFrame(rewind.frames, Math.max(0, u - d))) };
     // Online, the final picture holds until the server's fresh start arrives (with a safety timeout).
-    if (u >= 1 && (!rewind.online || rewind.arrived || now - rewind.start > rewind.duration + 3000)) finishRewind();
+    if (u >= 1 && (rewind.online || !viewport.blocked) && (!rewind.online || rewind.arrived || now - rewind.start > rewind.duration + 3000)) finishRewind();
   }
   rewindAudio.sync(audioContext, sound && !document.hidden && document.hasFocus() && rewind ? rewind.u : null);
   // Local play: the simulation runs at 60 ticks/s but the screen may refresh faster (120 Hz iPads) or out
   // of step, so draw positions blended between the last two ticks instead of holding/jumping frames.
-  const smooth = !onlineMode && !modal && state.status === 'playing' && previousTick?.level === state.level && previousTick.tick === state.tick - 1;
+  const smooth = !onlineMode && !viewport.blocked && !modal && state.status === 'playing' && previousTick?.level === state.level && previousTick.tick === state.tick - 1;
   const liveView = onlineMode ? network.render(Math.min(.1, (time - (frame.previous ?? time)) / 1000), time) || state : smooth ? blendTicks(previousTick, state, accumulator / step) : state;
   const outgoing = sceneFade?.from;
   const displayState = outgoing?.state ?? (rewindView && rewind ? rewindView : liveView);
   frame.previous = time;
   // Online, a local menu does not stop the shared world, so keep animating behind it.
   const localMenu = ['pause', 'help', 'settings', 'confirm-restart', 'confirm-level'].includes(modal);
-  const worldPaused = stageBusy() || (onlineMode ? modal !== null && !localMenu : !!modal) || state.status !== 'playing' || (onlineMode && (!network.connected || network.room?.suspended));
+  const worldPaused = (!onlineMode && viewport.blocked) || stageBusy() || (onlineMode ? modal !== null && !localMenu : !!modal) || state.status !== 'playing' || (onlineMode && (!network.connected || network.room?.suspended));
   const touch = touchLayout(), viewActor = onlineMode ? network.actor : state.active;
   updateSkillAim(); updateThrowAim();
   const aim = aimPreview(displayState), throwArc = throwPreview(displayState);

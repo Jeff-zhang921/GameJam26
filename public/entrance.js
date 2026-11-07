@@ -111,12 +111,15 @@ export function createEntrance({ reduced, onStart, onFinish, onCancel }) {
   }).then(installArt).catch(() => { root.dataset.art = 'fallback'; });
 
   function measure() {
-    layout = entranceLayout(window.innerWidth, window.innerHeight);
+    const bounds = document.body.getBoundingClientRect();
+    const width = bounds.width || window.innerWidth, height = bounds.height || window.innerHeight;
+    layout = { ...entranceLayout(width, height), viewportWidth: width, viewportHeight: height };
     camera.style.width = layout.width + 'px'; camera.style.height = layout.height + 'px';
     camera.style.left = layout.left + 'px'; camera.style.top = layout.top + 'px';
     if (current) paint();
   }
   window.addEventListener('resize', measure);
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(measure).observe(document.body);
   measure();
 
   function paint() {
@@ -130,8 +133,8 @@ export function createEntrance({ reduced, onStart, onFinish, onCancel }) {
     const zoom = Math.exp(Math.log(layout.zoom) * timeline.camera);
     const gateX = ART.gateX * layout.scale;
     const gateY = (ART.gateY + (ART.insideY - ART.gateY) * timeline.camera) * layout.scale;
-    const x = (layout.left + ART.gateX * layout.scale) * (1 - timeline.camera) + window.innerWidth / 2 * timeline.camera;
-    const y = (layout.top + ART.gateY * layout.scale) * (1 - timeline.camera) + window.innerHeight / 2 * timeline.camera;
+    const x = (layout.left + ART.gateX * layout.scale) * (1 - timeline.camera) + layout.viewportWidth / 2 * timeline.camera;
+    const y = (layout.top + ART.gateY * layout.scale) * (1 - timeline.camera) + layout.viewportHeight / 2 * timeline.camera;
     setStyle(camera, 'transform', `translate3d(${x - layout.left - gateX * zoom}px, ${y - layout.top - gateY * zoom}px, 0) scale(${zoom})`);
     setData('zoom', zoom.toFixed(3));
     if (leaves) {
