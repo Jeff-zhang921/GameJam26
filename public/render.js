@@ -123,6 +123,8 @@ export function createRenderer(canvas, S) {
   // world's bottom edge blend into one gradient.
   const fillPatterns = new Map();
   const FILL_SHADE = { from: .12, to: .72, depth: 190 };
+  // The fill starts just under the moss, behind the strip's lower stones (which fade into it).
+  const FILL_TOP = 10;
   function groundFill(x, y, w, h, top = y) {
     const fill = theme.ground.fill, img = art(fill.src);
     if (w <= 0 || h <= 0 || !img) return;
@@ -138,7 +140,7 @@ export function createRenderer(canvas, S) {
     if (surface && art(theme.ground.fill.src)) {
       // The fill sits a little inside the ledge's ends, which step inward below the moss.
       const x0 = p.x <= 0 ? p.x : p.x + 12, x1 = p.x + p.w >= 1280 ? p.x + p.w : p.x + p.w - 12;
-      groundFill(x0, p.y + 30, x1 - x0, p.h - 30);
+      groundFill(x0, p.y + FILL_TOP, x1 - x0, p.h - FILL_TOP);
       if (p.x > 0) line(ctx, [[x0 + 1, p.y + 40], [x0 + 1, p.y + p.h]], '#15141c80', 2);
       if (p.x + p.w < 1280) line(ctx, [[x1 - 1, p.y + 40], [x1 - 1, p.y + p.h]], '#15141c80', 2);
       return groundCap(p, surface);
@@ -335,7 +337,7 @@ export function createRenderer(canvas, S) {
       if (bottom > H && p.y + p.h >= H - 1) {
         // The fill below the world lines up with the fill above it, inset like it at ends that are not open.
         const f0 = p.x <= 0 ? x0 : p.x + 12, f1 = p.x + p.w >= W ? x1 : p.x + p.w - 12;
-        if (art(theme.ground.fill.src)) groundFill(f0, H - 2, f1 - f0, bottom - H + 2, p.y + 30); // the same gradient, continued
+        if (art(theme.ground.fill.src)) groundFill(f0, H - 2, f1 - f0, bottom - H + 2, p.y + FILL_TOP); // the same gradient, continued
         else { ctx.fillStyle = '#123239'; ctx.fillRect(f0, H - 2, f1 - f0, bottom - H + 2); }
       }
     }
@@ -363,13 +365,20 @@ export function createRenderer(canvas, S) {
     const x = b.x + b.w / 2 + Math.sin(t * .003 + b.x) * 3, y = b.y - 10;
     ctx.save(); ctx.globalAlpha *= .85; glow(ctx, x, y, 12, '#c8f4f866'); star(ctx, x, y, 4, '#f0fdff'); ctx.restore();
   }
-  // A frost crystal gives Still an extra Freeze charge.
+  // Still's pickup (an extra Freeze charge): a small hourglass that bobs and slowly rocks, its sand trickling.
   function frostCrystal(c, t) {
     const y = c.y + Math.sin(t * .0025 + c.x) * 4;
     glow(ctx, c.x, y, 34, '#bdf0f640');
-    ctx.save(); ctx.translate(c.x, y); ctx.rotate(t * .0006);
-    for (let i = 0; i < 6; i++) { ctx.rotate(Math.PI / 3); line(ctx, [[0, 0], [0, -11]], '#e9fbfd', 2); line(ctx, [[0, -7], [3.5, -10]], '#e9fbfd', 1.2); line(ctx, [[0, -7], [-3.5, -10]], '#e9fbfd', 1.2); }
-    ctx.restore(); circle(ctx, c.x, y, 3, '#ffffff');
+    ctx.save(); ctx.translate(c.x, y); ctx.rotate(Math.sin(t * .0012 + c.x) * .18);
+    ctx.beginPath(); ctx.moveTo(-8, -11); ctx.lineTo(8, -11); ctx.bezierCurveTo(8, -4, 2, -2, 1.5, 0); ctx.bezierCurveTo(2, 2, 8, 4, 8, 11);
+    ctx.lineTo(-8, 11); ctx.bezierCurveTo(-8, 4, -2, 2, -1.5, 0); ctx.bezierCurveTo(-2, -2, -8, -4, -8, -11); ctx.closePath();
+    ctx.fillStyle = '#d9f8fb66'; ctx.fill(); ctx.strokeStyle = '#effcfd'; ctx.lineWidth = 1.4; ctx.stroke();
+    ctx.fillStyle = '#f2c768';
+    ctx.beginPath(); ctx.moveTo(-5.5, -7); ctx.lineTo(5.5, -7); ctx.quadraticCurveTo(3, -3, 0, -1.5); ctx.quadraticCurveTo(-3, -3, -5.5, -7); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(0, 4); ctx.quadraticCurveTo(5, 6, 6.5, 9.5); ctx.lineTo(-6.5, 9.5); ctx.quadraticCurveTo(-5, 6, 0, 4); ctx.fill();
+    if (Math.floor(t / 180) % 2 === 0) { ctx.fillRect(-.5, -1, 1, 5); }
+    ctx.fillStyle = '#e8c27a'; ctx.fillRect(-10, -13, 20, 2.6); ctx.fillRect(-10, 10.4, 20, 2.6);
+    ctx.restore();
   }
   function lightningCrystal(c, t) {
     const y = c.y + Math.sin(t * .0025 + c.x) * 4;

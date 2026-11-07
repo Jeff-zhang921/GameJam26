@@ -12,7 +12,8 @@ export const GROUNDS = {
     surface: { src: '/sprites/ground.png', height: 174, walk: 28, scale: .45, left: [0, 160], right: [1540, 1690], fillL: [240, 740], emblem: [740, 960], fillR: [960, 1460] },
     fill: { src: '/sprites/ground-fill.png', scale: .6 },
   },
-  // Mossy cobble ledge (picture/ground/1.png) over cobblestones (picture/ground/1_1.png).
+  // Mossy cobble ledge (picture/ground/1.png) over cobblestones (picture/ground/1_1.png). The strip keeps its moss
+  // and top row of stones, fading out below (and on the inner side of its rounded ends) into the seamless fill.
   cobbleMoss: {
     surface: { src: '/sprites/ground-moss.png', height: 173, walk: 26, scale: .45, left: [0, 160], right: [1545, 1715], fillR: [400, 1100] },
     fill: { src: '/sprites/ground-fill.png', scale: .6 },

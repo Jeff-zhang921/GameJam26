@@ -18,6 +18,7 @@ const rewindAudio = createRewindAudio();
 const icons = {
   moon: '<path d="M19 15.5A8 8 0 0 1 8.5 5a8.5 8.5 0 1 0 10.5 10.5Z"/><path d="m17 3 .5 2.5L20 6l-2.5.5L17 9l-.5-2.5L14 6l2.5-.5Z"/>',
   leaf: '<path d="M19 4C7 3 3 10 7 16c6 4 13 0 12-12Z"/><path d="M5 21 17 7M10 15l-1-5m5 1 4 1"/>',
+  hourglass: '<path d="M6 3h12M6 21h12"/><path d="M7.5 3c0 4.5 4.5 6.5 4.5 9s-4.5 4.5-4.5 9M16.5 3c0 4.5-4.5 6.5-4.5 9s4.5 4.5 4.5 9"/><path d="M10 18.5h4"/>',
   snow: '<path d="M12 2v20M3.3 7l17.4 10M3.3 17 20.7 7M8 4l4 3 4-3M8 20l4-3 4 3M3 11l4-2V5m14 8-4 2v4M3 13l4 2v4m14-8-4-2V5"/>',
   sound: '<path d="m4 9 4 0 5-4v14l-5-4H4Zm12-2a7 7 0 0 1 0 10m3-13a11 11 0 0 1 0 16"/>',
   mute: '<path d="m4 9 4 0 5-4v14l-5-4H4Zm13 0 5 6m0-6-5 6"/>',
@@ -36,7 +37,16 @@ const icons = {
 };
 const icon = name => `<svg viewBox="0 0 24 24" aria-hidden="true">${icons[name] || icons.moon}</svg>`;
 const key = text => `<kbd class="key">${text}</kbd>`;
-const skillArt = name => `<svg class="skill-art" viewBox="0 0 64 64" aria-hidden="true"><use href="/art/touch-controls.svg#${name}"/></svg>`;
+// Skill icons come from /art/touch-controls.svg, copied into the page (below) so <use> points inside the document:
+// Safari often fails to redraw a <use> whose href to an external file changes, which lost Bloom's bolt.
+const skillArt = name => `<svg class="skill-art" viewBox="0 0 64 64" aria-hidden="true"><use href="#skill-${name}"/></svg>`;
+fetch('/art/touch-controls.svg').then(r => r.ok ? r.text() : '').then(svg => {
+  if (!svg) return;
+  const sprite = document.createElement('div');
+  sprite.setAttribute('aria-hidden', 'true'); sprite.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden';
+  sprite.innerHTML = svg.replace(/<symbol id="/g, '<symbol id="skill-');
+  document.body.prepend(sprite);
+}).catch(() => { });
 const itemArt = name => `<img class="skill-art" src="/sprites/${name}.png" alt="" draggable="false">`;
 let saved = {};
 try { saved = JSON.parse(localStorage.getItem('moonclock-v1') || '{}'); } catch { }
@@ -91,7 +101,7 @@ app.innerHTML = `
         <p id="objective"></p><ul class="checklist" id="checklist" aria-live="polite"></ul>
       </section>
       <div class="game-bottom"><div class="status-strip"><span class="live-dot"></span><span id="hud"></span><span class="freeze-count" id="freeze-count" data-testid="freeze-count"></span><span class="seed-chip" data-testid="seed-counter" role="img" hidden><img src="/sprites/seed.png" alt="" draggable="false"><b></b></span><span id="stage-count"></span></div>
-        <div class="action-strip"><span class="controls-strip" id="controls"></span><button class="ability-chip" data-action="ability" id="ability" data-testid="ability">${icon('snow')}<span id="ability-label"></span>${key('F')}</button><button class="text-button switch-button" data-action="switch" aria-label="${S.switchRole}">${icon('swap')}${key('Tab')}</button></div>
+        <div class="action-strip"><span class="controls-strip" id="controls"></span><button class="ability-chip" data-action="ability" id="ability" data-testid="ability">${icon('hourglass')}<span id="ability-label"></span>${key('F')}</button><button class="text-button switch-button" data-action="switch" aria-label="${S.switchRole}">${icon('swap')}${key('Tab')}</button></div>
       </div>
       <div class="touch-controls" data-testid="touch-controls">
         <div class="touch-movement">
@@ -102,7 +112,7 @@ app.innerHTML = `
           <span class="seed-chip touch-seeds" data-testid="touch-seed-counter" role="img" hidden><img src="/sprites/seed.png" alt="" draggable="false"><b></b></span>
           <button type="button" class="touch-skill touch-jump" data-touch="jump" data-testid="touch-jump" aria-label="${S.jump}">${icon('up')}<span>${S.jump}</span></button>
           <button type="button" class="touch-skill touch-interact" data-touch="grab" data-testid="touch-interact" aria-label="${S.interact.pickup}">${itemArt('crate')}<span>${S.interact.pickup}</span></button>
-          <button type="button" class="touch-skill touch-ability" data-touch="ability" data-testid="touch-ability" aria-label="${S.ability[0]}">${skillArt('frost')}<span class="skill-charges" data-testid="skill-charges"></span></button>
+          <button type="button" class="touch-skill touch-ability" data-touch="ability" data-testid="touch-ability" aria-label="${S.ability[0]}">${skillArt('hourglass')}<span class="skill-charges" data-testid="skill-charges"></span></button>
         </div>
         <button type="button" class="touch-cancel" data-testid="cancel-aim" aria-label="${S.cancelAim}" hidden>${icon('close')}</button>
       </div>
@@ -311,7 +321,7 @@ function updateUI() {
   }
   document.querySelector('#ability-label').textContent = `${S.roleLabels[state.active]} · ${S.ability[state.active]}`;
   document.querySelector('#ability').classList.toggle('bloom', state.active === 1);
-  document.querySelector('#ability svg').innerHTML = icons[state.active ? 'leaf' : 'snow'];
+  document.querySelector('#ability svg').innerHTML = icons[state.active ? 'leaf' : 'hourglass'];
   document.querySelector('[data-testid="sound"]').innerHTML = icon(sound ? 'sound' : 'mute');
   document.body.classList.toggle('reduced-motion', reduced);
   document.body.classList.toggle('touch-enabled', touchControls);
@@ -869,7 +879,7 @@ function updateTouchControls(view) {
   abilityButton.classList.toggle('empty', charges <= 0);
   abilityButton.setAttribute('aria-label', S.skillCount(S.ability[actor], charges));
   abilityButton.classList.toggle('bloom', actor === 1);
-  abilityButton.querySelector('use').setAttribute('href', `/art/touch-controls.svg#${actor === 1 ? 'bolt' : 'frost'}`);
+  abilityButton.querySelector('.skill-art').outerHTML = skillArt(actor === 1 ? 'bolt' : 'hourglass'); // a fresh icon, not a changed href
   interactButton.classList.toggle('bloom', actor === 1);
   interactButton.classList.toggle('unavailable', !interaction.available);
   interactButton.dataset.kind = interaction.kind;
