@@ -1,4 +1,4 @@
-import { setup, applyAction, validateAction, viewFor, targetFor, anchor, hintLevel } from '../src/logic.js';
+import { setup, applyAction, validateAction, viewFor, targetFor, hintLevel } from '../src/logic.js';
 import { S } from './strings.js';
 import { createRenderer } from './render.js';
 
@@ -27,7 +27,7 @@ let mode = saved.mode === 'coop' ? 'coop' : 'solo';
 let sound = saved.sound !== false;
 let reduced = saved.reduced ?? window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 let best = Array.isArray(saved.best) ? [0, 1, 2, 3].map(i => Number.isFinite(saved.best[i]) ? saved.best[i] : null) : [null, null, null, null];
-let modal = 'intro', selectedTarget = null, seenEvent = 0, shownHint = 0, toastTimer, audioContext;
+let modal = 'intro', seenEvent = 0, shownHint = 0, toastTimer, audioContext;
 const clock = ticks => { const sec = Math.floor(ticks / 60); return `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`; };
 let lastTime = 0, accumulator = 0, frameCount = 0;
 const held = new Set();
@@ -62,12 +62,11 @@ function chime(kind) {
 }
 function dispatch(action, quiet = false) {
   if (action.actor === undefined && ['move', 'jump', 'grab', 'ability'].includes(action.type)) action = { ...action, actor: state.active };
-  if (action.type === 'ability' && !action.target && selectedTarget && action.actor === state.active) action = { ...action, target: selectedTarget };
   const result = validateAction(state, 'local', action);
   if (!result.valid) { if (!quiet) toast(S.errors[result.error]); return result; }
   const oldLevel = state.level, oldStatus = state.status;
   state = applyAction(state, 'local', action);
-  if (state.level !== oldLevel || ['restart', 'rewind', 'level', 'next'].includes(action.type)) { selectedTarget = null; seenEvent = action.type === 'rewind' ? state.eventSeq - 1 : state.eventSeq; }
+  if (state.level !== oldLevel || ['restart', 'rewind', 'level', 'next'].includes(action.type)) { seenEvent = action.type === 'rewind' ? state.eventSeq - 1 : state.eventSeq; }
   for (const e of state.events) if (e.id > seenEvent) { chime(e.kind); seenEvent = e.id; }
   if (state.status === 'won' && oldStatus !== 'won') { held.clear(); best[state.level] = Math.min(best[state.level] ?? Infinity, state.elapsed); modal = 'win'; persist(); renderModal(); }
   if (action.type !== 'tick' || state.status !== oldStatus) updateUI();
@@ -109,7 +108,7 @@ document.addEventListener('click', event => {
   const button = event.target.closest('[data-action], [data-role], [data-level], [data-mode]'); if (!button) return;
   initAudio();
   if (button.dataset.mode) { mode = button.dataset.mode; clearInputs(); persist(); renderModal(); return; }
-  if (button.dataset.role !== undefined && !button.dataset.action) { if (modal) return; const i = Number(button.dataset.role); if (state.active !== i) { clearInputs(); dispatch({ type: 'switch' }); selectedTarget = null; } return; }
+  if (button.dataset.role !== undefined && !button.dataset.action) { if (modal) return; const i = Number(button.dataset.role); if (state.active !== i) { clearInputs(); dispatch({ type: 'switch' }); } return; }
   if (button.dataset.level !== undefined) { if (!modal) { clearInputs(); dispatch({ type: 'level', level: Number(button.dataset.level) }); persist(); } return; }
   const action = button.dataset.action;
   if (action === 'start') { modal = null; initAudio(); renderModal(); canvas.focus({ preventScroll: true }); return; }
@@ -118,11 +117,11 @@ document.addEventListener('click', event => {
   if (action === 'close') { resume(); return; }
   if (['help', 'settings', 'pause'].includes(action)) { setModal(action); return; }
   if (action === 'restart') { dispatch({ type: 'restart' }); modal = null; renderModal(); clearInputs(); return; }
-  if (action === 'next') { dispatch({ type: 'next' }); modal = null; renderModal(); selectedTarget = null; persist(); return; }
+  if (action === 'next') { dispatch({ type: 'next' }); modal = null; renderModal(); persist(); return; }
   if (modal) return;
   if (action === 'ability') {
     const actor = button.dataset.actor === undefined ? state.active : Number(button.dataset.actor);
-    if (actor !== state.active) { clearInputs(); dispatch({ type: 'switch' }); selectedTarget = null; }
+    if (actor !== state.active) { clearInputs(); dispatch({ type: 'switch' }); }
     dispatch({ type: 'ability', actor });
   } else dispatch({ type: action });
 });
@@ -135,13 +134,13 @@ function movement() {
 }
 document.addEventListener('keydown', event => {
   const code = event.code;
-  if (event.target.closest('button,[role="button"]') && ['Enter', 'Space'].includes(code)) return;
+  if (code === 'Space' || code === 'Enter') event.preventDefault();
   if (code === 'Escape') { event.preventDefault(); if (modal && modal !== 'intro' && modal !== 'win') resume(); else if (!modal) setModal('pause'); return; }
   if (modal) return;
   const controls = ['KeyA', 'KeyD', 'KeyW', 'Space', 'KeyE', 'KeyF', 'KeyR', 'Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'Enter', 'KeyL'];
   if (!controls.includes(code)) return;
   event.preventDefault(); initAudio(); held.add(code); movement(); if (event.repeat) return;
-  if (code === 'Tab') { clearInputs(); dispatch({ type: 'switch' }); selectedTarget = null; }
+  if (code === 'Tab') { clearInputs(); dispatch({ type: 'switch' }); }
   if (code === 'KeyR') dispatch({ type: 'rewind' });
   const actor = mode === 'coop' ? ['ArrowUp', 'Enter', 'KeyL'].includes(code) ? 1 : 0 : state.active;
   if (['KeyW', 'Space', 'ArrowUp'].includes(code)) dispatch({ type: 'jump', actor });
@@ -154,12 +153,9 @@ document.querySelectorAll('[data-hold]').forEach(button => {
   const release = () => { held.delete(button.dataset.hold === '-1' ? 'KeyA' : 'KeyD'); movement(); };
   button.addEventListener('pointerup', release); button.addEventListener('pointercancel', release); button.addEventListener('lostpointercapture', release);
 });
-canvas.addEventListener('pointerdown', event => {
-  if (modal) return; const point = renderer.worldPoint(event.clientX, event.clientY); let closest = null, distance = 90;
-  const kinds = state.active === 0 ? ['plant', 'mover', 'crate'] : ['plant', 'mover'];
-  for (const object of state.objects) { if (!kinds.includes(object.kind) || (object.held ?? null) !== null) continue; const a = anchor(object); const d = Math.hypot(point.x - a.x, point.y - a.y); if (d < distance) { distance = d; closest = object; } }
-  selectedTarget = closest ? targetFor(state, state.active, { target: closest.id })?.id ?? null : null; canvas.focus({ preventScroll: true });
-});
+document.addEventListener('mousedown', event => { if (event.target.closest('button,[role="button"]')) event.preventDefault(); });
+document.addEventListener('keyup', event => { if (event.code === 'Space' || event.code === 'Enter') event.preventDefault(); }, true);
+canvas.addEventListener('pointerdown', () => canvas.focus({ preventScroll: true }));
 window.addEventListener('blur', () => { clearInputs(); if (!modal && state.status === 'playing') setModal('pause'); audioContext?.suspend(); });
 document.addEventListener('visibilitychange', () => { if (document.hidden) { clearInputs(); if (!modal && state.status === 'playing') setModal('pause'); audioContext?.suspend(); } });
 window.__moonclock = {
@@ -170,8 +166,7 @@ function frame(time) {
   if (lastTime === 0) lastTime = time;
   accumulator += Math.min(100, time - lastTime); lastTime = time;
   if (!modal && state.status === 'playing') { while (accumulator >= 1000 / 60) { dispatch({ type: 'tick' }, true); accumulator -= 1000 / 60; } } else accumulator = 0;
-  if (selectedTarget) selectedTarget = targetFor(state, state.active, { target: selectedTarget })?.id ?? null;
-  renderer.draw(state, time, { reduced, target: selectedTarget || targetFor(state, state.active)?.id });
+  renderer.draw(state, time, { reduced, target: targetFor(state, state.active)?.id });
   frameCount++; if (frameCount % 10 === 0) updateUI();
   if (debug) { const el = document.querySelector('#debug'); el.hidden = false; el.textContent = `tick ${state.tick} | phase ${modal || state.status}\nentities ${state.actors.length + state.objects.length}\nactor ${state.active} | ${Math.round(state.actors[state.active].x)},${Math.round(state.actors[state.active].y)}`; }
   requestAnimationFrame(frame);

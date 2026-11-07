@@ -162,6 +162,28 @@ describe('still', () => {
     expect(get(s, 'crate-0').x).not.toBe(before.x);
   });
 
+  test('bloom releases a crate frozen in midair and it flies on', () => {
+    let s = setup();
+    s.actors[0].x = 350;
+    s = action(s, { type: 'grab', actor: 0 });
+    s = action(s, { type: 'grab', actor: 0 });
+    s = step(s, 12);
+    s = action(s, { type: 'ability', actor: 0, target: 'crate-0' });
+    const before = { ...get(s, 'crate-0') };
+    s.actors[1].x = 350;
+    expect(validateAction(s, 'local', { type: 'ability', actor: 1 }).valid).toBe(true);
+    s = action(s, { type: 'ability', actor: 1 });
+    expect(get(s, 'crate-0').frozen).toBe(false);
+    s = step(s);
+    expect(get(s, 'crate-0').x).toBeCloseTo(before.x + before.vx, 5);
+  });
+
+  test('bloom cannot touch a crate that is not frozen', () => {
+    const s = setup();
+    s.actors[1].x = 350;
+    expect(validateAction(s, 'local', { type: 'ability', actor: 1, target: 'crate-0' }).error).toBe('bloomRange');
+  });
+
   test('freezing a plant mid-growth stops both its clock and its height', () => {
     let s = action(planted(), { type: 'ability', actor: 1 });
     s = action(s, { type: 'ability', actor: 1 }); s = action(s, { type: 'ability', actor: 1 });
@@ -170,10 +192,10 @@ describe('still', () => {
     const frozen = { ...s.objects.find(o => o.kind === 'plant') };
     s = step(s, G);
     expect(plantOf(s)).toMatchObject({ age: frozen.age, height: frozen.height });
-    expect(validateAction(s, 'local', { type: 'ability', actor: 1 }).error).toBe('heldByStill');
-    s = action(s, { type: 'ability', actor: 0 });
+    s = action(s, { type: 'ability', actor: 1 });
+    expect(plantOf(s)).toMatchObject({ frozen: false, speed: 3 });
     s = step(s, 10);
-    expect(s.objects.find(o => o.kind === 'plant').height).toBeGreaterThan(frozen.height);
+    expect(plantOf(s).height).toBeGreaterThan(frozen.height);
   });
 });
 
@@ -272,19 +294,26 @@ describe('room rules', () => {
 });
 
 describe('review fixes', () => {
-  test('bloom auto-target skips frozen plants and picks the nearest usable one', () => {
+  test('bloom auto-target skips full-speed plants and picks the nearest usable one', () => {
     let s = setup({ level: 3 });
     s.actors[1].x = 480; s = action(s, { type: 'grab', actor: 1 });
     s.actors[1].x = 400; s = action(s, { type: 'grab', actor: 1 });
     s.actors[1].x = 110; s = action(s, { type: 'grab', actor: 1 });
     s.actors[1].x = 60; s = action(s, { type: 'grab', actor: 1 });
-    s = action(s, { type: 'ability', actor: 0, target: 'plant-1' });
-    expect(get(s, 'plant-1').frozen).toBe(true);
+    for (let i = 0; i < meta.time.maxSpeed; i++) s = action(s, { type: 'ability', actor: 1, target: 'plant-1' });
     s.actors[1].x = 70;
     s = action(s, { type: 'ability', actor: 1 });
     expect(get(s, 'plant-0').speed).toBe(1);
-    expect(get(s, 'plant-1').speed).toBe(0);
-    expect(validateAction(s, 'local', { type: 'ability', actor: 1, target: 'plant-1' })).toEqual({ valid: false, error: 'heldByStill' });
+    expect(get(s, 'plant-1').speed).toBe(meta.time.maxSpeed);
+  });
+
+  test('bloom releases a frozen plant, waking it if it had never started', () => {
+    let s = planted();
+    s.actors[0].x = 560;
+    s = action(s, { type: 'ability', actor: 0 });
+    expect(plantOf(s)).toMatchObject({ frozen: true, speed: 0 });
+    s = action(s, { type: 'ability', actor: 1 });
+    expect(plantOf(s)).toMatchObject({ frozen: false, speed: 1 });
   });
 
   test('a seed dropped on a crate rests on it', () => {

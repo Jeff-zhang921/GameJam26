@@ -3,7 +3,7 @@ export const S = {
   start: 'Let Time Bloom', continue: 'Continue Journey', chapter: 'CHAMBER', chapters: 'Four Courtyards',
   intro: 'In a forgotten greenhouse, nothing moves until you touch it.', introBody: 'Bloom sets time flowing and hurries it along. Still holds any moment in place. One clock, two hands.',
   solo: 'Solo · Switch Roles', coop: 'Local Co-op', mode: 'Play Mode',
-  roleNames: ['Stillkeeper', 'Bloomkeeper'], roleLabels: ['STILL', 'BLOOM'], roleDescriptions: ['Freezes anything in time — even midair — until released.', 'Starts an object\'s clock, and hurries it onward.'],
+  roleNames: ['Stillkeeper', 'Bloomkeeper'], roleLabels: ['STILL', 'BLOOM'], roleDescriptions: ['Freezes anything in time — even midair — until released.', 'Starts an object\'s clock, hurries it onward, and releases what Still holds.'],
   current: 'Active', switchRole: 'Switch Role', ability: ['Freeze / Release', 'Wake / Hasten'],
   move: 'Move', jump: 'Jump', grab: 'Pick Up / Throw / Plant', rewind: 'Rewind 3s', restart: 'Reset Courtyard',
   pause: 'Pause', resume: 'Resume', help: 'Controls', settings: 'Settings', sound: 'Sound', motion: 'Reduce Motion', on: 'On', off: 'Off', close: 'Close',
@@ -14,9 +14,9 @@ export const S = {
   helpTitle: 'Make Time Your Tool', helpBody: 'Nothing ages until Bloom wakes it, and once awake it never stops on its own — only Still can hold it. Each press of Bloom makes time flow faster. A planted seed grows steadily taller, lifting whoever stands on it, then withers and vanishes.',
   keys: [['A / D', 'Move'], ['Space', 'Jump (higher from a young sprout)'], ['E', 'Pick up, throw a crate, plant a seed in a pit, or set a seed down'], ['F', "Use the active role's ability"], ['Tab', 'Switch between the two roles'], ['R', 'Rewind the world about three seconds (limited)'], ['Esc', 'Pause / Resume']],
   coopKeys: 'In co-op, the Stillkeeper uses A / D, W, E, F; the Bloomkeeper uses ← / →, ↑, Enter, L.',
-  targetFreeze: 'Freeze · F', targetRelease: 'Release · F', targetWake: 'Wake · F', targetHasten: 'Hasten · F', targetHeld: 'Held by Still', targetMax: 'Full speed',
+  targetFreeze: 'Freeze · F', targetRelease: 'Release · F', targetWake: 'Wake · F', targetHasten: 'Hasten · F', targetMax: 'Full speed',
   gateClosed: 'The moon gate awaits an answer', gateOpen: 'The moon gate is awake',
-  shard: 'Optional time shard', touch: 'Tap an object to target it',
+  shard: 'Optional time shard',
   saved: 'Your journey has been saved', focus: 'The courtyard is waiting for you.', connected: 'Local Adventure',
   levels: [
     { name: 'A Moment Held', en: 'THE STILL MOMENT', goal: 'Use a frozen crate to cross the broken bridge.', lesson: 'Turn a fall into a stair.',
@@ -29,5 +29,5 @@ export const S = {
       hints: ['Some platforms are waiting for time, too.', 'Stand on a planted seed holding the crate and let it grow you up to the platform. Have Bloom wake the platform. At the far end, throw the crate, freeze it, and hop across.'] },
   ],
   flags: { frozenTouched: 'Stand on a frozen crate', treeLifted: 'Ride a growing tree', withered: 'Let the ancient tree wither', sproutJump: 'Spring from a young sprout', moverRide: 'Ride a moving platform' },
-  errors: { invalid: "That action can't be done right now.", player: "This timekeeper hasn't entered the courtyard yet.", role: 'That ability belongs to the other timekeeper.', host: 'Your partner is advancing time.', unfinished: "Wake this courtyard's moon gate first.", locked: "This courtyard hasn't awakened yet.", history: 'Take a few more steps before borrowing back the past.', noRewinds: 'No rewinds left in this courtyard. Reset to start over.', paused: 'Let time flow again first.', grabRange: 'Get closer to a crate or seed, then press E.', freezeRange: 'Get near a plant, platform or loose crate, then try freezing it.', bloomRange: 'Walk up to a planted seed, tree or platform to wake it.', heldByStill: 'Still is holding this one in time.', maxSpeed: "Its time is already flowing as fast as it can." },
+  errors: { invalid: "That action can't be done right now.", player: "This timekeeper hasn't entered the courtyard yet.", role: 'That ability belongs to the other timekeeper.', host: 'Your partner is advancing time.', unfinished: "Wake this courtyard's moon gate first.", locked: "This courtyard hasn't awakened yet.", history: 'Take a few more steps before borrowing back the past.', noRewinds: 'No rewinds left in this courtyard. Reset to start over.', paused: 'Let time flow again first.', grabRange: 'Get closer to a crate or seed, then press E.', freezeRange: 'Get near a plant, platform or loose crate, then try freezing it.', bloomRange: 'Walk up to a planted seed, tree or platform to wake it.', maxSpeed: "Its time is already flowing as fast as it can." },
 };

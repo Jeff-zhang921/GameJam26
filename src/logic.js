@@ -95,11 +95,11 @@ function actorAllowed(state, playerId, actor) {
 
 export function targetFor(state, actor, action = {}) {
   const p = state.actors[actor];
-  const kinds = actor === STILL ? ['plant', 'mover', 'crate'] : ['plant', 'mover'];
-  const candidates = state.objects.filter(o => kinds.includes(o.kind) && free(o) && dist(p, anchor(o)) <= meta.controls.range);
+  const fits = o => o.kind === 'plant' || o.kind === 'mover' || (o.kind === 'crate' && (actor === STILL || o.frozen));
+  const candidates = state.objects.filter(o => fits(o) && free(o) && dist(p, anchor(o)) <= meta.controls.range);
   if (action.target) return candidates.find(o => o.id === action.target);
   const sorted = candidates.sort((a, b) => dist(p, anchor(a)) - dist(p, anchor(b)));
-  return actor === STILL ? sorted[0] : sorted.find(o => !o.frozen && o.speed < meta.time.maxSpeed) || sorted[0];
+  return actor === STILL ? sorted[0] : sorted.find(o => o.frozen || o.speed < meta.time.maxSpeed) || sorted[0];
 }
 
 function pickable(state, p) {
@@ -132,8 +132,7 @@ export function validateAction(state, playerId, action) {
     if (action.target !== undefined && typeof action.target !== 'string') return no('invalid');
     const target = targetFor(state, action.actor, action);
     if (!target) return no(action.actor === STILL ? 'freezeRange' : 'bloomRange');
-    if (action.actor === BLOOM && target.frozen) return no('heldByStill');
-    if (action.actor === BLOOM && target.speed >= meta.time.maxSpeed) return no('maxSpeed');
+    if (action.actor === BLOOM && !target.frozen && target.speed >= meta.time.maxSpeed) return no('maxSpeed');
     return { valid: true };
   }
   return no('invalid');
@@ -319,6 +318,7 @@ export function applyAction(state, playerId, action) {
   if (action.type === 'ability') {
     const o = targetFor(s, action.actor, action);
     if (action.actor === STILL) { o.frozen = !o.frozen; event(s, o.frozen ? 'freeze' : 'unfreeze', anchor(o).x, anchor(o).y); }
+    else if (o.frozen) { o.frozen = false; if (o.speed === 0) o.speed = 1; event(s, 'unfreeze', anchor(o).x, anchor(o).y); }
     else { const woke = o.speed === 0; o.speed++; event(s, woke ? 'wake' : 'grow', anchor(o).x, anchor(o).y); }
   }
   return s;
