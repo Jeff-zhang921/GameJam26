@@ -108,6 +108,12 @@ const shell = document.querySelector('.shell');
 const modalRoot = document.querySelector('#modal-root');
 const veil = document.querySelector('.scene-veil');
 let sceneFade = null, celebration = null, nextPending = false;
+let firstShoreSeen = false;
+function checkFirstShore() {
+  if (state.level !== 0 || state.status !== 'playing' || firstShoreSeen || stageBusy() || modal || rewind) return;
+  const bank = state.platforms.find(p => p.x > state.width / 2);
+  if (bank && state.actors.every(a => a.grounded && a.x >= bank.x + 16 && a.y <= bank.y + 2)) startCelebration();
+}
 let awaitingOnlineState = true;
 const stageBusy = () => !!(sceneFade || celebration || entrance.active);
 const canvas = document.querySelector('#game');
@@ -138,6 +144,7 @@ const network = createNetwork({
       const from = live && !rewind && previous.status === 'won' && game.status === 'playing' && previous.level !== game.level
         ? { state: previous, sceneKey, cameraReset } : null;
       networkEpoch = info.epoch; sceneKey++; cameraReset++; seenEvent = state.eventSeq;
+      firstShoreSeen = false;
       shownHint = 0; uiChapter = ''; resetTouchState(); history.reset(game);
       if (rewind) rewind.arrived = true; // the server has installed the courtyard's start
       nextPending = false;
@@ -150,7 +157,7 @@ const network = createNetwork({
       if (e.kind === 'return' && e.actor === network.actor) cameraReset++; seenEvent = e.id;
     }
     if (game.status === 'won' && !rewind && !network.room.canReturnLobby) {
-      if (live && !info.changedScene && previous.status === 'playing') startCelebration();
+      if (live && !info.changedScene && previous.status === 'playing' && !celebration) startCelebration();
       else if (!celebration) modal = 'win';
     }
     else if (game.status === 'paused' && (!modal || modal === 'online')) modal = 'pause';
@@ -256,6 +263,7 @@ function dispatch(action, quiet = false) {
   state = applyAction(state, 'local', action);
   if (action.type === 'switch') chime({ kind: 'switch' });
   if (state.level !== oldLevel || ['restart', 'level', 'next'].includes(action.type)) {
+    firstShoreSeen = false;
     seenEvent = state.eventSeq; sceneKey++; cameraReset++; shownHint = 0;
     history.reset(state);
   }
@@ -364,12 +372,15 @@ function startCelebration() {
   resetTouchState(); freezePreview = tapEffect = null;
   document.querySelector('#toast').classList.remove('show');
   const finale = state.level === levelCount - 1;
-  celebration = { start: performance.now(), duration: state.level === 0 ? 8200 : reduced ? 350 : finale ? 2500 : 1600, finale };
+  const tower = state.level === 0 && !firstShoreSeen;
+  if (tower) firstShoreSeen = true;
+  celebration = { start: performance.now(), duration: tower ? 8200 : reduced ? 350 : finale ? 2500 : 1600, finale, tower };
   modal = 'celebration'; syncStage(); renderModal();
 }
 function advanceStage(time) {
   if (celebration && time - celebration.start >= celebration.duration) {
-    celebration = null; modal = 'win'; syncStage(); renderModal();
+    celebration = null; modal = state.status === 'won' ? 'win' : null; syncStage(); renderModal();
+    if (!modal) canvas.focus({ preventScroll: true });
   }
   const fade = sceneFade;
   if (!fade) return;
@@ -848,6 +859,7 @@ function frame(time) {
   accumulator += Math.min(100, time - lastTime); lastTime = time;
   entrance.advance(time);
   advanceStage(time);
+  checkFirstShore();
   const step = 1000 / 60;
   if (!onlineMode && !modal && !stageBusy() && !rewind && state.status === 'playing') {
     while (accumulator >= step && !celebration) { previousTick = state; dispatch({ type: 'tick' }, true); history.record(state); accumulator -= step; }
@@ -882,7 +894,7 @@ function frame(time) {
   renderer.draw(displayState, time, {
     reduced, mode: touch ? 'coop' : 'solo', paused: worldPaused && !rewindInfo,
     sceneKey: outgoing?.sceneKey ?? sceneKey, cameraReset: outgoing?.cameraReset ?? cameraReset,
-    celebration: celebration && { progress: Math.max(0, Math.min(1, (time - celebration.start) / celebration.duration)), finale: celebration.finale },
+    celebration: celebration && { progress: Math.max(0, Math.min(1, (time - celebration.start) / celebration.duration)), finale: celebration.finale, tower: celebration.tower },
     target: aim ? aim.target : touch && viewActor === 0 ? null : targetFor(state, state.active)?.id,
     touch, tappable: !aim && touch && viewActor === 1 && displayState.status === 'playing' ? new Set(abilityTargets(displayState, viewActor).map(o => o.id)) : null,
     rewind: rewindInfo,

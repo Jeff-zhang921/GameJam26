@@ -484,7 +484,7 @@ export function createRenderer(canvas, S) {
     if (!options.paused && !options.reduced) visualTime += dt * 1000;
     const t = options.reduced ? 0 : visualTime;
     transform = camera.update(state, { width: frameWidth, height: frameHeight, dt, mode: options.mode, reduced: options.reduced, paused: options.paused, sceneKey: options.sceneKey, resetCamera: lastReset !== options.cameraReset, bottomInset: options.bottomInset || 0 });
-    const coda = state.level === 0 ? options.celebration : null;
+    const coda = state.level === 0 && options.celebration?.tower ? options.celebration : null;
     const codaProgress = coda?.progress ?? 0;
     if (coda && !options.reduced) {
       const focus = smooth(Math.min(1, Math.max(0, (codaProgress - .08) / .22))) * (1 - smooth(Math.min(1, Math.max(0, (codaProgress - .9) / .1))));
