@@ -603,7 +603,15 @@ canvas.addEventListener('pointermove', event => {
 canvas.addEventListener('pointerleave', () => { freezePreview = null; });
 window.addEventListener('blur', () => { clearInputs(); if (!onlineMode && !modal && state.status === 'playing') setModal('pause'); audioContext?.suspend(); });
 window.addEventListener('orientationchange', () => clearInputs());
-document.addEventListener('visibilitychange', () => { if (document.hidden) { clearInputs(); if (!onlineMode && !modal && state.status === 'playing') setModal('pause'); audioContext?.suspend(); } else if (onlineMode) network.wake(); });
+// A hidden tab stops drawing frames. A local rewind picks up where it left off; an online one follows the
+// server's clock, so it simply catches up (the server has already installed the start).
+let hiddenAt = null;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { hiddenAt = performance.now(); clearInputs(); if (!onlineMode && !modal && state.status === 'playing') setModal('pause'); audioContext?.suspend(); return; }
+  if (rewind && !rewind.online && hiddenAt !== null) rewind.start += performance.now() - hiddenAt;
+  hiddenAt = null;
+  if (onlineMode) network.wake();
+});
 window.addEventListener('pageshow', () => { if (onlineMode) network.wake(); });
 touchMedia.addEventListener('change', updateUI);
 window.__moonclock = {

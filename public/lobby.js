@@ -1,8 +1,8 @@
 import { drawCharacterPortrait } from './render.js';
 
 const characters = [
-  { id: 'still', name: 'Stillkeeper', label: 'STILL', ability: 'Freeze / Release', description: 'Hold a crate, plant or platform in time. Release it when the moment is right.' },
-  { id: 'bloom', name: 'Bloomkeeper', label: 'BLOOM', ability: 'Wake / Hasten', description: 'Wake an object, hasten it up to 3×, or release what Still has frozen.' },
+  { id: 'still', name: 'Stillkeeper', label: 'STILL', ability: 'Freeze Area', description: 'Cast a Freeze Area near you: crates, plants, platforms and creatures inside slow to a crawl until it fades.' },
+  { id: 'bloom', name: 'Bloomkeeper', label: 'BLOOM', ability: 'Wake / Hasten', description: 'Wake an object and hasten it up to 3×.' },
 ];
 
 export function createLobby(callbacks) {

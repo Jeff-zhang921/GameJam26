@@ -453,7 +453,7 @@ export function createRenderer(canvas, S) {
     if (state.status === 'playing' && selected) {
       const top = isEnemy(selected) ? enemyBox(selected).y - 26 : selected.kind === 'plant' ? selected.base - selected.height - 53 : selected.kind === 'mover' ? selected.y - 30 : selected.y - 62;
       const x = selected.kind === 'mover' ? selected.x + selected.w / 2 : selected.x;
-      const words = options.touch ? S.tapLabels : { freeze: S.targetFreeze, release: S.targetRelease, wake: S.targetWake, hasten: S.targetHasten, max: S.targetMax };
+      const words = options.touch ? S.tapLabels : { freeze: S.targetFreeze, wake: S.targetWake, hasten: S.targetHasten, max: S.targetMax };
       if (state.active === 0) label(x, top, words.freeze);
       else if (selected.speed >= meta.time.maxSpeed) label(x, top, words.max, muted);
       else label(x, top, selected.speed ? words.hasten : words.wake, gold);

@@ -473,10 +473,6 @@ export function exitStatus(state) {
   return { open, at, waiting: open && at.some(Boolean) && !at.every(Boolean) ? at.indexOf(false) : null };
 }
 
-// A courtyard is lost only when it is provably unwinnable. Crates and loose seeds always return to their
-// spawn, so the only resource that can run out is seeds: a planted seed becomes a flower that withers and
-// vanishes for good. Anything that could still help (a seed anywhere, a flower that can still grow or
-// spring, any flower at all for a ledge that needs one) keeps the courtyard alive.
 // Who is still on the low side of a gate that sits on a raised ledge (by position, not by what they stand on).
 function belowExit(state) {
   const ledge = state.platforms.find(f => state.exit.x >= f.x && state.exit.x <= f.x + f.w && Math.abs(f.y - state.exit.y) <= 2);
