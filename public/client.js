@@ -10,7 +10,12 @@ import { createLobby } from './lobby.js';
 import { createPWA } from './pwa.js';
 
 const music = createMusic();
+const menuMusic = createMusic({ url: '/audio/symbiosis.mp3', fullTrack: true, volume: .5 });
 const firstLevelMusic = createMusic({ url: '/audio/what-she-hasnt-seen.mp3', fullTrack: true, volume: .5 });
+const secondLevelMusic = createMusic({ url: '/audio/doubled-pawns.mp3', fullTrack: true, volume: .5 });
+const thirdLevelMusic = createMusic({ url: '/audio/death-knell-at-mount-rainier.mp3', fullTrack: true, volume: .5 });
+const fourthLevelMusic = createMusic({ url: '/audio/lord-of-dream.mp3', fullTrack: true, volume: .5 });
+const fifthLevelMusic = createMusic({ url: '/audio/behemoth.mp3', fullTrack: true, volume: .5 });
 const growthAudio = createGrowthAudio();
 const rewindAudio = createRewindAudio();
 const icons = {
@@ -216,7 +221,12 @@ function persist() {
 function toast(text) { const el = document.querySelector('#toast'); el.textContent = text; el.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 3400); }
 function initAudio() {
   music.unlock();
+  menuMusic.unlock();
   firstLevelMusic.unlock();
+  secondLevelMusic.unlock();
+  thirdLevelMusic.unlock();
+  fourthLevelMusic.unlock();
+  fifthLevelMusic.unlock();
  if (!audioContext && sound) { try { audioContext = new (window.AudioContext || window.webkitAudioContext)(); } catch { } } if (audioContext?.state === 'suspended' && sound) audioContext.resume(); }
 function chime(event) {
   if (event.kind === 'growth' || (['wake', 'grow'].includes(event.kind) && state.objects.some(o => o.id === event.target && o.kind === 'plant'))) return;
@@ -417,7 +427,7 @@ function renderModal() {
   let contents = '';
   const close = `<button class="iconbutton close" data-action="close" aria-label="${S.close}">${icon('close')}</button>`;
   if (modal === 'help') contents = `${close}<div class="intro-icon">${icon('help')}</div><h2>${S.helpTitle}</h2><p>${S.helpBody}</p><div class="help-grid">${(touchLayout() ? S.touchKeys : S.keys).map(([k, v]) => `${key(k)}<span>${v}</span>`).join('')}</div>${touchLayout() ? '' : `<p>${S.coopKeys}</p>`}<button class="primary" data-action="close">${S.continue}${icon('arrow')}</button>`;
-  if (modal === 'settings') contents = `${close}<div class="intro-icon">${icon('settings')}</div><h2>${S.settings}</h2><p class="music-credit">Chamber 01 · 她未曾见过的 (What She Hasn’t Seen) · The 1999<br>Full track · looped<br><br>Menu / other chambers · Gymnopédie No. 1 · Erik Satie<br>Performed by <a href="https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100787" target="_blank" rel="noopener">Kevin MacLeod</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a><br>Excerpt 0:00–0:50; fades applied.</p><div class="settings-row"><span>${S.sound}</span><button class="toggle" role="switch" aria-checked="${sound}" data-action="sound" aria-label="${S.sound}" data-testid="setting-sound"></button></div><div class="settings-row"><span>${S.motion}</span><button class="toggle" role="switch" aria-checked="${reduced}" data-action="motion" aria-label="${S.motion}" data-testid="setting-motion"></button></div><div class="settings-row"><span>${S.touchControls}</span><button class="toggle" role="switch" aria-checked="${touchControls}" data-action="touch-controls" aria-label="${S.touchControls}" data-testid="setting-touch"></button></div><div class="mode-selector"><button data-mode="solo" class="${mode === 'solo' ? 'selected' : ''}">${S.solo}</button><button data-mode="coop" class="${mode === 'coop' ? 'selected' : ''}">${S.coop}</button></div><button class="primary" data-action="close">${S.continue}${icon('arrow')}</button>`;
+  if (modal === 'settings') contents = `${close}<div class="intro-icon">${icon('settings')}</div><h2>${S.settings}</h2><p class="music-credit">Menu / Pause · 共生 (Symbiosis) · The 1999<br>Full track · looped<br><br>Chamber 01 · 她未曾见过的 (What She Hasn’t Seen) · The 1999<br>Full track · looped<br><br>Chamber 02 · 叠子对望 (Doubled Pawns) · The 1999<br>Full track · looped<br><br>Chamber 03 · 瑞尼尔雪山的丧钟 · The 1999<br>Full track · looped<br><br>Chamber 04 · 梦境之主 (Lord of Dream) · The 1999<br>Full track · looped<br><br>Chamber 05 · 贝希摩斯 (Behemoth) · The 1999<br>Full track · looped<br><br>Other chambers · Gymnopédie No. 1 · Erik Satie<br>Performed by <a href="https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100787" target="_blank" rel="noopener">Kevin MacLeod</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a><br>Excerpt 0:00–0:50; fades applied.</p><div class="settings-row"><span>${S.sound}</span><button class="toggle" role="switch" aria-checked="${sound}" data-action="sound" aria-label="${S.sound}" data-testid="setting-sound"></button></div><div class="settings-row"><span>${S.motion}</span><button class="toggle" role="switch" aria-checked="${reduced}" data-action="motion" aria-label="${S.motion}" data-testid="setting-motion"></button></div><div class="settings-row"><span>${S.touchControls}</span><button class="toggle" role="switch" aria-checked="${touchControls}" data-action="touch-controls" aria-label="${S.touchControls}" data-testid="setting-touch"></button></div><div class="mode-selector"><button data-mode="solo" class="${mode === 'solo' ? 'selected' : ''}">${S.solo}</button><button data-mode="coop" class="${mode === 'coop' ? 'selected' : ''}">${S.coop}</button></div><button class="primary" data-action="close">${S.continue}${icon('arrow')}</button>`;
   if (modal === 'pause') {
     const lockLevels = onlineMode && !network.host;
     const chapters = `<div class="pause-levels"><div class="goal-heading">${icon('arrow')}<span>${S.chooseLevel}</span></div><nav class="pause-chapters" aria-label="${S.chapters}">${Array.from({ length: levelCount }, (_, i) => `<button class="chapter-button ${i < state.unlocked ? 'done' : ''}" data-level="${i}" data-testid="level-${i}" aria-label="${S.levels[i].name}" title="${S.levels[i].name}" ${i === state.level ? 'aria-current="step"' : ''} ${lockLevels ? 'disabled' : ''}><span>${String(i + 1).padStart(2, '0')}</span></button>`).join('')}</nav></div>`;
@@ -462,8 +472,8 @@ function renderModal() {
 // Unlock entry music on the first gesture, including clicks on the backdrop.
 function unlockEntryMusic() {
   if (modal === 'intro' && sound) {
-    music.sync(!document.hidden);
-    music.unlock();
+    menuMusic.sync(!document.hidden);
+    menuMusic.unlock();
   }
 }
 document.addEventListener('pointerdown', unlockEntryMusic, { capture: true });
@@ -748,10 +758,15 @@ function blendTicks(a, b, t) {
   };
 }
 function frame(time) {
-  const musicEnabled = sound && !document.hidden && (modal === 'intro' || stageBusy() || !modal || modal === 'win');
-  const firstLevel = state.level === 0 && modal !== 'intro';
-  music.sync(musicEnabled && !firstLevel);
-  firstLevelMusic.sync(musicEnabled && firstLevel);
+  const menuScreen = ['intro', 'pause', 'settings', 'help', 'confirm-restart', 'confirm-level'].includes(modal);
+  const musicEnabled = sound && !document.hidden && (menuScreen || stageBusy() || !modal || modal === 'win');
+  menuMusic.sync(musicEnabled && menuScreen);
+  music.sync(musicEnabled && !menuScreen && state.level > 4);
+  firstLevelMusic.sync(musicEnabled && !menuScreen && state.level === 0);
+  secondLevelMusic.sync(musicEnabled && !menuScreen && state.level === 1);
+  thirdLevelMusic.sync(musicEnabled && !menuScreen && state.level === 2);
+  fourthLevelMusic.sync(musicEnabled && !menuScreen && state.level === 3);
+  fifthLevelMusic.sync(musicEnabled && !menuScreen && state.level === 4);
   const growthEnabled = sound && !document.hidden && document.hasFocus() && !rewind && state.status === 'playing' && !modal && (!onlineMode || (network.connected && !network.room?.suspended));
   growthAudio.sync(audioContext, growthEnabled ? state.objects.filter(o => o.kind === 'plant' && o.speed > 0 && o.age < meta.plant.growTicks && !o.withered).map(o => ({ id: o.id, rate: o.speed * (o.frozen ? meta.time.frozenRate : 1) })) : []);
   pwa.refresh();
@@ -810,8 +825,8 @@ function frame(time) {
 updateUI(); renderModal();
 // Try immediately; trusted gestures remain a fallback for autoplay restrictions.
 if (sound) {
-  music.sync(!document.hidden);
-  music.unlock();
+  menuMusic.sync(!document.hidden);
+  menuMusic.unlock();
 }
 requestAnimationFrame(frame);
 if (network.restore()) enterOnline();
