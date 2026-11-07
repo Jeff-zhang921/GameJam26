@@ -1,58 +1,83 @@
 export const meta = {
   name: 'CLOCKBLOOM', minPlayers: 1, maxPlayers: 2, tickRate: 60,
-  controls: { speed: 4.2, jump: -12.5, gravity: 0.48, coyote: 7, jumpBuffer: 7, range: 420 },
+  controls: { speed: 4.2, jump: -12.5, springJump: -15.3, gravity: 0.48, coyote: 7, jumpBuffer: 7, range: 420, reach: 95, pitReach: 50 },
+  time: { stageTicks: 480, moverSpeed: 1, maxGear: 3, rewinds: 3, hintTicks: 90 * 60 },
 };
+
+export const STAGES = ['seed', 'sprout', 'sapling', 'grown', 'withered'];
+const HEIGHTS = [6, 30, 80, 235, 200];
+const CANOPY = [0, 60, 110, 138, 50];
+const STILL = 0, BLOOM = 1;
 
 const LEVELS = [
   {
-    id: 'stillwater', floor: 520,
+    id: 'stillwater',
     platforms: [{ x: 0, y: 520, w: 435, h: 160 }, { x: 795, y: 430, w: 485, h: 220 }],
     spawn: [{ x: 180, y: 520 }, { x: 250, y: 520 }],
-    crates: [{ x: 350, y: 493 }], trees: [], plates: [], exit: { x: 1160, y: 430 },
-    shards: [{ x: 620, y: 300 }], need: ['frozenTouched'],
+    crates: [{ x: 350, y: 493 }], seeds: [], pits: [], plants: [], movers: [],
+    exit: { x: 1160, y: 430 }, shards: [{ x: 620, y: 300 }], need: ['frozenTouched'],
   },
   {
-    id: 'rootrise', floor: 540,
+    id: 'rootrise',
     platforms: [{ x: 0, y: 540, w: 1280, h: 120 }, { x: 760, y: 290, w: 520, h: 360 }],
     spawn: [{ x: 195, y: 540 }, { x: 270, y: 540 }],
-    crates: [], trees: [{ x: 540, base: 540, age: 0, barrier: false }], plates: [],
-    exit: { x: 1160, y: 290 }, shards: [{ x: 580, y: 240 }], need: ['treeLifted'],
+    crates: [], seeds: [{ x: 90, y: 530 }, { x: 380, y: 530 }], pits: [{ x: 600, y: 540 }], plants: [], movers: [],
+    exit: { x: 1160, y: 290 }, shards: [{ x: 600, y: 250 }], need: ['treeLifted'],
   },
   {
-    id: 'afterfall', floor: 520,
-    platforms: [{ x: 0, y: 520, w: 1280, h: 140 }],
+    id: 'afterbloom',
+    platforms: [{ x: 0, y: 520, w: 1280, h: 140 }, { x: 1000, y: 265, w: 280, h: 400 }],
     spawn: [{ x: 190, y: 520 }, { x: 265, y: 520 }],
-    crates: [{ x: 400, y: 493 }], trees: [{ x: 660, base: 520, age: 2, barrier: true }], plates: [],
-    exit: { x: 1160, y: 520 }, shards: [{ x: 665, y: 255 }], need: ['decayed'],
+    crates: [], seeds: [{ x: 330, y: 510 }], pits: [{ x: 600, y: 520 }, { x: 880, y: 520 }],
+    plants: [{ pit: 0, stage: 3, barrier: true }], movers: [],
+    exit: { x: 1160, y: 265 }, shards: [{ x: 880, y: 300 }], need: ['withered', 'sproutJump'],
   },
   {
-    id: 'yesterday', floor: 520,
-    platforms: [{ x: 0, y: 520, w: 560, h: 160 }, { x: 850, y: 390, w: 430, h: 260 }],
-    spawn: [{ x: 335, y: 520 }, { x: 240, y: 520 }],
-    crates: [{ x: 390, y: 493 }], trees: [{ x: 475, base: 520, age: 0, barrier: false }],
-    plates: [{ x: 240, y: 520, w: 80 }], exit: { x: 1160, y: 390 },
-    shards: [{ x: 740, y: 225 }], need: ['treeLifted', 'frozenTouched', 'echoPlate'],
+    id: 'withtime',
+    platforms: [{ x: 0, y: 520, w: 520, h: 160 }, { x: 1040, y: 300, w: 240, h: 400 }],
+    spawn: [{ x: 250, y: 520 }, { x: 170, y: 520 }],
+    crates: [{ x: 300, y: 493 }], seeds: [{ x: 110, y: 510 }, { x: 150, y: 510 }, { x: 480, y: 510 }],
+    pits: [{ x: 400, y: 520 }, { x: 60, y: 520 }], plants: [],
+    movers: [{ x1: 540, x2: 640, y: 290, w: 120 }],
+    exit: { x: 1160, y: 300 }, shards: [{ x: 400, y: 240 }], need: ['treeLifted', 'moverRide', 'frozenTouched'],
   },
 ];
 
-const HEIGHTS = [24, 95, 170, 235, 12];
 const clone = value => JSON.parse(JSON.stringify(value));
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const rectOverlap = (a, b) => a.x + a.w > b.x && a.x < b.x + b.w && a.y + a.h > b.y && a.y < b.y + b.h;
+const find = (state, id) => state.objects.find(o => o.id === id);
+const free = o => o.held === undefined || o.held === null;
+
+export function anchor(o) {
+  if (o.kind === 'plant') return { x: o.x, y: o.base - o.height / 2 };
+  if (o.kind === 'mover') return { x: o.x + o.w / 2, y: o.y + 10 };
+  return { x: o.x, y: o.y };
+}
+
+function makePlant(id, pit, stage = 0, barrier = false) {
+  pit.plant = id;
+  return { kind: 'plant', id, pit: pit.id, x: pit.x, base: pit.y, stage, progress: 0, speed: 0, frozen: false, height: HEIGHTS[stage], barrier };
+}
 
 function makeLevel(index, players, unlocked, totalShards, collected = [false, false, false, false]) {
   const level = LEVELS[index];
+  const pits = level.pits.map((p, i) => ({ id: `pit-${i}`, x: p.x, y: p.y, plant: null }));
+  const objects = [
+    ...level.crates.map((p, i) => ({ kind: 'crate', id: `crate-${i}`, x: p.x, y: p.y, vx: 0, vy: 0, frozen: false, held: null, spawnX: p.x, spawnY: p.y })),
+    ...level.seeds.map((p, i) => ({ kind: 'seed', id: `seed-${i}`, x: p.x, y: p.y, vx: 0, vy: 0, held: null, spawnX: p.x, spawnY: p.y })),
+    ...level.movers.map((p, i) => ({ kind: 'mover', id: `mover-${i}`, x: p.x1, y: p.y, w: p.w, x1: p.x1, x2: p.x2, dir: 1, speed: 0, frozen: false })),
+    ...level.plants.map((p, i) => makePlant(`plant-${i}`, pits[p.pit], p.stage, p.barrier)),
+  ];
   return {
     level: index, levelId: level.id, unlocked, totalShards, collected: clone(collected), tick: 0, status: 'playing', active: 0,
     playerIds: players, width: 1280, height: 640,
     actors: level.spawn.map((p, i) => ({ id: i, x: p.x, y: p.y, vx: 0, vy: 0, facing: 1, grounded: true, on: 'ground', coyote: 7, jumpBuffer: 0, move: 0, carrying: null, spawnX: p.x, spawnY: p.y })),
-    platforms: clone(level.platforms),
-    crates: level.crates.map((p, i) => ({ id: `crate-${i}`, x: p.x, y: p.y, vx: 0, vy: 0, frozen: false, held: null, w: 54, h: 54, spawnX: p.x, spawnY: p.y })),
-    trees: level.trees.map((p, i) => ({ id: `tree-${i}`, x: p.x, base: p.base, y: p.base - HEIGHTS[p.age], age: p.age, height: HEIGHTS[p.age], barrier: p.barrier, frozen: false })),
-    plates: level.plates.map((p, i) => ({ ...p, id: `plate-${i}`, lit: false })),
+    platforms: clone(level.platforms), objects, pits, nextPlant: level.plants.length,
     exit: clone(level.exit), shards: level.shards.map((p, i) => ({ ...p, id: i, taken: false })),
-    echoes: [], flags: { frozenTouched: false, treeLifted: false, decayed: false, echoPlate: false },
-    needs: clone(level.need), events: [], eventSeq: 0, history: [], rewinds: 0, falls: 0,
+    flags: { frozenTouched: false, treeLifted: false, withered: false, sproutJump: false, moverRide: false },
+    needs: clone(level.need), needsDone: 0, events: [], eventSeq: 0, history: [], rewindsLeft: meta.time.rewinds,
+    started: false, elapsed: 0, lastProgressTick: 0, falls: 0,
   };
 }
 
@@ -67,13 +92,18 @@ function actorAllowed(state, playerId, actor) {
   return index >= 0 && (state.playerIds.length === 1 || actor === index);
 }
 
-function targetFor(state, actor, action) {
+export function targetFor(state, actor, action = {}) {
   const p = state.actors[actor];
-  const source = actor === 0 ? state.crates.filter(c => c.held === null) : state.trees;
-  const candidates = source.filter(o => dist(p, { x: o.x, y: o.base ?? o.y }) <= meta.controls.range);
+  const kinds = actor === STILL ? ['plant', 'mover', 'crate'] : ['plant', 'mover'];
+  const candidates = state.objects.filter(o => kinds.includes(o.kind) && free(o) && dist(p, anchor(o)) <= meta.controls.range);
   if (action.target) return candidates.find(o => o.id === action.target);
-  candidates.sort((a, b) => dist(p, { x: a.x, y: a.base ?? a.y }) - dist(p, { x: b.x, y: b.base ?? b.y }));
-  return candidates[0];
+  const sorted = candidates.sort((a, b) => dist(p, anchor(a)) - dist(p, anchor(b)));
+  return actor === STILL ? sorted[0] : sorted.find(o => !o.frozen && !(o.kind === 'mover' && o.speed >= meta.time.maxGear)) || sorted[0];
+}
+
+function pickable(state, p) {
+  return state.objects.filter(o => (o.kind === 'crate' || o.kind === 'seed') && o.held === null && dist(p, o) < meta.controls.reach)
+    .sort((a, b) => dist(p, a) - dist(p, b));
 }
 
 export function validateAction(state, playerId, action) {
@@ -84,24 +114,25 @@ export function validateAction(state, playerId, action) {
     if (action.type === 'tick' && playerId !== state.playerIds[0]) return no('host');
     if (action.type === 'next' && state.status !== 'won') return no('unfinished');
     if (action.type === 'level' && (!Number.isInteger(action.level) || action.level < 0 || action.level > state.unlocked || action.level > 3)) return no('locked');
+    if (action.type === 'rewind' && state.status !== 'playing') return no('paused');
+    if (action.type === 'rewind' && state.rewindsLeft <= 0) return no('noRewinds');
     if (action.type === 'rewind' && !state.history.length) return no('history');
     return { valid: true };
   }
   if (state.status !== 'playing') return no('paused');
   if (!Number.isInteger(action.actor) || action.actor < 0 || action.actor > 1 || !actorAllowed(state, playerId, action.actor)) return no('role');
   if (action.type === 'move') return [-1, 0, 1].includes(action.dir) ? { valid: true } : no('invalid');
-  if (['jump', 'echo'].includes(action.type)) return { valid: true };
+  if (action.type === 'jump') return { valid: true };
   if (action.type === 'grab') {
     const p = state.actors[action.actor];
-    if (p.carrying !== null || state.crates.some(c => c.held === null && dist(p, c) < 95)) return { valid: true };
-    return no('crateRange');
+    return p.carrying !== null || pickable(state, p).length ? { valid: true } : no('grabRange');
   }
   if (action.type === 'ability') {
     if (action.target !== undefined && typeof action.target !== 'string') return no('invalid');
-    if (action.reverse !== undefined && typeof action.reverse !== 'boolean') return no('invalid');
     const target = targetFor(state, action.actor, action);
-    if (!target) return no(action.actor === 0 ? 'freezeRange' : 'treeRange');
-    if (action.actor === 1 && ((target.age === 4 && !action.reverse) || (target.age === 0 && action.reverse))) return no('treeEnd');
+    if (!target) return no(action.actor === STILL ? 'freezeRange' : 'bloomRange');
+    if (action.actor === BLOOM && target.frozen) return no('heldByStill');
+    if (action.actor === BLOOM && target.kind === 'mover' && target.speed >= meta.time.maxGear) return no('moverMax');
     return { valid: true };
   }
   return no('invalid');
@@ -112,64 +143,96 @@ function event(state, kind, x, y) {
   if (state.events.length > 10) state.events.shift();
 }
 
+function advance(state, plant) {
+  plant.stage++; plant.progress = 0;
+  if (plant.barrier && plant.stage >= 4) state.flags.withered = true;
+  if (plant.stage >= STAGES.length) {
+    state.objects = state.objects.filter(o => o !== plant);
+    state.pits.find(p => p.id === plant.pit).plant = null;
+    event(state, 'vanish', plant.x, plant.base - plant.height);
+  } else event(state, 'grow', plant.x, plant.base - plant.height);
+}
+
 function surfaces(state) {
   const result = state.platforms.map((p, i) => ({ ...p, id: `platform-${i}` }));
-  for (const c of state.crates) if (c.held === null) result.push({ id: c.id, x: c.x - 27, y: c.y - 27, w: 54, h: 54 });
-  for (const t of state.trees) if (t.age < 4) result.push({ id: t.id, x: t.x - 69, y: t.base - t.height, w: 138, h: 16 });
+  for (const o of state.objects) {
+    if (o.kind === 'crate' && o.held === null) result.push({ id: o.id, x: o.x - 27, y: o.y - 27, w: 54, h: 54 });
+    if (o.kind === 'mover') result.push({ id: o.id, x: o.x, y: o.y, w: o.w, h: 20 });
+    if (o.kind === 'plant' && o.stage > 0) result.push({ id: o.id, x: o.x - CANOPY[o.stage] / 2, y: o.base - o.height, w: CANOPY[o.stage], h: 16, spring: o.stage === 1 });
+  }
   return result;
 }
 
 function remember(state) {
   if (state.tick % 10 !== 0) return;
-  state.history.push({ actors: clone(state.actors), crates: clone(state.crates), trees: clone(state.trees), echoes: clone(state.echoes), flags: clone(state.flags), shards: clone(state.shards), tick: state.tick });
+  state.history.push({ objects: clone(state.objects), pits: clone(state.pits), tick: state.tick });
   if (state.history.length > 19) state.history.shift();
 }
 
-function tick(state) {
-  remember(state);
-  state.tick++;
-  for (const tree of state.trees) {
-    const target = HEIGHTS[tree.age];
-    const before = tree.height;
-    if (!tree.frozen) tree.height += Math.sign(target - tree.height) * Math.min(Math.abs(target - tree.height), 2.2);
-    const rise = tree.height - before;
-    tree.y = tree.base - tree.height;
-    for (const p of state.actors) if (p.on === tree.id && p.grounded && rise !== 0) {
-      p.y -= rise;
-      if (rise > 0.1) state.flags.treeLifted = true;
+function ageObjects(state) {
+  for (const o of [...state.objects]) {
+    if (o.kind === 'plant') {
+      if (!o.frozen && o.speed > 0) {
+        o.progress += o.speed / meta.time.stageTicks;
+        if (o.progress >= 1 - 1e-9) advance(state, o);
+        if (!state.objects.includes(o)) continue;
+      }
+      const before = o.height;
+      if (!o.frozen) o.height += Math.sign(HEIGHTS[o.stage] - o.height) * Math.min(Math.abs(HEIGHTS[o.stage] - o.height), 2.2);
+      const rise = o.height - before;
+      if (rise) for (const p of state.actors) if (p.on === o.id && p.grounded) {
+        p.y -= rise;
+        if (rise > 0.1) state.flags.treeLifted = true;
+      }
+    }
+    if (o.kind === 'mover' && !o.frozen && o.speed > 0) {
+      const before = o.x;
+      o.x += o.dir * o.speed * meta.time.moverSpeed;
+      if (o.x >= o.x2) { o.x = o.x2; o.dir = -1; } else if (o.x <= o.x1) { o.x = o.x1; o.dir = 1; }
+      const dx = o.x - before;
+      for (const p of state.actors) if (p.on === o.id && p.grounded && dx) { p.x += dx; state.flags.moverRide = true; }
     }
   }
-  for (const c of state.crates) {
-    if (c.held !== null) {
-      const p = state.actors[c.held];
-      c.x = p.x + p.facing * 37; c.y = p.y - 53; c.vx = 0; c.vy = 0;
+}
+
+function moveItems(state) {
+  const all = surfaces(state);
+  for (const o of state.objects) {
+    if (o.kind !== 'crate' && o.kind !== 'seed') continue;
+    const crate = o.kind === 'crate', half = crate ? 27 : 10;
+    if (o.held !== null) {
+      const p = state.actors[o.held];
+      o.x = p.x + p.facing * (crate ? 37 : 22); o.y = p.y - (crate ? 53 : 40); o.vx = 0; o.vy = 0;
       continue;
     }
-    if (c.frozen) continue;
-    const previous = c.y + 27;
-    c.vy += 0.3; c.x += c.vx; c.y += c.vy;
-    for (const f of state.platforms) if (c.vy >= 0 && previous <= f.y + 1 && c.y + 27 >= f.y && c.x + 27 > f.x && c.x - 27 < f.x + f.w) {
-      c.y = f.y - 27; c.vy = 0; c.vx *= 0.88;
+    if (o.frozen) continue;
+    const previous = o.y + half;
+    o.vy += 0.3; o.x += o.vx; o.y += o.vy;
+    for (const f of all) if (f.id !== o.id) if (o.vy >= 0 && previous <= f.y + 3 && o.y + half >= f.y && o.x + half > f.x && o.x - half < f.x + f.w) {
+      o.y = f.y - half; o.vy = 0; o.vx *= 0.88;
     }
-    if (c.y > 720 || c.x < 20 || c.x > 1260) { c.x = c.spawnX; c.y = c.spawnY; c.vx = 0; c.vy = 0; event(state, 'return', c.x, c.y); }
+    if (o.y > 720 || o.x < 20 || o.x > 1260) { o.x = o.spawnX; o.y = o.spawnY; o.vx = 0; o.vy = 0; event(state, 'return', o.x, o.y); }
   }
+}
+
+function moveActors(state) {
   const solid = surfaces(state);
   for (const p of state.actors) {
     if (p.grounded) p.coyote = meta.controls.coyote; else p.coyote--;
     if (p.jumpBuffer > 0) p.jumpBuffer--;
-    if (p.jumpBuffer > 0 && p.coyote > 0) { p.vy = meta.controls.jump; p.grounded = false; p.coyote = 0; p.jumpBuffer = 0; event(state, 'jump', p.x, p.y); }
+    if (p.jumpBuffer > 0 && p.coyote > 0) {
+      const spring = p.grounded && solid.find(f => f.id === p.on)?.spring;
+      p.vy = spring ? meta.controls.springJump : meta.controls.jump; p.grounded = false; p.coyote = 0; p.jumpBuffer = 0;
+      if (spring) state.flags.sproutJump = true;
+      event(state, 'jump', p.x, p.y);
+    }
     p.vx = p.move * meta.controls.speed;
     if (p.move) p.facing = p.move;
     const oldX = p.x;
     p.x = Math.max(22, Math.min(1258, p.x + p.vx));
-    for (const f of state.platforms) {
-      const body = { x: p.x - 15, y: p.y - 52, w: 30, h: 51 };
-      if (rectOverlap(body, f) && p.y > f.y + 9) p.x = oldX;
-    }
-    for (const tree of state.trees) if (tree.barrier && tree.age < 4) {
-      const body = { x: p.x - 15, y: p.y - 52, w: 30, h: 51 };
-      if (rectOverlap(body, { x: tree.x - 42, y: tree.base - tree.height, w: 84, h: tree.height })) p.x = oldX;
-    }
+    const body = () => ({ x: p.x - 15, y: p.y - 52, w: 30, h: 51 });
+    for (const f of state.platforms) if (rectOverlap(body(), f) && p.y > f.y + 9) p.x = oldX;
+    for (const o of state.objects) if (o.kind === 'plant' && o.barrier && o.stage < 4 && rectOverlap(body(), { x: o.x - 42, y: o.base - o.height, w: 84, h: o.height })) p.x = oldX;
     const previousY = p.y;
     p.vy += meta.controls.gravity;
     p.y += p.vy;
@@ -178,8 +241,8 @@ function tick(state) {
       if (f.id === p.carrying) continue;
       if (p.vy >= 0 && previousY <= f.y + 5 && p.y >= f.y && p.x + 15 > f.x && p.x - 15 < f.x + f.w) {
         p.y = f.y; p.vy = 0; p.grounded = true; p.on = f.id;
-        const crate = state.crates.find(c => c.id === f.id);
-        if (crate?.frozen) state.flags.frozenTouched = true;
+        const o = find(state, f.id);
+        if (o?.kind === 'crate' && o.frozen) state.flags.frozenTouched = true;
       }
     }
     if (p.y > 710) {
@@ -190,13 +253,18 @@ function tick(state) {
       shard.taken = true; event(state, 'shard', shard.x, shard.y);
     }
   }
-  for (const plate of state.plates) {
-    const occupants = [...state.actors, ...state.echoes];
-    plate.lit = occupants.some(p => Math.abs(p.x - plate.x) < plate.w / 2 + 12 && Math.abs(p.y - plate.y) < 14);
-    if (state.echoes.some(p => Math.abs(p.x - plate.x) < plate.w / 2 + 12 && Math.abs(p.y - plate.y) < 14)) state.flags.echoPlate = true;
-  }
-  const ready = state.needs.every(key => state.flags[key]) && state.plates.every(p => p.lit);
-  if (ready && state.actors.some(p => Math.abs(p.x - state.exit.x) < 46 && Math.abs(p.y - state.exit.y) < 55)) {
+}
+
+function tick(state) {
+  remember(state);
+  state.tick++;
+  if (state.started) state.elapsed++;
+  ageObjects(state);
+  moveItems(state);
+  moveActors(state);
+  const done = state.needs.filter(key => state.flags[key]).length;
+  if (done > state.needsDone) { state.needsDone = done; state.lastProgressTick = state.elapsed; }
+  if (done === state.needs.length && state.actors.some(p => Math.abs(p.x - state.exit.x) < 46 && Math.abs(p.y - state.exit.y) < 55)) {
     state.status = 'won'; state.unlocked = Math.max(state.unlocked, Math.min(3, state.level + 1));
     if (state.shards.some(s => s.taken)) state.collected[state.level] = true;
     state.totalShards = state.collected.filter(Boolean).length;
@@ -216,36 +284,54 @@ export function applyAction(state, playerId, action) {
   if (action.type === 'switch') { s.active = 1 - s.active; return s; }
   if (action.type === 'rewind') {
     const frame = s.history[0];
-    Object.assign(s, clone(frame)); s.history = []; s.status = 'playing'; s.rewinds++;
-    for (const p of s.actors) p.move = 0;
+    s.objects = clone(frame.objects); s.pits = clone(frame.pits); s.history = []; s.rewindsLeft--;
+    for (const p of s.actors) { p.carrying = null; p.move = 0; }
+    for (const o of s.objects) if (!free(o)) {
+      const p = s.actors[o.held];
+      o.held = null; o.x = p.x + p.facing * 30; o.y = p.y - (o.kind === 'crate' ? 27 : 10); o.vx = 0; o.vy = 0;
+    }
     event(s, 'rewind', s.actors[s.active].x, s.actors[s.active].y - 30);
     return s;
   }
   const p = s.actors[action.actor];
+  if (action.type === 'jump' || action.type === 'grab' || action.type === 'ability' || (action.type === 'move' && action.dir !== 0)) s.started = true;
   if (action.type === 'move') p.move = action.dir;
   if (action.type === 'jump') p.jumpBuffer = meta.controls.jumpBuffer;
   if (action.type === 'grab') {
     if (p.carrying !== null) {
-      const c = s.crates.find(c => c.id === p.carrying);
-      c.held = null; c.frozen = false; c.x = p.x + p.facing * 48; c.y = p.y - 48; c.vx = p.facing * 6.8; c.vy = -6;
-      p.carrying = null; event(s, 'throw', c.x, c.y);
+      const o = find(s, p.carrying);
+      p.carrying = null; o.held = null;
+      if (o.kind === 'crate') {
+        o.frozen = false; o.x = p.x + p.facing * 48; o.y = p.y - 48; o.vx = p.facing * 6.8; o.vy = -6;
+        event(s, 'throw', o.x, o.y);
+      } else {
+        const pit = s.pits.filter(t => t.plant === null && Math.abs(t.x - p.x) <= meta.controls.pitReach && Math.abs(t.y - p.y) <= 30)
+          .sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0];
+        if (pit) {
+          s.objects = s.objects.filter(x => x !== o);
+          s.objects.push(makePlant(`plant-${s.nextPlant++}`, pit));
+          event(s, 'plant', pit.x, pit.y - 10);
+        } else {
+          o.x = p.x + p.facing * 22; o.y = p.y - 10; o.vx = 0; o.vy = 0;
+          event(s, 'drop', o.x, o.y);
+        }
+      }
     } else {
-      const c = s.crates.filter(c => c.held === null && dist(p, c) < 95).sort((a, b) => dist(p, a) - dist(p, b))[0];
-      c.held = action.actor; c.frozen = false; p.carrying = c.id; event(s, 'grab', c.x, c.y);
+      const o = pickable(s, p)[0];
+      o.held = action.actor; if (o.kind === 'crate') o.frozen = false; p.carrying = o.id;
+      event(s, 'grab', o.x, o.y);
     }
   }
   if (action.type === 'ability') {
-    const target = targetFor(s, action.actor, action);
-    if (action.actor === 0) { target.frozen = !target.frozen; event(s, target.frozen ? 'freeze' : 'unfreeze', target.x, target.y); }
-    else { target.age += action.reverse ? -1 : 1; if (target.age === 4) s.flags.decayed = true; event(s, action.reverse ? 'regrow' : 'grow', target.x, target.base - target.height); }
-  }
-  if (action.type === 'echo') {
-    s.echoes = s.echoes.filter(e => e.actor !== action.actor);
-    s.echoes.push({ actor: action.actor, x: p.x, y: p.y, facing: p.facing, tick: s.tick });
-    event(s, 'echo', p.x, p.y - 25);
+    const o = targetFor(s, action.actor, action);
+    if (action.actor === STILL) { o.frozen = !o.frozen; event(s, o.frozen ? 'freeze' : 'unfreeze', anchor(o).x, anchor(o).y); }
+    else if (o.kind === 'mover') { o.speed++; event(s, 'grow', anchor(o).x, o.y); }
+    else if (o.speed === 0) { o.speed = 1; event(s, 'wake', o.x, o.base - o.height); }
+    else advance(s, o);
   }
   return s;
 }
 
+export function hintLevel(state) { return state.elapsed - state.lastProgressTick >= meta.time.hintTicks ? 1 : 0; }
 export function isGameOver(state) { return state.status === 'won' ? { winner: 'together', level: state.level, complete: state.level === 3 } : null; }
 export function viewFor(state, playerId) { return state.playerIds.includes(playerId) ? clone(state) : null; }
