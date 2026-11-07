@@ -9,7 +9,8 @@ import { LEVELS } from '../src/levels/index.js';
 // of `emblem` (alternately mirrored), then `right`; with no `emblem` the middle is all `fillR` tiles. fill: a texture that tiles both ways, drawn at `scale`.
 export const GROUNDS = {
   bridge: {
-    surface: { src: '/sprites/bridge.png', y: 24, height: 132, walk: 4, scale: .45, left: [64, 220], right: [1545, 1712], fillL: [250, 800], emblem: [800, 975], fillR: [975, 1525] },
+    kind: 'bridge',
+    surface: { src: '/sprites/bridge-arches.png', x: 35, y: 16, width: 2103, height: 708, walk: 72 },
     fill: { src: '/sprites/ground-fill.png', scale: .6 },
   },
   mossy: {
