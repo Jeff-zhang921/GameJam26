@@ -58,8 +58,10 @@ body.reduced-motion .results-reveal { animation: results-reveal 140ms ease-out b
 .online-entrance { position: fixed; inset: 0; z-index: 55; overflow: hidden; pointer-events: auto; contain: layout paint; will-change: opacity; }
 .online-entrance[hidden], .entrance-fallback[hidden] { display: none; }
 .entrance-camera { position: absolute; transform-origin: 0 0; will-change: transform; }
-.entrance-scene { display: block; width: 100%; height: 100%; overflow: visible; }
-.entrance-door { will-change: transform; }
+.entrance-camera::after { content: ''; position: absolute; top: 100%; left: 0; width: 100%; height: 32%; background: #0a202b; }
+.entrance-scene { display: block; width: 100%; height: 100%; transform: translateZ(0); }
+.entrance-door { position: absolute; display: block; transform-origin: 0 0; will-change: transform; }
+.entrance-door-right { transform-origin: 100% 0; }
 .entrance-shade { position: absolute; inset: 0; background: linear-gradient(90deg, #081923 0%, #081923ed 21%, #08192378 46%, transparent 72%); pointer-events: none; }
 .entrance-fallback { position: absolute; inset: 0; background: #0a202b url('/art/moonlit-conservatory.svg') 68% center / cover no-repeat; }
 .online-entering #online-root { opacity: var(--entrance-lobby-opacity, 1); visibility: var(--entrance-lobby-visibility, visible); pointer-events: none; }

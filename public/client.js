@@ -204,6 +204,7 @@ const lobby = createLobby({
 const entrance = createEntrance({
   reduced: () => reduced,
   onStart() {
+    entranceDrawAt = null;
     resetTouchState(); freezePreview = tapEffect = null;
     lobby.setEntering(true); syncStage();
   },
@@ -965,6 +966,7 @@ function blendTicks(a, b, t) {
 // The title screen and the pause / settings / help menus have their own music.
 const menuScreen = () => ['intro', 'pause', 'settings', 'help', 'confirm-restart', 'confirm-level'].includes(modal);
 const currentTrack = () => menuScreen() ? MENU_MUSIC : themeFor(state.level).music;
+let entranceDrawAt = null;
 function frame(time) {
   const musicEnabled = sound && !document.hidden && (menuScreen() || stageBusy() || !modal || modal === 'win');
   music.select(currentTrack()); music.sync(musicEnabled);
@@ -1007,18 +1009,21 @@ function frame(time) {
   lastView = displayState;
   const tapAge = tapEffect ? (performance.now() - tapEffect.at) / 1400 : 1;
   if (tapAge >= 1) tapEffect = null;
-  renderer.draw(displayState, time, {
-    reduced, mode: touch ? 'coop' : 'solo', paused: worldPaused && !rewindInfo,
-    sceneKey: outgoing?.sceneKey ?? sceneKey, cameraReset: outgoing?.cameraReset ?? cameraReset,
-    celebration: celebration && { progress: Math.max(0, Math.min(1, (time - celebration.start) / celebration.duration)), finale: celebration.finale, tower: celebration.tower },
-    target: aim?.target ?? null,
-    touch, tappable: !aim && touch && viewActor === 1 && displayState.status === 'playing' ? new Set(abilityTargets(displayState, viewActor).map(o => o.id)) : null,
-    rewind: rewindInfo,
-    aim, throwArc,
-    preview: freezePreview && !mouseAim && displayState.status === 'playing' ? cancelPreview ? { ...cancelPreview, cancel: true } : { ...freezePreview, radius: meta.freeze.radius, valid: freezeCheck(displayState, freezePreview) === 'ok' } : null,
-    tap: tapEffect && { ...tapEffect, age: tapAge },
-    bottomInset: touch ? controlsReserve : 0,
-  });
+  if (!entrance.active || entranceDrawAt === null || time - entranceDrawAt >= 100) {
+    entranceDrawAt = entrance.active ? time : null;
+    renderer.draw(displayState, time, {
+      reduced, mode: touch ? 'coop' : 'solo', paused: worldPaused && !rewindInfo,
+      sceneKey: outgoing?.sceneKey ?? sceneKey, cameraReset: outgoing?.cameraReset ?? cameraReset,
+      celebration: celebration && { progress: Math.max(0, Math.min(1, (time - celebration.start) / celebration.duration)), finale: celebration.finale, tower: celebration.tower },
+      target: aim?.target ?? null,
+      touch, tappable: !aim && touch && viewActor === 1 && displayState.status === 'playing' ? new Set(abilityTargets(displayState, viewActor).map(o => o.id)) : null,
+      rewind: rewindInfo,
+      aim, throwArc,
+      preview: freezePreview && !mouseAim && displayState.status === 'playing' ? cancelPreview ? { ...cancelPreview, cancel: true } : { ...freezePreview, radius: meta.freeze.radius, valid: freezeCheck(displayState, freezePreview) === 'ok' } : null,
+      tap: tapEffect && { ...tapEffect, age: tapAge },
+      bottomInset: touch ? controlsReserve : 0,
+    });
+  }
   if (!outgoing) {
     updateTouchControls(displayState);
     if (touch && !tapIntroShown && !modal && !stageBusy() && state.status === 'playing') { tapIntroShown = true; toast(S.tapIntro); }

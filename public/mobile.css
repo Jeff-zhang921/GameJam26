@@ -56,7 +56,8 @@ body.touch-layout .touch-controls{position:absolute;inset:0;display:block;z-inde
 .touch-switch svg{width:22px;height:22px}
 .online-mode .touch-movement .touch-switch{display:none}
 body.skill-aiming .touch-pause{visibility:hidden}
-.touch-controls .touch-cancel,.touch-controls .touch-cancel:hover{top:calc(var(--safe-top) + 12px);right:calc(var(--safe-right) + 12px);width:56px;height:56px;background:#233f478a;border:2px solid #f5e5d0a1;color:#fff0df}
+.touch-controls .touch-cancel,.touch-controls .touch-cancel:hover{top:40%;left:60%;right:auto;transform:translate(-50%,-50%);width:clamp(120px,22vmin,168px);height:clamp(120px,22vmin,168px);background:#233f478a;border:3px solid #f5e5d0a1;color:#fff0df}
+.touch-cancel svg{width:70%;height:70%;stroke-width:3;pointer-events:none}
 .touch-controls .touch-cancel.over{background:#964c45cf;border-color:#ffdbcc}
 .touch-controls .touch-cancel[hidden]{display:none}
 @media(orientation:landscape) and (max-height:360px){

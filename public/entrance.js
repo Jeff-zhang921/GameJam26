@@ -39,58 +39,71 @@ export function createEntrance({ reduced, onStart, onFinish, onCancel }) {
   const camera = root.querySelector('.entrance-camera');
   const shade = root.querySelector('.entrance-shade');
   const fallback = root.querySelector('.entrance-fallback');
+  const lobby = document.querySelector('#online-root');
   let current = null, leaves = null, layout = null;
-  const svgNS = 'http://www.w3.org/2000/svg';
-  const make = (name, attributes = {}) => {
-    const node = document.createElementNS(svgNS, name);
-    for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, value);
-    return node;
+  const setStyle = (node, property, value) => {
+    const next = String(value);
+    if (node.style.getPropertyValue(property) !== next) node.style.setProperty(property, next);
+  };
+  const setData = (property, value) => {
+    const next = String(value);
+    if (root.dataset[property] !== next) root.dataset[property] = next;
   };
 
-  function installArt(text) {
+  async function installArt(text) {
     const parsed = new DOMParser().parseFromString(text, 'image/svg+xml');
     if (parsed.querySelector('parsererror') || parsed.documentElement.localName !== 'svg') throw new Error('Invalid conservatory artwork');
-    const svg = document.importNode(parsed.documentElement, true);
-    for (const node of svg.querySelectorAll('[id]')) node.id = 'entrance-' + node.id;
-    for (const node of svg.querySelectorAll('*')) for (const attribute of [...node.attributes]) {
-      const value = attribute.value.replaceAll('url(#', 'url(#entrance-');
-      node.setAttribute(attribute.name, attribute.localName === 'href' && value.startsWith('#') ? '#entrance-' + value.slice(1) : value);
-    }
+    const svg = parsed.documentElement;
     const portal = [...svg.querySelectorAll('path')].find(node => node.getAttribute('d') === DOOR);
     if (!portal) throw new Error('Missing conservatory gate');
-    const face = [];
-    let node = portal;
-    for (let i = 0; i < 7; i++, node = node.nextElementSibling) {
-      if (!node) throw new Error('Incomplete conservatory gate');
-      face.push(node.cloneNode(true));
+    svg.setAttribute('width', ART.width);
+    svg.setAttribute('height', ART.height);
+    const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml' }));
+    const image = new Image();
+    try {
+      image.src = url;
+      await image.decode();
+      const ratio = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
+      const opening = new Path2D(DOOR);
+      const scene = document.createElement('canvas');
+      scene.className = 'entrance-scene';
+      scene.width = Math.round(ART.width * ratio);
+      scene.height = Math.round(ART.height * ratio);
+      const context = scene.getContext('2d');
+      if (!context) throw new Error('Conservatory canvas unavailable');
+      context.scale(scene.width / ART.width, scene.height / ART.height);
+      context.fillStyle = '#0a202b';
+      context.fillRect(0, 0, ART.width, ART.height);
+      context.drawImage(image, 0, 0, ART.width, ART.height);
+      context.globalCompositeOperation = 'destination-out';
+      context.fill(opening);
+      const doors = ['left', 'right'].map((side, index) => {
+        const x = 1034 + index * 91, y = 540, width = 91, height = 238;
+        const leaf = document.createElement('canvas');
+        leaf.className = 'entrance-door entrance-door-' + side;
+        leaf.dataset.side = side;
+        leaf.width = Math.ceil(width * ratio);
+        leaf.height = Math.ceil(height * ratio);
+        leaf.style.left = x / ART.width * 100 + '%';
+        leaf.style.top = y / ART.height * 100 + '%';
+        leaf.style.width = width / ART.width * 100 + '%';
+        leaf.style.height = height / ART.height * 100 + '%';
+        const face = leaf.getContext('2d');
+        if (!face) throw new Error('Conservatory door canvas unavailable');
+        face.scale(leaf.width / width, leaf.height / height);
+        face.translate(-x, -y);
+        face.clip(opening);
+        face.drawImage(image, 0, 0, ART.width, ART.height);
+        return leaf;
+      });
+      camera.append(scene, ...doors);
+      leaves = doors;
+      if (current) paint();
+      fallback.hidden = true;
+      setData('art', 'ready');
+    } finally {
+      URL.revokeObjectURL(url);
     }
-    const defs = svg.querySelector('defs');
-    const mask = make('mask', { id: 'entrance-opening', maskUnits: 'userSpaceOnUse', x: -1600, y: -1000, width: 4800, height: 3000 });
-    mask.append(make('rect', { x: -1600, y: -1000, width: 4800, height: 3000, fill: 'white' }), make('path', { d: DOOR, fill: 'black' }));
-    const opening = make('clipPath', { id: 'entrance-door-face' });
-    opening.append(make('path', { d: DOOR }));
-    defs.append(mask, opening);
-    const scene = make('g', { mask: 'url(#entrance-opening)' });
-    scene.append(make('rect', { x: -1600, y: -1000, width: 4800, height: 3000, fill: '#0a202b' }));
-    for (const child of [...svg.children]) if (child !== defs) scene.append(child);
-    svg.append(scene);
-    leaves = ['left', 'right'].map((side, index) => {
-      const clip = make('clipPath', { id: 'entrance-door-' + side });
-      clip.append(make('rect', { x: 1034 + index * 91, y: 540, width: 91, height: 238 }));
-      defs.append(clip);
-      const leaf = make('g', { class: 'entrance-door entrance-door-' + side, 'data-side': side });
-      const half = make('g', { 'clip-path': 'url(#entrance-door-' + side + ')' });
-      const shape = make('g', { 'clip-path': 'url(#entrance-door-face)' });
-      shape.append(make('path', { d: DOOR, fill: '#203a42' }), ...face.map(part => part.cloneNode(true)));
-      half.append(shape); leaf.append(half); svg.append(leaf);
-      return leaf;
-    });
-    svg.classList.add('entrance-scene');
-    svg.setAttribute('aria-hidden', 'true');
-    camera.append(svg);
-    fallback.hidden = true;
-    root.dataset.art = 'ready';
-    if (current) paint();
   }
   fetch('/art/moonlit-conservatory.svg').then(response => {
     if (!response.ok) throw new Error('Conservatory artwork unavailable');
@@ -108,25 +121,24 @@ export function createEntrance({ reduced, onStart, onFinish, onCancel }) {
 
   function paint() {
     const timeline = entranceTimeline(current.progress, current.reduced);
-    root.dataset.progress = current.progress.toFixed(3);
-    root.dataset.motion = current.reduced ? 'reduced' : 'full';
-    root.style.opacity = timeline.opacity;
-    document.body.style.setProperty('--entrance-lobby-opacity', timeline.lobby);
-    document.body.style.setProperty('--entrance-lobby-visibility', timeline.lobby > 0 ? 'visible' : 'hidden');
-    shade.style.opacity = timeline.shade;
+    setData('progress', current.progress.toFixed(3));
+    setData('motion', current.reduced ? 'reduced' : 'full');
+    setStyle(root, 'opacity', timeline.opacity);
+    setStyle(lobby, '--entrance-lobby-opacity', timeline.lobby);
+    setStyle(lobby, '--entrance-lobby-visibility', timeline.lobby > 0 ? 'visible' : 'hidden');
+    setStyle(shade, 'opacity', timeline.shade);
     const zoom = Math.exp(Math.log(layout.zoom) * timeline.camera);
     const gateX = ART.gateX * layout.scale;
     const gateY = (ART.gateY + (ART.insideY - ART.gateY) * timeline.camera) * layout.scale;
     const x = (layout.left + ART.gateX * layout.scale) * (1 - timeline.camera) + window.innerWidth / 2 * timeline.camera;
     const y = (layout.top + ART.gateY * layout.scale) * (1 - timeline.camera) + window.innerHeight / 2 * timeline.camera;
-    camera.style.transform = `translate(${x - layout.left - gateX * zoom}px, ${y - layout.top - gateY * zoom}px) scale(${zoom})`;
-    root.dataset.zoom = zoom.toFixed(3);
+    setStyle(camera, 'transform', `translate3d(${x - layout.left - gateX * zoom}px, ${y - layout.top - gateY * zoom}px, 0) scale(${zoom})`);
+    setData('zoom', zoom.toFixed(3));
     if (leaves) {
       const scale = Math.max(.015, Math.cos(timeline.door * Math.PI / 2));
       leaves.forEach((leaf, index) => {
-        const hinge = index ? 1216 : 1034;
         const shear = Math.sin(timeline.door * Math.PI) * (index ? -.055 : .055);
-        leaf.setAttribute('transform', `matrix(${scale} ${shear} 0 1 ${hinge * (1 - scale)} ${-hinge * shear})`);
+        setStyle(leaf, 'transform', `matrix(${scale}, ${shear}, 0, 1, 0, 0)`);
       });
     }
   }
@@ -135,15 +147,15 @@ export function createEntrance({ reduced, onStart, onFinish, onCancel }) {
     if (!current) return;
     current = null; root.hidden = true;
     document.body.classList.remove('online-entering');
-    document.body.style.removeProperty('--entrance-lobby-opacity');
-    document.body.style.removeProperty('--entrance-lobby-visibility');
+    lobby.style.removeProperty('--entrance-lobby-opacity');
+    lobby.style.removeProperty('--entrance-lobby-visibility');
     onCancel();
   }
   function finish() {
     current = null; root.hidden = true;
     document.body.classList.remove('online-entering');
-    document.body.style.removeProperty('--entrance-lobby-opacity');
-    document.body.style.removeProperty('--entrance-lobby-visibility');
+    lobby.style.removeProperty('--entrance-lobby-opacity');
+    lobby.style.removeProperty('--entrance-lobby-visibility');
     onFinish();
   }
   function advance(now = performance.now()) {
@@ -173,9 +185,9 @@ export function createEntrance({ reduced, onStart, onFinish, onCancel }) {
       }
     },
     confirm(room, epoch) {
-      if (!current || current.epoch !== epoch || room.epoch !== epoch) return;
+      if (!current || current.epoch !== epoch || room.epoch !== epoch || current.key !== `${room.code}:${room.epoch}:${room.startAt}`) return;
       current.installed = true;
-      advance();
+      if (current.playing && room.status === 'PLAYING') advance();
     },
     advance, cancel,
   };
