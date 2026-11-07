@@ -30,8 +30,8 @@ export function createRenderer(canvas, S) {
     sprite(a, x, bottom, height, 1 - s * s, form);
     sprite(b, x, bottom, height, s, form);
   }
-  // Each image is fully itself at its height; growth between two keyframes morphs one into the next.
-  const GROWTH = [['seed', 0], ['sprout', 25], ['bud', 95], ['bloom', 200]];
+  // The seed dissolves into a tiny bloom, which then simply scales up with the plant's height.
+  const GROWTH = [['seed', 0], ['bloom', 25]];
   function line(c, points, color, width = 1) { c.beginPath(); c.moveTo(points[0][0], points[0][1]); for (let i = 1; i < points.length; i++) c.lineTo(points[i][0], points[i][1]); c.strokeStyle = color; c.lineWidth = width; c.stroke(); }
   function circle(c, x, y, r, fill, stroke, width = 1) { c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); if (fill) { c.fillStyle = fill; c.fill(); } if (stroke) { c.strokeStyle = stroke; c.lineWidth = width; c.stroke(); } }
   function ellipse(c, x, y, rx, ry, angle, color) { c.beginPath(); c.ellipse(x, y, Math.max(.1, rx), Math.max(.1, ry), angle, 0, Math.PI * 2); c.fillStyle = color; c.fill(); }
@@ -130,6 +130,7 @@ export function createRenderer(canvas, S) {
   }
   function seed(o, t) {
     ctx.save(); ctx.translate(o.x, o.y); glow(ctx, 0, 0, 26, '#e1c68a22');
+    if (loaded('seed')) { ctx.restore(); return sprite('seed', o.x, o.y + 9, 18, 1); }
     ellipse(ctx, 0, 0, 7, 10, .5, '#b39a5c'); ellipse(ctx, -1.5, -2, 3, 5, .5, '#e6d39a'); line(ctx, [[3, -7], [6, -12 + Math.sin(t * .004)]], '#9fbf7f', 1.5);
     ctx.restore();
   }
@@ -140,11 +141,11 @@ export function createRenderer(canvas, S) {
     const [a, from] = GROWTH[i], [b, to] = GROWTH[i + 1], p = Math.min(1, (h - from) / (to - from));
     if (p < 1) morph(a, b, p, x, y, a === 'seed' ? lerp(14, to, smooth(p)) : h);
     else if (o.withered) morph('bloom', 'wilted', (o.age - growTicks - matureTicks) / (witherTicks * .3), x, y, h);
-    else morph('bloom', 'bloom-wind', o.age > growTicks && !reduced ? (Math.sin(t * .0015 + o.x) + 1) / 2 : 0, x, y, h);
+    else sprite('bloom', x, y, h, 1);
     if (targeted) { circle(ctx, x, y - h - 16, 13, '#d7bd7d10', '#e1c68a70'); star(ctx, x, y - h - 16, 5, gold); }
   }
   function plant(o, targeted, t, reduced) {
-    if (loaded('seed', 'sprout', 'bud', 'bloom', 'bloom-wind', 'wilted')) return flower(o, targeted, t, reduced);
+    if (loaded('seed', 'bloom', 'wilted')) return flower(o, targeted, t, reduced);
     const h = o.height, x = o.x, y = o.base, dead = o.withered, g = Math.min(1, h / meta.plant.maxHeight), top = y - h;
     timeRing(x, y - h / 2, Math.max(22, h / 2 + 12), o, t);
     if (h < 12 && !dead) { ctx.globalAlpha = 1 - h / 12; ellipse(ctx, x, y - 5, 6, 8, .4, '#b39a5c'); ellipse(ctx, x - 1, y - 7, 2.5, 4, .4, '#e6d39a'); ctx.globalAlpha = 1; }
