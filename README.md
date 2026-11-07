@@ -1,2 +1,2 @@
 # GameJam26
-this is a test
+this is a tests
