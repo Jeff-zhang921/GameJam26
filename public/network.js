@@ -1,6 +1,6 @@
-import { applyAction, validateAction } from '../src/logic.js';
+import { applyAction, validateAction, heldPosition } from '../src/logic.js';
 
-const predictionActions = new Set(['move', 'jump', 'jumpRelease']);
+const predictionActions = new Set(['move', 'jump', 'jumpRelease', 'grab']);
 const sessionKey = 'moonclock-online';
 export function interpolateGame(older, newer, alpha, ownActor) {
   const game = { ...newer, actors: newer.actors.map(actor => ({ ...actor })) };
@@ -11,6 +11,25 @@ export function interpolateGame(older, newer, alpha, ownActor) {
     if (Math.hypot(a.x - b.x, a.y - b.y) > 150) continue;
     b.x = a.x + (b.x - a.x) * alpha; b.y = a.y + (b.y - a.y) * alpha;
   }
+  return game;
+}
+
+// Carried items are drawn from their carrier's *rendered* transform, never from their own (stale) snapshot
+// coordinates. The server still owns who carries what; `predicted` only covers this client's own pending
+// pickups and throws so they feel immediate.
+export function attachCarried(game, predicted = null, ownActor = null) {
+  const local = predicted && ownActor !== null ? new Map(predicted.objects.map(o => [o.id, o])) : null;
+  let carrying = game.actors[ownActor]?.carrying ?? null;
+  game.objects = game.objects.map(o => {
+    const mine = local?.get(o.id);
+    let view = o;
+    if (mine && mine.held === ownActor && (o.held === null || o.held === undefined)) { view = { ...o, held: ownActor }; carrying = o.id; }
+    else if (mine && o.held === ownActor && mine.held !== ownActor) { view = { ...o, held: null, x: mine.x, y: mine.y, vx: mine.vx, vy: mine.vy }; if (carrying === o.id) carrying = null; }
+    if (view.held === null || view.held === undefined) return view;
+    const carrier = game.actors[view.held];
+    return carrier ? { ...view, ...heldPosition(view, carrier), vx: 0, vy: 0 } : view;
+  });
+  if (local && game.actors[ownActor]) game.actors[ownActor] = { ...game.actors[ownActor], carrying };
   return game;
 }
 
@@ -70,7 +89,7 @@ export function createNetwork({ onRoom, onState, onConnection, onError }) {
         epoch = message.room.epoch; latest = message.game;
         if (latest.status !== 'playing' || message.room.suspended) lastMove = null;
         pending = pending.filter(input => input.seq > (message.ack?.[playerId] ?? 0));
-        predicted = { ...latest, history: [] };
+        predicted = latest;
         for (const input of pending) predict(input.action);
         frames.push({ game: latest, at: performance.now() });
         if (frames.length > 8) frames.shift();
@@ -100,7 +119,7 @@ export function createNetwork({ onRoom, onState, onConnection, onError }) {
     if (!connected || !room || room.suspended) return false;
     if (value.type === 'pause') return send({ type: 'pause', paused: latest?.status !== 'paused' });
     if (['restart', 'next'].includes(value.type)) return send({ type: 'control', action: value.type });
-    if (!['move', 'jump', 'jumpRelease', 'grab', 'ability', 'rewind'].includes(value.type) || room.status !== 'PLAYING' || latest?.status !== 'playing') return false;
+    if (!['move', 'jump', 'jumpRelease', 'grab', 'ability'].includes(value.type) || room.status !== 'PLAYING' || latest?.status !== 'playing') return false;
     const input = { ...value, actor };
     if (input.type === 'move' && input.dir === lastMove) return true;
     if (input.type === 'move') lastMove = input.dir;
@@ -160,8 +179,9 @@ export function createNetwork({ onRoom, onState, onConnection, onError }) {
           const amount = 1 - Math.exp(-dt / .035);
           renderActor.x += (desired.x - renderActor.x) * amount; renderActor.y += (desired.y - renderActor.y) * amount;
         }
-        Object.assign(game.actors[actor], { x: renderActor.x, y: renderActor.y });
-      } else renderActor = null;
+        Object.assign(game.actors[actor], { x: renderActor.x, y: renderActor.y, facing: desired.facing });
+        attachCarried(game, predicted, actor);
+      } else { renderActor = null; attachCarried(game); }
       game.active = actor; return game;
     },
   };

@@ -260,16 +260,18 @@ export function createRenderer(canvas, S) {
     ctx.save(); ctx.translate(780, 158); ctx.rotate(t * .00003); line(ctx, [[0, 9], [0, -62]], '#d8c99777', 2); line(ctx, [[-28, 0], [8, 0]], '#d8c99777', 2); circle(ctx, 0, 0, 3, '#cfc7a1'); ctx.restore();
     for (const p of state.platforms) platform(p);
     const target = options.target;
+    // Touch: bracket every object the active character can reach (what a tap would act on).
+    const marked = o => options.tappable ? options.tappable.has(o.id) : o.id === target;
     for (const p of state.pits) pit(p);
     for (const cp of state.checkpoints ?? []) checkpoint(cp, cp.id === state.checkpoint, t);
-    for (const o of state.objects) if (o.kind === 'mover') mover(o, o.id === target, t);
-    for (const o of state.objects) if (o.kind === 'plant') plant(o, o.id === target, t, options.reduced);
+    for (const o of state.objects) if (o.kind === 'mover') mover(o, marked(o), t);
+    for (const o of state.objects) if (o.kind === 'plant') plant(o, marked(o), t, options.reduced);
     door(state, t);
     for (const shard of state.shards) if (!shard.taken) { const yy = shard.y + Math.sin(t * .002 + shard.id) * 5; glow(ctx, shard.x, yy, 40, '#e7d2a51b'); ctx.save(); ctx.translate(shard.x, yy); ctx.rotate(Math.PI / 4); ctx.fillStyle = '#e2d194'; ctx.fillRect(-5, -5, 10, 10); ctx.strokeStyle = '#f4e7b477'; ctx.strokeRect(-10, -10, 20, 20); ctx.restore(); }
-    for (const o of state.objects) if (o.kind === 'crate' && o.held === null) crate(o, o.id === target && state.active === 0, t);
+    for (const o of state.objects) if (o.kind === 'crate' && o.held === null) crate(o, options.tappable ? marked(o) : o.id === target && state.active === 0, t);
     for (const o of state.objects) if (o.kind === 'seed' && o.held === null) seed(o, t);
     const flying = o => !o.frozen && ['dart', 'orb', 'lantern'].includes(o.kind);
-    for (const o of state.objects) if (isEnemy(o) && !flying(o)) enemy(o, o.id === target, t, options.reduced);
+    for (const o of state.objects) if (isEnemy(o) && !flying(o)) enemy(o, marked(o), t, options.reduced);
     for (const actorState of state.actors) {
       const inv = actorState.invuln > 0;
       if (inv && !options.reduced && !options.paused && Math.floor(state.tick / 4) % 2) continue;
@@ -277,7 +279,7 @@ export function createRenderer(canvas, S) {
       actor(actorState, actorState.id, actorState.id === state.active, actorState.animation && !options.reduced ? state.tick * 1000 / 60 : t); ctx.globalAlpha = 1;
     }
     for (const o of state.objects) if (o.held !== undefined && o.held !== null) o.kind === 'crate' ? crate(o, false, t) : seed(o, t);
-    for (const o of state.objects) if (isEnemy(o) && flying(o)) enemy(o, o.id === target, t, options.reduced);
+    for (const o of state.objects) if (isEnemy(o) && flying(o)) enemy(o, marked(o), t, options.reduced);
     if (loaded('petals')) for (const e of state.events) if (e.kind === 'vanish' && e.plant) {
       const age = state.tick - e.tick; if (age < 0 || age > 60) continue;
       sprite('petals', e.x, Math.min(e.base, e.y + age * 4), 18, 1 - age / 60);
@@ -299,14 +301,24 @@ export function createRenderer(canvas, S) {
     if (options.reduced) for (const e of state.events) {
       if (state.tick - e.tick < 12 && ['freeze', 'unfreeze', 'wake', 'grow', 'plant', 'shard', 'win', 'hit', 'checkpoint', 'strike'].includes(e.kind)) circle(ctx, e.x, e.y, 22, null, e.kind === 'hit' ? '#ffb3a1' : e.kind === 'strike' ? '#ff8a6a' : ['freeze', 'unfreeze'].includes(e.kind) ? cyan : gold, 2);
     }
+    // Touch feedback: a pulse on the tapped object; an out-of-reach tap also shows the reach ring.
+    if (options.tap && options.tap.age < 1) {
+      const { x, y, ok, ring, age } = options.tap;
+      ctx.save(); ctx.globalAlpha = 1 - age;
+      circle(ctx, x, y, 18 + age * 28, null, ok ? (state.active ? gold : cyan) : '#f1a58f', 2.5);
+      const carrier = ring !== null && state.actors[ring];
+      if (carrier) { ctx.setLineDash([12, 9]); circle(ctx, carrier.x, carrier.y, meta.controls.range, '#f4e7b40c', '#f4e7b4c0', 2); ctx.setLineDash([]); }
+      ctx.restore();
+    }
     const selected = state.objects.find(o => o.id === target);
     if (state.status === 'playing' && selected) {
       const top = isEnemy(selected) ? enemyBox(selected).y - 26 : selected.kind === 'plant' ? selected.base - selected.height - 53 : selected.kind === 'mover' ? selected.y - 30 : selected.y - 62;
       const x = selected.kind === 'mover' ? selected.x + selected.w / 2 : selected.x;
-      if (state.active === 0) label(x, top, selected.frozen ? S.targetRelease : S.targetFreeze);
-      else if (selected.frozen) label(x, top, S.targetRelease, gold);
-      else if (selected.speed >= meta.time.maxSpeed) label(x, top, S.targetMax, muted);
-      else label(x, top, selected.speed ? S.targetHasten : S.targetWake, gold);
+      const words = options.touch ? S.tapLabels : { freeze: S.targetFreeze, release: S.targetRelease, wake: S.targetWake, hasten: S.targetHasten, max: S.targetMax };
+      if (state.active === 0) label(x, top, selected.frozen ? words.release : words.freeze);
+      else if (selected.frozen) label(x, top, words.release, gold);
+      else if (selected.speed >= meta.time.maxSpeed) label(x, top, words.max, muted);
+      else label(x, top, selected.speed ? words.hasten : words.wake, gold);
     }
     ctx.restore();
   }
