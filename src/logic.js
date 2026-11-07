@@ -1,44 +1,15 @@
+import { makeEnemy, updateEnemies, enemyBox, isEnemy, isHazard, isMoving, isSolidEnemy } from './enemies.js';
+import { LEVELS } from './levels/index.js';
+
 export const meta = {
   name: 'CLOCKBLOOM', minPlayers: 1, maxPlayers: 2, tickRate: 60,
   controls: { speed: 4.2, airSpeed: 4.8, jump: -12.5, springJump: -15.3, gravity: 0.48, fallGravity: 0.8, maxFall: 16, jumpCut: 0.45, coyote: 7, jumpBuffer: 7, range: 420, reach: 95, pitReach: 50 },
-  time: { moverSpeed: 1, maxSpeed: 3, rewinds: 3, hintTicks: 90 * 60 },
+  time: { moverSpeed: 1, maxSpeed: 3, rewinds: 3, hintTicks: 90 * 60, invulnTicks: 60 },
   plant: { maxHeight: 235, springHeight: 45, growTicks: 960, matureTicks: 480, witherTicks: 480 },
 };
 const STILL = 0, BLOOM = 1;
 
-const LEVELS = [
-  {
-    id: 'stillwater',
-    platforms: [{ x: 0, y: 520, w: 435, h: 160 }, { x: 795, y: 430, w: 485, h: 220 }],
-    spawn: [{ x: 180, y: 520 }, { x: 250, y: 520 }],
-    crates: [{ x: 350, y: 493 }], seeds: [], pits: [], plants: [], movers: [],
-    exit: { x: 1160, y: 430 }, shards: [{ x: 620, y: 300 }], need: ['frozenTouched'],
-  },
-  {
-    id: 'rootrise',
-    platforms: [{ x: 0, y: 540, w: 1280, h: 120 }, { x: 760, y: 290, w: 520, h: 360 }],
-    spawn: [{ x: 195, y: 540 }, { x: 270, y: 540 }],
-    crates: [], seeds: [{ x: 90, y: 530 }, { x: 380, y: 530 }], pits: [{ x: 600, y: 540 }], plants: [], movers: [],
-    exit: { x: 1160, y: 290 }, shards: [{ x: 600, y: 250 }], need: ['treeLifted'],
-  },
-  {
-    id: 'afterbloom',
-    platforms: [{ x: 0, y: 520, w: 1280, h: 140 }, { x: 1000, y: 265, w: 280, h: 400 }],
-    spawn: [{ x: 190, y: 520 }, { x: 265, y: 520 }],
-    crates: [], seeds: [{ x: 330, y: 510 }], pits: [{ x: 600, y: 520 }, { x: 880, y: 520 }],
-    plants: [{ pit: 0, grown: 1, barrier: true }], movers: [],
-    exit: { x: 1160, y: 265 }, shards: [{ x: 880, y: 300 }], need: ['withered', 'sproutJump'],
-  },
-  {
-    id: 'withtime',
-    platforms: [{ x: 0, y: 520, w: 520, h: 160 }, { x: 1040, y: 300, w: 240, h: 400 }],
-    spawn: [{ x: 250, y: 520 }, { x: 170, y: 520 }],
-    crates: [{ x: 300, y: 493 }], seeds: [{ x: 110, y: 510 }, { x: 150, y: 510 }, { x: 480, y: 510 }],
-    pits: [{ x: 400, y: 520 }, { x: 60, y: 520 }], plants: [],
-    movers: [{ x1: 540, x2: 640, y: 290, w: 120 }],
-    exit: { x: 1160, y: 300 }, shards: [{ x: 400, y: 240 }], need: ['treeLifted', 'moverRide', 'frozenTouched'],
-  },
-];
+export const levelCount = LEVELS.length;
 
 const clone = value => JSON.parse(JSON.stringify(value));
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -47,6 +18,7 @@ const find = (state, id) => state.objects.find(o => o.id === id);
 const free = o => o.held === undefined || o.held === null;
 
 export function anchor(o) {
+  if (isEnemy(o)) { const b = enemyBox(o); return { x: b.x + b.w / 2, y: b.y + b.h / 2 }; }
   if (o.kind === 'plant') return { x: o.x, y: o.base - o.height / 2 };
   if (o.kind === 'mover') return { x: o.x + o.w / 2, y: o.y + 10 };
   return { x: o.x, y: o.y };
@@ -61,7 +33,7 @@ function makePlant(id, pit, grown = 0, barrier = false) {
   return { kind: 'plant', id, pit: pit.id, x: pit.x, base: pit.y, age, height: heightAt(age), withered: false, speed: 0, frozen: false, barrier };
 }
 
-function makeLevel(index, players, unlocked, totalShards, collected = [false, false, false, false]) {
+function makeLevel(index, players, unlocked, totalShards, collected = LEVELS.map(() => false)) {
   const level = LEVELS[index];
   const pits = level.pits.map((p, i) => ({ id: `pit-${i}`, x: p.x, y: p.y, plant: null }));
   const objects = [
@@ -69,14 +41,16 @@ function makeLevel(index, players, unlocked, totalShards, collected = [false, fa
     ...level.seeds.map((p, i) => ({ kind: 'seed', id: `seed-${i}`, x: p.x, y: p.y, vx: 0, vy: 0, held: null, spawnX: p.x, spawnY: p.y })),
     ...level.movers.map((p, i) => ({ kind: 'mover', id: `mover-${i}`, x: p.x1, y: p.y, w: p.w, x1: p.x1, x2: p.x2, dir: 1, speed: 0, frozen: false })),
     ...level.plants.map((p, i) => makePlant(`plant-${i}`, pits[p.pit], p.grown, p.barrier)),
+    ...(level.enemies ?? []).map((e, i) => makeEnemy(e.kind, e, `${e.kind}-${i}`)),
   ];
   return {
     level: index, levelId: level.id, unlocked, totalShards, collected: clone(collected), tick: 0, status: 'playing', active: 0,
     playerIds: players, width: 1280, height: 640,
-    actors: level.spawn.map((p, i) => ({ id: i, x: p.x, y: p.y, vx: 0, vy: 0, facing: 1, grounded: true, on: 'ground', coyote: meta.controls.coyote, jumpBuffer: 0, jumpHeld: false, jumpCut: true, move: 0, carrying: null, spawnX: p.x, spawnY: p.y })),
-    platforms: clone(level.platforms), objects, pits, nextPlant: level.plants.length,
+    actors: level.spawn.map((p, i) => ({ id: i, x: p.x, y: p.y, vx: 0, vy: 0, facing: 1, grounded: true, on: 'ground', coyote: meta.controls.coyote, jumpBuffer: 0, jumpHeld: false, jumpCut: true, move: 0, carrying: null, invuln: 0, spawnX: p.x, spawnY: p.y })),
+    platforms: clone(level.platforms), objects, pits, nextPlant: level.plants.length, nextEnemy: objects.length,
+    checkpoints: (level.checkpoints ?? []).map((c, i) => ({ id: `cp-${i}`, x: c.x, y: c.y, lit: false })), checkpoint: null,
     exit: clone(level.exit), shards: level.shards.map((p, i) => ({ ...p, id: i, taken: false })),
-    flags: { frozenTouched: false, treeLifted: false, withered: false, sproutJump: false, moverRide: false },
+    flags: { frozenTouched: false, treeLifted: false, withered: false, sproutJump: false, moverRide: false, dartRide: false, miteGone: false },
     needs: clone(level.need), needsDone: 0, events: [], eventSeq: 0, history: [], rewindsLeft: meta.time.rewinds,
     started: false, elapsed: 0, lastProgressTick: 0, falls: 0,
   };
@@ -84,7 +58,7 @@ function makeLevel(index, players, unlocked, totalShards, collected = [false, fa
 
 export function setup(options = {}) {
   const players = Array.isArray(options.players) && options.players.length ? options.players.slice(0, 2).map(p => typeof p === 'string' ? p : p.id) : ['local'];
-  const level = Number.isInteger(options.level) ? Math.max(0, Math.min(3, options.level)) : 0;
+  const level = Number.isInteger(options.level) ? Math.max(0, Math.min(LEVELS.length - 1, options.level)) : 0;
   return makeLevel(level, players, level, 0);
 }
 
@@ -95,10 +69,10 @@ function actorAllowed(state, playerId, actor) {
 
 export function targetFor(state, actor, action = {}) {
   const p = state.actors[actor];
-  const fits = o => o.kind === 'plant' || o.kind === 'mover' || (o.kind === 'crate' && (actor === STILL || o.frozen));
+  const fits = o => o.kind === 'plant' || o.kind === 'mover' || isEnemy(o) || (o.kind === 'crate' && (actor === STILL || o.frozen));
   const candidates = state.objects.filter(o => fits(o) && free(o) && dist(p, anchor(o)) <= meta.controls.range);
   if (action.target) return candidates.find(o => o.id === action.target);
-  const moving = o => !o.frozen && (o.kind === 'crate' ? Math.abs(o.vx) + Math.abs(o.vy) > 0.5 : o.speed > 0 && !o.withered);
+  const moving = o => isEnemy(o) ? isMoving(o) : !o.frozen && (o.kind === 'crate' ? Math.abs(o.vx) + Math.abs(o.vy) > 0.5 : o.speed > 0 && !o.withered);
   const score = o => {
     const a = anchor(o);
     return dist(p, a) + (o.id === p.on ? 1000 : 0) + ((a.x - p.x) * p.facing < -10 ? 120 : 0) - (actor === STILL && moving(o) ? 150 : 0);
@@ -154,6 +128,7 @@ function surfaces(state) {
     if (o.kind === 'crate' && o.held === null) result.push({ id: o.id, x: o.x - 27, y: o.y - 27, w: 54, h: 54 });
     if (o.kind === 'mover') result.push({ id: o.id, x: o.x, y: o.y, w: o.w, h: 20 });
     if (o.kind === 'plant' && o.height > 0) { const w = canopyWidth(o); result.push({ id: o.id, x: o.x - w / 2, y: o.base - o.height, w, h: 16, spring: !o.withered && o.height <= meta.plant.springHeight }); }
+    if (isSolidEnemy(o)) result.push({ id: o.id, ...enemyBox(o) });
   }
   return result;
 }
@@ -233,7 +208,7 @@ function moveActors(state) {
     const oldX = p.x;
     p.x = Math.max(22, Math.min(1258, p.x + p.vx));
     const body = () => ({ x: p.x - 15, y: p.y - 52, w: 30, h: 51 });
-    const crates = state.objects.filter(o => o.kind === 'crate' && o.held === null).map(o => ({ id: o.id, x: o.x - 27, y: o.y - 27, w: 54, h: 54 }));
+    const crates = state.objects.filter(o => (o.kind === 'crate' && o.held === null) || isSolidEnemy(o)).map(o => o.kind === 'crate' ? { id: o.id, x: o.x - 27, y: o.y - 27, w: 54, h: 54 } : { id: o.id, ...enemyBox(o) });
     const inside = crates.filter(c => rectOverlap({ x: oldX - 15, y: p.y - 52, w: 30, h: 51 }, c));
     for (const f of state.platforms) if (rectOverlap(body(), f) && p.y > f.y + 9) p.x = oldX;
     for (const c of crates) if (!inside.includes(c) && rectOverlap(body(), c) && p.y > c.y + 9) p.x = oldX;
@@ -255,15 +230,24 @@ function moveActors(state) {
         p.y = f.y; p.vy = 0; p.grounded = true; p.on = f.id;
         const o = find(state, f.id);
         if (o?.kind === 'crate' && o.frozen) state.flags.frozenTouched = true;
+        if ((o?.kind === 'dart' || o?.kind === 'orb') && o.frozen) state.flags.dartRide = true;
       }
     }
     if (p.grounded && airborne) event(state, 'land', p.x, p.y, { actor: p.id, strength: Math.min(1, impact / meta.controls.maxFall) });
     if (p.grounded && p.jumpBuffer > 0) launch();
     if (p.jumpBuffer > 0) p.jumpBuffer--;
     if (!p.grounded && !wasGrounded && p.coyote > 0) p.coyote--;
-    if (p.y > 710) {
-      p.x = p.spawnX; p.y = p.spawnY; p.vx = 0; p.vy = 0; p.grounded = true; p.on = 'ground'; p.jumpHeld = false; p.jumpCut = true; p.jumpBuffer = 0; state.falls++;
-      event(state, 'return', p.x, p.y, { actor: p.id });
+    if (p.y > 710) { state.falls++; respawn(state, p, 'return'); }
+    for (const cp of state.checkpoints) if (state.checkpoint !== cp.id && rectOverlap(body(), { x: cp.x - 12, y: cp.y - 40, w: 24, h: 40 })) {
+      cp.lit = true; state.checkpoint = cp.id; event(state, 'checkpoint', cp.x, cp.y - 40);
+    }
+    if (p.invuln > 0) p.invuln--;
+    else {
+      const hazard = state.objects.find(o => isHazard(o) && rectOverlap(body(), enemyBox(o)));
+      if (hazard) {
+        if (hazard.kind === 'dart' || hazard.kind === 'orb') state.objects = state.objects.filter(o => o !== hazard);
+        respawn(state, p, 'hit');
+      }
     }
     for (const shard of state.shards) if (!shard.taken && dist({ x: p.x, y: p.y - 28 }, shard) < 42) {
       shard.taken = true; event(state, 'shard', shard.x, shard.y);
@@ -271,17 +255,31 @@ function moveActors(state) {
   }
 }
 
+function respawn(state, p, kind) {
+  if (kind === 'hit' && p.carrying !== null) {
+    const o = find(state, p.carrying);
+    o.held = null; o.x = p.x; o.y = p.y - (o.kind === 'crate' ? 27 : 10); o.vx = 0; o.vy = 0; p.carrying = null;
+  }
+  if (kind === 'hit') event(state, 'hit', p.x, p.y - 26, { actor: p.id });
+  const cp = state.checkpoints.find(c => c.id === state.checkpoint);
+  p.x = cp ? cp.x + (p.id ? 18 : -18) : p.spawnX; p.y = cp ? cp.y : p.spawnY;
+  p.vx = 0; p.vy = 0; p.grounded = true; p.on = 'ground'; p.jumpHeld = false; p.jumpCut = true; p.jumpBuffer = 0;
+  p.invuln = kind === 'hit' ? meta.time.invulnTicks : p.invuln;
+  event(state, 'return', p.x, p.y, { actor: p.id });
+}
+
 function tick(state) {
   remember(state);
   state.tick++;
   if (state.started) state.elapsed++;
   ageObjects(state);
+  updateEnemies(state, { event, nextId: kind => `${kind}-${state.nextEnemy++}` });
   moveItems(state);
   moveActors(state);
   const done = state.needs.filter(key => state.flags[key]).length;
   if (done > state.needsDone) { state.needsDone = done; state.lastProgressTick = state.elapsed; }
   if (done === state.needs.length && state.actors.some(p => Math.abs(p.x - state.exit.x) < 46 && Math.abs(p.y - state.exit.y) < 55)) {
-    state.status = 'won'; state.unlocked = Math.max(state.unlocked, Math.min(3, state.level + 1));
+    state.status = 'won'; state.unlocked = Math.max(state.unlocked, Math.min(LEVELS.length - 1, state.level + 1));
     if (state.shards.some(s => s.taken)) state.collected[state.level] = true;
     state.totalShards = state.collected.filter(Boolean).length;
     for (const p of state.actors) p.move = 0;
@@ -293,7 +291,7 @@ export function applyAction(state, playerId, action) {
   if (!validateAction(state, playerId, action).valid) return state;
   if (action.type === 'restart') return makeLevel(state.level, state.playerIds, state.unlocked, state.totalShards, state.collected);
   if (action.type === 'level') return makeLevel(action.level, state.playerIds, state.unlocked, state.totalShards, state.collected);
-  if (action.type === 'next') return makeLevel((state.level + 1) % 4, state.playerIds, state.unlocked, state.totalShards, state.collected);
+  if (action.type === 'next') return makeLevel((state.level + 1) % LEVELS.length, state.playerIds, state.unlocked, state.totalShards, state.collected);
   const s = clone(state);
   if (action.type === 'tick') { if (s.status === 'playing') tick(s); return s; }
   if (action.type === 'pause') { if (s.status !== 'won') s.status = s.status === 'paused' ? 'playing' : 'paused'; for (const p of s.actors) { p.move = 0; p.jumpHeld = false; p.jumpCut = true; p.jumpBuffer = 0; } return s; }
@@ -301,7 +299,7 @@ export function applyAction(state, playerId, action) {
   if (action.type === 'rewind') {
     const frame = s.history[0];
     s.objects = clone(frame.objects); s.pits = clone(frame.pits); s.history = []; s.rewindsLeft--;
-    for (const p of s.actors) { p.carrying = null; p.move = 0; p.jumpHeld = false; p.jumpCut = true; p.jumpBuffer = 0; }
+    for (const p of s.actors) { p.carrying = null; p.invuln = meta.time.invulnTicks; p.move = 0; p.jumpHeld = false; p.jumpCut = true; p.jumpBuffer = 0; }
     for (const o of s.objects) if (!free(o)) {
       const p = s.actors[o.held];
       o.held = null; o.x = p.x + p.facing * 30; o.y = p.y - (o.kind === 'crate' ? 27 : 10); o.vx = 0; o.vy = 0;
@@ -349,5 +347,5 @@ export function applyAction(state, playerId, action) {
 }
 
 export function hintLevel(state) { return state.elapsed - state.lastProgressTick >= meta.time.hintTicks ? 1 : 0; }
-export function isGameOver(state) { return state.status === 'won' ? { winner: 'together', level: state.level, complete: state.level === 3 } : null; }
+export function isGameOver(state) { return state.status === 'won' ? { winner: 'together', level: state.level, complete: state.level === LEVELS.length - 1 } : null; }
 export function viewFor(state, playerId) { return state.playerIds.includes(playerId) ? clone(state) : null; }

@@ -1,5 +1,7 @@
 import { describe, test, expect } from 'bun:test';
-import { setup, validateAction, applyAction, isGameOver, viewFor, hintLevel, meta, targetFor } from '../src/logic.js';
+import { LEVELS } from '../src/levels/index.js';
+import { ENEMY } from '../src/enemies.js';
+import { setup, validateAction, applyAction, isGameOver, viewFor, hintLevel, meta, targetFor, levelCount } from '../src/logic.js';
 
 function step(state, n = 1) { for (let i = 0; i < n; i++) state = applyAction(state, 'local', { type: 'tick' }); return state; }
 function action(state, value) { expect(validateAction(state, 'local', value).valid).toBe(true); return applyAction(state, 'local', value); }
@@ -370,15 +372,15 @@ describe('room rules', () => {
   test('any chamber can be chosen directly, without unlocking it first', () => {
     const s = setup();
     expect(s.unlocked).toBe(0);
-    for (const level of [1, 2, 3]) expect(action(s, { type: 'level', level }).level).toBe(level);
-    for (const level of [-1, 4, 1.5, '2']) expect(validateAction(s, 'local', { type: 'level', level }).error).toBe('invalid');
+    for (let level = 1; level < levelCount; level++) expect(action(s, { type: 'level', level }).level).toBe(level);
+    for (const level of [-1, levelCount, 1.5, '2']) expect(validateAction(s, 'local', { type: 'level', level }).error).toBe('invalid');
   });
 
   test('replaying a chamber never farms duplicate collectibles', () => {
     let s = setup(); s.flags.frozenTouched = true; s.shards[0].taken = true; s.actors[0].x = s.exit.x; s.actors[0].y = s.exit.y;
     s = step(s); expect(s.totalShards).toBe(1);
     s = action(s, { type: 'restart' }); s.flags.frozenTouched = true; s.shards[0].taken = true; s.actors[0].x = s.exit.x; s.actors[0].y = s.exit.y;
-    s = step(s); expect(s.totalShards).toBe(1); expect(s.collected).toEqual([true, false, false, false]);
+    s = step(s); expect(s.totalShards).toBe(1); expect(s.collected).toEqual(Array.from({ length: levelCount }, (_, i) => i === 0));
   });
 });
 
@@ -438,5 +440,14 @@ describe('review fixes', () => {
     s = step(s, 120);
     expect(plantOf(s).height).toBeGreaterThan(100);
     expect(get(s, 'seed-0').y).toBeCloseTo(540 - plantOf(s).height - 10, 0);
+  });
+});
+
+describe('level data', () => {
+  test('no checkpoint respawns an actor inside a guard patrol', () => {
+    for (const level of LEVELS) for (const cp of level.checkpoints ?? []) for (const g of (level.enemies ?? []).filter(e => e.kind === 'guard' && e.y === cp.y)) {
+      const lo = g.minX - ENEMY.guard.w / 2, hi = g.maxX + ENEMY.guard.w / 2;
+      for (const x of [cp.x - 18, cp.x + 18]) expect(x + 15 <= lo || x - 15 >= hi).toBe(true);
+    }
   });
 });

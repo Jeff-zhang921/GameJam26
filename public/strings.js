@@ -1,6 +1,6 @@
 export const S = {
   title: 'Moonclock', english: 'CLOCKBLOOM', subtitle: 'Two travelers, one borrowed moment.', studio: 'A cooperative adventure in time',
-  start: 'Let Time Bloom', continue: 'Continue Journey', chapter: 'CHAMBER', chapters: 'Four Courtyards',
+  start: 'Let Time Bloom', continue: 'Continue Journey', chapter: 'CHAMBER', chapters: 'Courtyards',
   intro: 'In a forgotten greenhouse, nothing moves until you touch it.', introBody: 'Bloom sets time flowing and hurries it along. Still holds any moment in place. One clock, two hands.',
   solo: 'Solo · Switch Roles', coop: 'Local Co-op', mode: 'Play Mode',
   roleNames: ['Stillkeeper', 'Bloomkeeper'], roleLabels: ['STILL', 'BLOOM'], roleDescriptions: ['Freezes anything in time — even midair — until released.', 'Starts an object\'s clock, hurries it onward, and releases what Still holds.'],
@@ -12,7 +12,7 @@ export const S = {
   seeds: 'Seeds', rewinds: 'Rewinds', time: 'Time', best: 'Best', clear: 'Cleared in',
   complete: 'Time flows once more.', completeBody: 'Every moment you borrowed grew into a path that led you to each other.',
   chamberComplete: 'You rewrote this moment.', chamberCompleteBody: 'The courtyard bells draw a little closer.',
-  helpTitle: 'Make Time Your Tool', helpBody: 'Nothing ages until Bloom wakes it, and once awake it never stops on its own — only Still can hold it. Each press of Bloom makes time flow faster. A planted seed grows steadily taller, lifting whoever stands on it, then withers and vanishes.',
+  helpTitle: 'Make Time Your Tool', helpBody: 'Nothing ages until Bloom wakes it, and once awake it never stops on its own — only Still can hold it. Each press of Bloom makes time flow faster. A planted seed grows steadily taller, lifting whoever stands on it, then withers and vanishes. Creatures move on their own but only age once Bloom hastens them; frozen, they become harmless blocks. A hit sends you back to the last moon lamp you lit.',
   keys: [['A / D', 'Move'], ['Space', 'Tap for a short hop, hold for a full jump. Young sprouts launch you higher.'], ['E', 'Pick up, throw a crate, plant a seed in a pit, or set a seed down'], ['F', 'Use your timekeeper’s ability'], ['Tab', 'Switch between the two roles'], ['Shift + Tab', 'Focus the toolbar'], ['R', 'Rewind the world about three seconds (limited)'], ['Esc', 'Pause / Resume']],
   coopKeys: 'In co-op, the Stillkeeper uses A / D, W, E, F; the Bloomkeeper uses ← / →, ↑, Enter, L.',
   targetFreeze: 'Freeze · F', targetRelease: 'Release · F', targetWake: 'Wake · F', targetHasten: 'Hasten · F', targetMax: 'Full speed',
@@ -28,7 +28,9 @@ export const S = {
       hints: ['A withered trunk no longer blocks the path.', 'Wake the ancient tree so it withers out of your way. Plant the seed in the far pit, stand on it and wake it, then jump while it is still a short sprout to reach the cliff.'] },
     { name: 'Walking with Time', en: 'WITH TIME', goal: 'Grow, ride and freeze your way across the last rift.', lesson: 'Every clock you start is a promise.',
       hints: ['Some platforms are waiting for time, too.', 'Stand on a planted seed holding the crate and let it grow you up to the platform. Have Bloom wake the platform. At the far end, throw the crate, freeze it, and hop across.'] },
+    { name: 'The Trial Garden', en: 'TRIALS', goal: 'Cross the rift on a frozen dart, then age a mite out of your way.', lesson: 'Even danger keeps time.',
+      hints: ['Light the moon lamps — a hit only sends you back to the last one.', 'Freeze the guard or hasten it away. Freeze a dart above the rift and step on it. At the nest, have Bloom hasten a young mite, freeze it while it is dangerous, then let it finish its life.'] },
   ],
-  flags: { frozenTouched: 'Stand on a frozen crate', treeLifted: 'Ride a growing tree', withered: 'Let the ancient tree wither', sproutJump: 'Spring from a young sprout', moverRide: 'Ride a moving platform' },
+  flags: { frozenTouched: 'Stand on a frozen crate', treeLifted: 'Ride a growing tree', withered: 'Let the ancient tree wither', sproutJump: 'Spring from a young sprout', moverRide: 'Ride a moving platform', dartRide: 'Stand on a frozen dart or orb', miteGone: 'Let a mite live out its life' },
   errors: { invalid: "That action can't be done right now.", player: "This timekeeper hasn't entered the courtyard yet.", role: 'That ability belongs to the other timekeeper.', host: 'Your partner is advancing time.', unfinished: "Wake this courtyard's moon gate first.", history: 'Take a few more steps before borrowing back the past.', noRewinds: 'No rewinds left in this courtyard. Reset to start over.', paused: 'Let time flow again first.', grabRange: 'Get closer to a crate or seed, then press E.', freezeRange: 'Get near a plant, platform or loose crate, then try freezing it.', bloomRange: 'Walk up to a planted seed, tree or platform to wake it.', maxSpeed: "Its time is already flowing as fast as it can." },
 };
