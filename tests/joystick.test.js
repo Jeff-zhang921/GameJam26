@@ -1,59 +1,28 @@
 import { describe, test, expect } from 'bun:test';
 import { readJoystick, JOYSTICK } from '../public/joystick.js';
 
-// Thumb offset for an angle measured in degrees counter-clockwise from "right" (screen y grows downward).
-const at = (degrees, magnitude = 1) => [Math.cos(degrees * Math.PI / 180) * magnitude, -Math.sin(degrees * Math.PI / 180) * magnitude];
-const read = (degrees, magnitude, wasJumping = false) => readJoystick(...at(degrees, magnitude), wasJumping);
-
 describe('virtual joystick', () => {
-  test('left and right move without jumping; neutral and the dead zone stop', () => {
-    expect(read(0, 1)).toMatchObject({ dir: 1, jump: false });
-    expect(read(180, 1)).toMatchObject({ dir: -1, jump: false });
-    expect(readJoystick(0, 0)).toMatchObject({ dir: 0, jump: false, magnitude: 0 });
-    expect(readJoystick(JOYSTICK.deadZone * 0.8, 0)).toMatchObject({ dir: 0, jump: false });
-    expect(read(-90, 1)).toMatchObject({ dir: 0, jump: false });
+  test('straight up and down are idle, and diagonals only steer', () => {
+    expect(readJoystick(0, 0)).toEqual({ x: 0, y: 0, dir: 0 });
+    expect(readJoystick(0, -1)).toEqual({ x: 0, y: -1, dir: 0 });
+    expect(readJoystick(0, 1)).toEqual({ x: 0, y: 1, dir: 0 });
+    expect(readJoystick(0.65, -0.65)).toEqual({ x: 0.65, y: -0.65, dir: 1 });
+    expect(readJoystick(-0.65, -0.65)).toEqual({ x: -0.65, y: -0.65, dir: -1 });
   });
 
-  test('upper-right is Right + Jump, upper-left is Left + Jump, straight up is Jump', () => {
-    expect(read(45, 1)).toMatchObject({ dir: 1, jump: true });
-    expect(read(135, 1)).toMatchObject({ dir: -1, jump: true });
-    expect(read(90, 1)).toMatchObject({ dir: 0, jump: true });
-    // Not exactly 45°: anything clearly in the upper diagonal counts.
-    expect(read(36, 0.8)).toMatchObject({ dir: 1, jump: true });
-    expect(read(60, 0.8)).toMatchObject({ dir: 1, jump: true });
+  test('dead zone and hysteresis avoid starting or stopping on small drift', () => {
+    const between = (JOYSTICK.deadZone + JOYSTICK.releaseZone) / 2;
+    expect(readJoystick(between, 0).dir).toBe(0);
+    expect(readJoystick(between, 0, 1).dir).toBe(1);
+    expect(readJoystick(-between, 0, 1).dir).toBe(0);
+    expect(readJoystick(JOYSTICK.releaseZone / 2, 0, 1).dir).toBe(0);
+    expect(readJoystick(-0.8, 0, 1).dir).toBe(-1);
   });
 
-  test('a slight upward drift while running does not jump', () => {
-    expect(read(15, 1)).toMatchObject({ dir: 1, jump: false });
-    expect(read(165, 1)).toMatchObject({ dir: -1, jump: false });
-    expect(read(45, 0.45)).toMatchObject({ jump: false });
-  });
-
-  test('hysteresis keeps a jump held near the boundary and releases only after clearly leaving', () => {
-    expect(read(25, 1, false).jump).toBe(false);
-    expect(read(25, 1, true).jump).toBe(true);
-    // A thumb resting on the diagonal drifts; it still counts as "held up" until it is back to level.
-    expect(read(12, 1, true).jump).toBe(true);
-    expect(read(45, 0.4, true).jump).toBe(true);
-    expect(read(5, 1, true).jump).toBe(false);
-    expect(read(45, 0.3, true).jump).toBe(false);
-  });
-
-  test('holding the diagonal starts exactly one jump; returning below the threshold re-arms it', () => {
-    let jumping = false, jumps = 0;
-    const path = [0, 10, 20, 32, 40, 45, 45, 45, 28, 22, 40, 45, 12, 5, 0, 35, 45];
-    for (const degrees of path) {
-      const next = read(degrees, 1, jumping).jump;
-      if (next && !jumping) jumps++;
-      jumping = next;
-    }
-    expect(jumps).toBe(2);
-  });
-
-  test('input beyond the rim is clamped to full deflection', () => {
-    const reading = readJoystick(3, 0);
-    expect(reading.magnitude).toBe(1);
-    expect(reading.x).toBeCloseTo(1, 6);
-    expect(reading.dir).toBe(1);
+  test('input beyond the rim remains clamped to full deflection', () => {
+    expect(readJoystick(3, 0)).toEqual({ x: 1, y: 0, dir: 1 });
+    const { x, y, dir } = readJoystick(-3, -4);
+    expect(Math.hypot(x, y)).toBeCloseTo(1, 6);
+    expect(dir).toBe(-1);
   });
 });

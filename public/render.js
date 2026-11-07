@@ -313,6 +313,11 @@ export function createRenderer(canvas, S) {
     ctx.restore(); circle(ctx, c.x, y, 3, '#ffffff');
   }
   function freezePreview(p) {
+    if (p.cancel) {
+      circle(ctx, p.x, p.y, p.radius + 2, null, '#f6db9fe6', 2.5);
+      label(p.x, p.y - p.radius - 14, S.cancelFreezePreview, gold);
+      return;
+    }
     ctx.save(); ctx.setLineDash([8, 8]);
     circle(ctx, p.x, p.y, p.radius, p.valid ? '#bfeef414' : '#f1a58f10', p.valid ? '#d4f4f6aa' : '#f1a58faa', 1.5);
     ctx.setLineDash([]); star(ctx, p.x, p.y, 5, p.valid ? '#effcfd' : '#f6c3b5'); ctx.restore();
@@ -350,6 +355,7 @@ export function createRenderer(canvas, S) {
   function spell(state, e, reduced) {
     const age = state.tick - e.tick, caster = state.actors[e.caster];
     if (!caster || age < 0 || age > FLIGHT + BURST) return;
+    if (e.kind === 'freeze' && !state.freezeAreas.some(area => area.id === e.area)) return;
     const color = e.caster === 0 ? cyan : gold, [sx, sy] = handOf(caster, e.caster);
     const target = state.objects.find(o => o.id === e.target), { x: tx, y: ty } = target ? anchor(target) : e;
     const lift = Math.min(40, Math.hypot(tx - sx, ty - sy) * .2), cx = (sx + tx) / 2, cy = Math.min(sy, ty) - lift;
@@ -437,7 +443,7 @@ export function createRenderer(canvas, S) {
       ctx.fill();
     }
     if (options.reduced) for (const e of state.events) {
-      if (state.tick - e.tick < 12 && ['freeze', 'unfreeze', 'wake', 'grow', 'plant', 'shard', 'win', 'hit', 'checkpoint', 'strike'].includes(e.kind)) circle(ctx, e.x, e.y, 22, null, e.kind === 'hit' ? '#ffb3a1' : e.kind === 'strike' ? '#ff8a6a' : ['freeze', 'unfreeze'].includes(e.kind) ? cyan : gold, 2);
+      if (state.tick - e.tick < 12 && ['unfreeze', 'wake', 'grow', 'plant', 'shard', 'win', 'hit', 'checkpoint', 'strike'].includes(e.kind)) circle(ctx, e.x, e.y, 22, null, e.kind === 'hit' ? '#ffb3a1' : e.kind === 'strike' ? '#ff8a6a' : e.kind === 'unfreeze' ? cyan : gold, 2);
     }
     // Touch feedback: a pulse on the tapped object; an out-of-reach tap also shows the reach ring.
     if (options.tap && options.tap.age < 1) {
