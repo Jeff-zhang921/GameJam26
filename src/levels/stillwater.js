@@ -1,7 +1,7 @@
 export default {
   id: 'stillwater',
   // Art and music by name, from public/themes.js (GROUNDS, BACKGROUNDS, MUSIC).
-  theme: { ground: 'cobbleMoss', background: 'skyCastles', music: 'whatSheHasntSeen' },
+  theme: { ground: 'cobbleMoss', background: 'moonlitClocktower', music: 'whatSheHasntSeen' },
   platforms: [{ x: 0, y: 520, w: 435, h: 160 }, { x: 795, y: 430, w: 485, h: 220 }],
   spawn: [{ x: 180, y: 520 }, { x: 250, y: 520 }],
   crates: [{ x: 350, y: 493 }], seeds: [], pits: [], plants: [], movers: [],
