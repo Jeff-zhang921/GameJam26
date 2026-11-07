@@ -551,8 +551,8 @@ export function createRenderer(canvas, S) {
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.beginPath(); ctx.rect(cx0, cy0, cx1 - cx0, cy1 - cy0); ctx.clip();
     ctx.setTransform(k, 0, 0, k, ox, oy);
     ctx.drawImage(background, 0, 0);
-    if (state.level === 0) {
-      // Distant bell tower, visible before the ending so the cut has a landmark.
+    if (coda) {
+      // The tower appears only in the ending shot, outside the playable scenery.
       ctx.save(); ctx.translate(1080, 190);
       ctx.fillStyle = '#648e87'; ctx.fillRect(-47, -66, 94, 290);
       const stone = ctx.createLinearGradient(-47, 0, 47, 0);
