@@ -7,6 +7,7 @@ import { createRenderer } from './render.js';
 import { createNetwork } from './network.js';
 import { readJoystick, skillAimOffset } from './joystick.js';
 import { createLobby } from './lobby.js';
+import { createEntrance } from './entrance.js';
 import { createPWA } from './pwa.js';
 
 const music = createMusic();
@@ -112,21 +113,22 @@ const shell = document.querySelector('.shell');
 const modalRoot = document.querySelector('#modal-root');
 const veil = document.querySelector('.scene-veil');
 let sceneFade = null, celebration = null, nextPending = false;
-let onlineStarting = false, awaitingOnlineState = true;
-const stageBusy = () => !!(sceneFade || celebration);
+let awaitingOnlineState = true;
+const stageBusy = () => !!(sceneFade || celebration || entrance.active);
 const canvas = document.querySelector('#game');
 const renderer = createRenderer(canvas, S);
 const debug = new URLSearchParams(location.search).has('debug');
 const network = createNetwork({
   onRoom(room, playerId, serverTime) {
-    if (onlineStarting && room.status === 'PLAYING' && !room.suspended) startFade(null, { revealOnly: true });
-    onlineStarting = room.status === 'STARTING';
+    const starting = room.status === 'STARTING' && !room.suspended && !room.canReturnLobby;
+    if (starting && (sceneFade || celebration)) clearStage();
+    entrance.update(room, serverTime);
     lobby.update(room, playerId, serverTime);
     if (['WAITING', 'READY', 'STARTING'].includes(room.status) || room.canReturnLobby) {
-      if (stageBusy()) clearStage();
+      if (!starting && stageBusy()) clearStage();
       nextPending = false;
       modal = 'online'; renderModal();
-    } else if (room.status === 'PLAYING' && network.latest && modal === 'online' && !room.suspended) {
+    } else if (room.status === 'PLAYING' && network.latest && modal === 'online' && !room.suspended && !entrance.active) {
       modal = null; renderModal(); if (!stageBusy()) canvas.focus({ preventScroll: true });
     }
   },
@@ -145,7 +147,7 @@ const network = createNetwork({
       if (rewind) rewind.arrived = true; // the server has installed the courtyard's start
       nextPending = false;
       if (from) startFade(revealCourtyard, { from });
-      else modal = network.room.status === 'STARTING' ? 'online' : null;
+      else modal = network.room.status === 'STARTING' || entrance.active ? 'online' : null;
     }
     const seenBefore = seenEvent;
     for (const e of state.events) if (e.id > seenEvent) {
@@ -158,9 +160,10 @@ const network = createNetwork({
     }
     else if (game.status === 'paused' && (!modal || modal === 'online')) modal = 'pause';
     else if (game.status === 'playing' && modal === 'pause' && previous.status === 'paused') modal = null;
-    if (network.room.status === 'STARTING' || network.room.canReturnLobby) modal = 'online';
+    if (network.room.status === 'STARTING' || network.room.canReturnLobby || entrance.active) modal = 'online';
     if (!sceneFade?.from) updateUI();
     if (modalRoot.dataset.phase !== String(modal)) { renderModal(); if (!modal && !stageBusy()) canvas.focus({ preventScroll: true }); }
+    entrance.confirm(network.room, info.epoch);
   },
   onReplay(replay, game) { startRewind({ end: replay.end, current: game, online: true }); },
   onConnection(status) {
@@ -190,12 +193,24 @@ const lobby = createLobby({
   returnToLobby() { network.returnToLobby(); },
   retry() { network.retry(); },
 });
+const entrance = createEntrance({
+  reduced: () => reduced,
+  onStart() {
+    resetTouchState(); freezePreview = tapEffect = null;
+    lobby.setEntering(true); syncStage();
+  },
+  onFinish() {
+    lobby.setEntering(false); syncStage(); resetTouchState();
+    revealCourtyard(); canvas.focus({ preventScroll: true });
+  },
+  onCancel() { lobby.setEntering(false); syncStage(); },
+});
 const pwa = createPWA({ isBusy: () => onlineMode || stageBusy() || modal !== 'intro' });
 const orientationTip = document.createElement('aside'); orientationTip.className = 'orientation-tip'; orientationTip.setAttribute('role', 'status');
 orientationTip.innerHTML = '<span>Rotate to landscape for a wider view. You can keep playing.</span><button type="button" aria-label="Dismiss orientation tip">×</button>';
 orientationTip.querySelector('button').addEventListener('click', () => { orientationTip.hidden = true; }); document.body.append(orientationTip);
 function enterOnline() {
-  clearInputs(); onlineMode = true; modal = 'online'; onlineStarting = false; awaitingOnlineState = true;
+  clearInputs(); onlineMode = true; modal = 'online'; awaitingOnlineState = true;
   document.body.classList.add('online-mode'); renderModal();
 }
 function leaveOnline() {
@@ -337,6 +352,7 @@ function syncStage() {
   document.body.classList.toggle('scene-changing', !!sceneFade);
 }
 function clearStage() {
+  entrance.cancel();
   sceneFade = celebration = null;
   nextPending = false;
   veil.hidden = true;
@@ -854,6 +870,7 @@ function frame(time) {
   pwa.refresh();
   if (lastTime === 0) lastTime = time;
   accumulator += Math.min(100, time - lastTime); lastTime = time;
+  entrance.advance(time);
   advanceStage(time);
   const step = 1000 / 60;
   if (!onlineMode && !modal && !stageBusy() && !rewind && state.status === 'playing') {

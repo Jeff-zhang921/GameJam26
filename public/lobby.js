@@ -35,7 +35,7 @@ export function createLobby(callbacks) {
   document.body.append(root, badge);
 
   let room = null, playerId = null, connection = 'connected', view = null, timeOffset = 0;
-  let copyTimer = null, destroyed = false, enabled = false;
+  let copyTimer = null, destroyed = false, enabled = false, entering = false;
   const $ = selector => root.querySelector(selector);
   const views = [...root.querySelectorAll('[data-view]')];
   const roomCode = $('#online-room-code');
@@ -98,6 +98,7 @@ export function createLobby(callbacks) {
 
   function draw() {
     if (destroyed || !enabled) return;
+    if (entering) { badge.hidden = true; return; }
     const online = connection === 'connected';
     $('.online-connection').textContent = connection === 'connecting' ? 'Connecting to the courtyard…' : connection === 'reconnecting' ? 'Connection lost. Reconnecting…' : connection === 'offline' ? 'You are disconnected.' : room ? 'Connected to the shared courtyard' : '';
     $('.online-connection').dataset.state = connection;
@@ -217,7 +218,8 @@ export function createLobby(callbacks) {
     update(nextRoom, nextPlayerId, serverTime = Date.now()) { enabled = true; room = nextRoom; playerId = nextPlayerId; timeOffset = serverTime - Date.now(); draw(); },
     setConnection(status) { connection = status; if (status === 'connecting' || status === 'reconnecting') enabled = true; draw(); },
     setError,
-    hide() { enabled = false; root.hidden = true; badge.hidden = true; view = null; room = null; playerId = null; },
+    setEntering(value) { entering = value; root.inert = value; if (!value) draw(); },
+    hide() { entering = false; root.inert = false; enabled = false; root.hidden = true; badge.hidden = true; view = null; room = null; playerId = null; },
     destroy() {
       destroyed = true; clearInterval(timer); clearTimeout(copyTimer);
       document.removeEventListener('keydown', keyboard, true); document.removeEventListener('keyup', keyboard, true);
