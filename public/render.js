@@ -2,6 +2,7 @@ import { canopyWidth, meta, atExit, anchor, exitStatus } from '../src/logic.js';
 import { GROW, DIE, growFrame, dieFrame } from '../src/mushroom.js';
 import { enemyBox, lifeFraction, miteStage, isEnemy, attackCharge } from '../src/enemies.js';
 import { createCamera, createParticles, worldPoint } from './presentation.js';
+import { themeFor } from './themes.js';
 
 export function createRenderer(canvas, S) {
   const ctx = canvas.getContext('2d');
@@ -11,8 +12,15 @@ export function createRenderer(canvas, S) {
   const camera = createCamera(), effects = createParticles();
   let transform;
   const cyan = '#a1e3e5', gold = '#e1c68a', muted = '#8aa89b';
-  const sprites = Object.fromEntries(['crate', 'seed', 'ground', 'ground-fill', 'mushroom-grow', 'mushroom-die', 'still', 'mage'].map(name => { const img = new Image(); img.src = `/sprites/${name}.png`; return [name, img]; }));
+  const sprites = Object.fromEntries(['crate', 'seed', 'mushroom-grow', 'mushroom-die', 'still', 'mage'].map(name => { const img = new Image(); img.src = `/sprites/${name}.png`; return [name, img]; }));
   const loaded = (...names) => names.every(name => sprites[name].complete && sprites[name].naturalWidth > 0);
+  // Theme art (ground, background images) is loaded on first use, by path. `theme` is the current courtyard's.
+  const artCache = new Map();
+  function art(src) {
+    if (!artCache.has(src)) { const img = new Image(); img.onload = () => { backgroundKey = null; }; img.src = src; artCache.set(src, img); }
+    const img = artCache.get(src); return img.complete && img.naturalWidth > 0 ? img : null;
+  }
+  let theme = themeFor(0), backgroundKey = null;
   // Draws a sprite cropped to its art, centred on x and standing on `bottom`.
   function sprite(name, x, bottom, height, alpha) {
     if (alpha <= .01 || height <= 0) return;
@@ -30,6 +38,16 @@ export function createRenderer(canvas, S) {
   function arch(c, x, y, w, h, color, width = 1) { c.beginPath(); c.moveTo(x, y + h); c.lineTo(x, y + w / 2); c.arc(x + w / 2, y + w / 2, w / 2, Math.PI, 0); c.lineTo(x + w, y + h); c.strokeStyle = color; c.lineWidth = width; c.stroke(); }
   function star(c, x, y, size, color) { c.beginPath(); c.moveTo(x, y - size); c.quadraticCurveTo(x + 1, y - 1, x + size, y); c.quadraticCurveTo(x + 1, y + 1, x, y + size); c.quadraticCurveTo(x - 1, y + 1, x - size, y); c.quadraticCurveTo(x - 1, y - 1, x, y - size); c.fillStyle = color; c.fill(); }
   function glow(c, x, y, r, color) { const g = c.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, color); g.addColorStop(1, '#a4dfdf00'); c.fillStyle = g; c.fillRect(x - r, y - r, r * 2, r * 2); }
+  // The backdrop canvas is rebuilt when the courtyard's background changes (or its image finishes loading).
+  function updateBackground() {
+    const look = theme.background, img = look.image ? art(look.image) : null;
+    const key = `${theme.names.background}:${!!img}`;
+    if (key === backgroundKey) return;
+    backgroundKey = key;
+    if (!look.image) { buildBackground(); return; }
+    b.fillStyle = '#86b4b0'; b.fillRect(0, 0, 1280, 640);
+    if (img) { const k = Math.max(1280 / img.naturalWidth, 640 / img.naturalHeight), w = img.naturalWidth * k, h = img.naturalHeight * k; b.drawImage(img, (1280 - w) / 2, (640 - h) / 2, w, h); }
+  }
   function buildBackground() {
     const sky = b.createLinearGradient(0, 0, 0, 640); sky.addColorStop(0, '#86b4b0'); sky.addColorStop(.6, '#a5c9b5'); sky.addColorStop(1, '#609d91'); b.fillStyle = sky; b.fillRect(0, 0, 1280, 640);
     glow(b, 780, 130, 390, '#bbd2ad28');
@@ -55,7 +73,6 @@ export function createRenderer(canvas, S) {
     b.fillStyle = '#386f6644'; b.fillRect(0, 570, 1280, 70);
     for (let i = 0; i < 60; i++) { const x = (i * 139.1) % 1280, y = 570 + (i * 23.3) % 70; line(b, [[x, y], [x + 15 + i % 5 * 9, y]], '#97bcb126', .7); }
   }
-  buildBackground();
   function resize() {
     const { width, height } = canvas.getBoundingClientRect();
     frameWidth = Math.max(1, width); frameHeight = Math.max(1, height);
@@ -64,13 +81,12 @@ export function createRenderer(canvas, S) {
       canvas.width = Math.round(width * currentDpr); canvas.height = Math.round(height * currentDpr);
     }
   }
-  // ground.png: the long mossy stone ledge (cut from picture/background/ground.png). A platform's top is capped
-  // with it: left end, wall tiles on either side of the hourglass emblem, right end. Tiles alternate mirrored so
-  // every seam meets a matching edge, and the tile next to the emblem is the one cut beside it, so those seams
-  // are seamless. Ends that touch the world edge stay open. Ranges are source x px; `walk` is the moss surface.
-  const GROUND = { height: 174, walk: 28, scale: .45, left: [0, 160], right: [1540, 1690], fillL: [240, 740], emblem: [740, 960], fillR: [960, 1460] };
-  function groundCap(p) {
-    const img = sprites.ground, k = GROUND.scale, h = GROUND.height * k, top = p.y - GROUND.walk * k;
+  // A platform's top is capped with the theme's ground strip (see GROUNDS in themes.js): left end, wall tiles on
+  // either side of the emblem, right end. Tiles alternate mirrored so every seam meets a matching edge, and the
+  // tile next to the emblem is the one cut beside it, so those seams are seamless. Ends that touch the world
+  // edge stay open.
+  function groundCap(p, img) {
+    const GROUND = theme.ground.surface, k = GROUND.scale, h = GROUND.height * k, top = p.y - GROUND.walk * k;
     const width = ([from, to]) => (to - from) * k;
     const piece = ([from, to], x, w, mirror = false) => {
       if (!mirror) return ctx.drawImage(img, from, 0, to - from, GROUND.height, x, top, w, h);
@@ -92,25 +108,26 @@ export function createRenderer(canvas, S) {
     if (!openLeft) piece(GROUND.left, p.x, L);
     if (!openRight) piece(GROUND.right, x1, R);
   }
-  // Under the moss ledge: cobblestones (ground-fill.png, built from picture/background/ground2.png so it tiles
-  // both ways), anchored to the world and darkening with depth from `shade[0]` to `shade[1]`.
-  const FILL_SCALE = .6;
-  let fillPattern = null;
+  // Below the ground strip: the theme's fill texture, anchored to the world and darkening with depth from
+  // `shade[0]` to `shade[1]`. One pattern per texture.
+  const fillPatterns = new Map();
   function groundFill(x, y, w, h, shade = [.12, .72]) {
-    if (w <= 0 || h <= 0) return;
-    if (!fillPattern) { fillPattern = ctx.createPattern(sprites['ground-fill'], 'repeat'); fillPattern.setTransform(new DOMMatrix().scale(FILL_SCALE)); }
-    ctx.fillStyle = fillPattern; ctx.fillRect(x, y, w, h);
+    const fill = theme.ground.fill, img = art(fill.src);
+    if (w <= 0 || h <= 0 || !img) return;
+    if (!fillPatterns.has(fill.src)) { const pattern = ctx.createPattern(img, 'repeat'); pattern.setTransform(new DOMMatrix().scale(fill.scale)); fillPatterns.set(fill.src, pattern); }
+    ctx.fillStyle = fillPatterns.get(fill.src); ctx.fillRect(x, y, w, h);
     const g = ctx.createLinearGradient(0, y, 0, y + h); g.addColorStop(0, `rgba(14,16,24,${shade[0]})`); g.addColorStop(1, `rgba(10,14,18,${shade[1]})`);
     ctx.fillStyle = g; ctx.fillRect(x, y, w, h);
   }
   function platform(p) {
-    if (loaded('ground', 'ground-fill')) {
+    const surface = art(theme.ground.surface.src);
+    if (surface && art(theme.ground.fill.src)) {
       // The fill sits a little inside the ledge's ends, which step inward below the moss.
       const x0 = p.x <= 0 ? p.x : p.x + 12, x1 = p.x + p.w >= 1280 ? p.x + p.w : p.x + p.w - 12;
       groundFill(x0, p.y + 30, x1 - x0, p.h - 30);
       if (p.x > 0) line(ctx, [[x0 + 1, p.y + 40], [x0 + 1, p.y + p.h]], '#15141c80', 2);
       if (p.x + p.w < 1280) line(ctx, [[x1 - 1, p.y + 40], [x1 - 1, p.y + p.h]], '#15141c80', 2);
-      return groundCap(p);
+      return groundCap(p, surface);
     }
     const g = ctx.createLinearGradient(0, p.y, 0, 650); g.addColorStop(0, '#35534c'); g.addColorStop(1, '#123239'); ctx.fillStyle = g; ctx.fillRect(p.x, p.y, p.w, p.h);
     ctx.fillStyle = '#b9c0a4'; ctx.fillRect(p.x, p.y, p.w, 8); ctx.fillStyle = '#647c66'; ctx.fillRect(p.x, p.y + 8, p.w, 13); ctx.fillStyle = '#1b3839'; ctx.fillRect(p.x, p.y + 21, p.w, 6);
@@ -300,7 +317,7 @@ export function createRenderer(canvas, S) {
       const x0 = p.x <= 0 && left < 0 ? left : p.x, x1 = p.x + p.w >= W && right > W ? right : p.x + p.w;
       if (x0 !== p.x || x1 !== p.x + p.w) platform({ ...p, x: x0, w: x1 - x0 });
       if (bottom > H && p.y + p.h >= H - 1) {
-        if (loaded('ground-fill')) groundFill(x0, H, x1 - x0, bottom - H, [.72, .8]);
+        if (art(theme.ground.fill.src)) groundFill(x0, H, x1 - x0, bottom - H, [.72, .8]);
         else { ctx.fillStyle = '#123239'; ctx.fillRect(x0, H, x1 - x0, bottom - H); }
       }
     }
@@ -442,6 +459,7 @@ export function createRenderer(canvas, S) {
   }
   function draw(state, time, options = {}) {
     resize();
+    theme = themeFor(state.level); updateBackground();
     const dt = lastTime === null ? 0 : Math.min(.05, Math.max(0, (time - lastTime) / 1000));
     lastTime = time;
     if (!options.paused && !options.reduced) visualTime += dt * 1000;
@@ -455,7 +473,7 @@ export function createRenderer(canvas, S) {
     surroundings(state);
     ctx.save(); ctx.beginPath(); ctx.rect(0, 0, state.width, state.height); ctx.clip();
     ctx.drawImage(background, 0, 0);
-    ctx.save(); ctx.translate(780, 158); ctx.rotate(t * .00003); line(ctx, [[0, 9], [0, -62]], '#d8c99777', 2); line(ctx, [[-28, 0], [8, 0]], '#d8c99777', 2); circle(ctx, 0, 0, 3, '#cfc7a1'); ctx.restore();
+    if (theme.background.draw === 'greenhouse') { ctx.save(); ctx.translate(780, 158); ctx.rotate(t * .00003); line(ctx, [[0, 9], [0, -62]], '#d8c99777', 2); line(ctx, [[-28, 0], [8, 0]], '#d8c99777', 2); circle(ctx, 0, 0, 3, '#cfc7a1'); ctx.restore(); }
     state.platforms.forEach(platform);
     for (const a of state.freezeAreas ?? []) freezeArea(a, t);
     const target = options.target;

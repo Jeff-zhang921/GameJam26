@@ -1,5 +1,7 @@
 export default {
   id: 'trials',
+  // Art and music by name, from public/themes.js (GROUNDS, BACKGROUNDS, MUSIC).
+  theme: { ground: 'mossy', background: 'greenhouse', music: 'gymnopedie' },
   platforms: [{ x: 0, y: 520, w: 560, h: 160 }, { x: 800, y: 520, w: 480, h: 160 }],
   spawn: [{ x: 60, y: 520 }, { x: 100, y: 520 }],
   crates: [], seeds: [], pits: [], plants: [], movers: [],

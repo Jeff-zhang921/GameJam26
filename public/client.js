@@ -1,5 +1,6 @@
 import { playEffect } from './sfx.js';
 import { createMusic } from './music.js';
+import { themeFor } from './themes.js';
 import { setup, applyAction, validateAction, viewFor, targetFor, hintLevel, levelCount, interactionFor, abilityCheck, abilityTargets, timeObjectAt, anchor, exitStatus, freezeAreaAt, freezeCheck, meta } from '../src/logic.js';
 import { createHistory, compactFrame, rewindFrame, REWIND } from './rewind.js';
 import { S } from './strings.js';
@@ -743,6 +744,7 @@ function blendTicks(a, b, t) {
   };
 }
 function frame(time) {
+  music.select(themeFor(state.level).music); // each courtyard's own track (its theme)
   music.sync(sound && !document.hidden && (modal === 'intro' || stageBusy() || !modal || modal === 'win'));
   pwa.refresh();
   if (lastTime === 0) lastTime = time;

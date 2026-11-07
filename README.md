@@ -120,6 +120,22 @@ Still 不再选中单个物体，而是点击 / 触摸场景中的任意位置�
 
 设置中的 **Show touch controls** 可以在其他设备上手动开启触控布局。推荐横屏；竖屏仍可操作，并提示旋转设备。画布缩放不改变游戏坐标或碰撞规则。
 
+## 关卡主题：地面、背景、音乐
+
+每关在 `src/levels/*.js` 里用 `theme` 参数按名字选择素材：
+
+```js
+theme: { ground: 'mossy', background: 'greenhouse', music: 'gymnopedie' },
+```
+
+名字对应 `public/themes.js` 里的登记表，没写或写错的项会用 `DEFAULT_THEME`：
+
+- `GROUNDS`：`surface` 是盖在平台顶上的地面条（图片路径、高度、落脚线 `walk`、缩放，以及左端 / 平铺段 / 徽记 / 右端的切片范围）；`fill` 是地面下方可上下左右平铺的填充贴图和缩放。
+- `BACKGROUNDS`：`{ draw: 'greenhouse' }` 是程序绘制的温室背景（带转动的钟表指针）；`{ image: '/路径.png' }` 用图片按“铺满”方式覆盖 1280×640 的世界并居中。
+- `MUSIC`：音频路径、使用的秒数 `length`、首尾交叉淡化秒数 `fade`（循环从 `fade` 到 `length`）、音量 `volume`。切换到不同曲目的关卡会换歌，每首歌记住自己的播放位置。
+
+新增素材：把文件放进 `public/`（例如 `public/sprites/`、`public/art/`、`public/audio/`），在 `themes.js` 登记一个名字，再在关卡的 `theme` 里引用。`tests/themes.test.js` 会检查每关的主题名都已登记、登记的文件都存在。
+
 ## 安装 PWA
 
 先通过公开 HTTPS 地址访问游戏：
