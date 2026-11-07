@@ -11,27 +11,4 @@
 @media(max-width:430px){.brand-en{display:none}.brand-mark{display:none}.brand-title{font-size:16px}.chapter-button{width:21px}.chapter-nav{gap:0}.toolbar{gap:2px}.iconbutton{width:27px;height:29px;border-color:transparent}.goal-panel{width:min(250px,calc(100% - 100px))}#objective{font-size:11px}.checklist{font-size:9px}.action-strip{gap:8px}.ability-chip{padding:7px}.game-bottom .text-button>span{display:none}}
 @media(max-height:560px) and (min-width:600px){.shell{min-height:360px}.topbar{height:48px}.goal-panel{top:10px;padding:10px 14px;width:280px}.goal-panel h2{font-size:17px;margin:4px 0 7px}.goal-panel .checklist{padding-top:6px;gap:2px}#objective{margin:5px 0 7px}.game-bottom{padding-top:20px;gap:6px}.action-strip{flex-wrap:nowrap}.controls-strip{flex:0 1 auto;margin-right:auto}.controls-strip span:nth-child(3){display:none}.toast{bottom:105px}}
 /* The title and courtyard share a continuous canvas. */
-.shell.at-entry .topbar{margin-top:-66px;opacity:0;pointer-events:none}.topbar{transition:margin-top .7s,opacity .7s}.shell.at-entry .goal-panel,.shell.at-entry .game-bottom,.shell.at-entry .touch-controls,.shell.at-entry .touch-pause{opacity:0;visibility:hidden;pointer-events:none}.goal-panel,.game-bottom{transition:opacity .7s}.entry-screen{position:fixed;inset:0;z-index:20;display:grid;place-items:center;background:linear-gradient(90deg,#edf4df70,#e8efdbab 50%,#edf4df50);text-align:center;padding:28px;color:#234b47;transition:opacity 1.6s}.entry-content{width:min(360px,100%);padding:28px 0;transition:opacity .4s,transform .6s}.entry-mark{color:#8b733e;margin:0 auto 25px}.entry-mark svg{width:48px;height:48px;stroke-width:1}.entry-content h1{font:clamp(48px,9vw,80px) Georgia,serif;font-weight:400;letter-spacing:-3px;margin:16px 0}.entry-content>p{font:14px Georgia,serif;color:#54766a;margin:0 0 35px}.entry-content .mode-selector{margin:0 0 22px;background:#f5f7e84d}.entry-content .primary{min-width:240px;border-radius:30px}.entry-footer{position:absolute;bottom:30px;font-size:8px;letter-spacing:3px;color:#57766a}.entry-screen.departing{opacity:0;pointer-events:auto}.departing .entry-content{opacity:0;transform:translateY(-12px)}.reduced-motion .entry-screen{transition:opacity .2s!important}.reduced-motion .entry-content{transition:none!important}@media(max-width:760px){.shell.at-entry .topbar{margin-top:-58px}}@media(max-height:560px) and (min-width:600px){.shell.at-entry .topbar{margin-top:-48px}.entry-mark{margin-bottom:10px}.entry-content h1{margin:8px 0}.entry-content>p{margin-bottom:18px}.entry-footer{bottom:12px}}
-/* Main menu: one column of equal buttons; the New Game page splits local solo and online. */
-.entry-screen{overflow-y:auto}
-.entry-list,.entry-page{display:flex;flex-direction:column;align-items:center;gap:9px}
-.entry-list .primary,.entry-list .entry-secondary,.entry-page .primary{width:250px;min-width:0}
-.entry-secondary{padding:10px 24px;border:1px solid #3e72656b;border-radius:30px;background:#f5f9ebb3;color:#315e4d;font-size:12px;letter-spacing:1px;transition:background .2s}
-.entry-secondary:hover,.entry-secondary:focus-visible{background:#f5f9eb}
-.entry-label{display:block;font-size:8px;letter-spacing:2.5px;text-transform:uppercase;color:#6b8577;margin-top:6px}
-.entry-note{max-width:280px;font-size:10.5px;line-height:1.5;color:#54766a;margin:-2px 0 10px}
-.entry-page .online-entry-actions{margin-top:0}
-.entry-page .online-entry-actions button{min-width:120px}
-.entry-back{margin-top:10px;font-size:11px;letter-spacing:1px;color:#365b4d}
-.modal-backdrop.over-menu{z-index:21}
-.about-roles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:4px 0 14px;text-align:left}
-.about-role{border:1px solid var(--line);border-radius:7px;padding:10px 12px;font-size:11px;line-height:1.5}
-.about-role strong{display:block;font:15px Georgia,serif;margin-bottom:4px}
-.about-role.still strong{color:#3f7f8f}.about-role.bloom strong{color:#8b733e}
-.credits-team{list-style:none;padding:0;margin:4px 0 18px;font:16px/1.9 Georgia,serif;color:#234b47}
-.credits-tech{font-size:11px;color:#54766a}
-.credits-heading{justify-content:center}.music-credit{font-size:11px;color:#54766a}.music-credit a{color:#3e7265;text-underline-offset:3px}
-@media(max-width:480px){.about-roles{grid-template-columns:1fr}}
-/* Short landscape screens: the six menu buttons go in two columns. */
-@media(max-height:560px) and (min-width:600px){.entry-content{width:min(540px,100%)}.entry-list{display:grid;grid-template-columns:repeat(2,250px);justify-content:center}.entry-list .primary{grid-column:1/-1;justify-self:center}}
-@media(max-height:430px){.entry-content>p,.entry-mark{display:none}.entry-list,.entry-page{gap:7px}.entry-list .primary,.entry-list .entry-secondary,.entry-page .primary{padding-top:8px;padding-bottom:8px}.entry-note{display:none}.entry-back{margin-top:2px}}
+.shell.at-entry{visibility:hidden}.goal-panel,.game-bottom{transition:opacity .7s}

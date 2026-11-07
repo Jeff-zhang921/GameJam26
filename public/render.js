@@ -10,7 +10,6 @@ export function createRenderer(canvas, S) {
   let currentDpr = 1, frameWidth = 1, frameHeight = 1, lastTime = null, visualTime = 0, lastReset = -1;
   const camera = createCamera(), effects = createParticles();
   let transform;
-  let entryProgress = 0;
   const cyan = '#a1e3e5', gold = '#e1c68a', muted = '#8aa89b';
   const sprites = Object.fromEntries(['crate', 'seed', 'ground', 'ground-fill', 'mushroom-grow', 'mushroom-die', 'still', 'mage'].map(name => { const img = new Image(); img.src = `/sprites/${name}.png`; return [name, img]; }));
   const loaded = (...names) => names.every(name => sprites[name].complete && sprites[name].naturalWidth > 0);
@@ -372,8 +371,47 @@ export function createRenderer(canvas, S) {
     ctx.save(); ctx.beginPath(); ctx.moveTo(x - 30, y); ctx.lineTo(x - 30, y - 69); ctx.arc(x, y - 69, 30, Math.PI, 0); ctx.lineTo(x + 30, y); ctx.clip(); const g = ctx.createLinearGradient(x, y - 100, x, y); g.addColorStop(0, ready ? '#d5dfbd99' : '#497c7d33'); g.addColorStop(1, '#9ccac511'); ctx.fillStyle = g; ctx.fillRect(x - 30, y - 110, 60, 115);
     for (let i = 0; i < 9; i++) { const yy = y - ((t * .015 + i * 13) % 110); star(ctx, x + Math.sin(i * 2.2) * 19, yy, ready ? 2 : 1, ready ? '#f1e5b3bb' : '#b7d4ba44'); }
     ctx.restore(); circle(ctx, x, y - 67, 19, null, ready ? '#e4dbaf' : '#8aa89b88'); circle(ctx, x + 8, y - 73, 16, '#2c5b5c');
-    ctx.font = '9px "Segoe UI",sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = ready ? gold : '#9fb8a6'; const waiting = ready ? exitStatus(state).waiting : null;
-    ctx.fillText(waiting !== null ? S.gateWaiting[waiting] : ready ? S.gateOpen : S.gateClosed, x, y - 126);
+    if (state.status !== 'won') {
+      ctx.font = '9px "Segoe UI",sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = ready ? gold : '#9fb8a6'; const waiting = ready ? exitStatus(state).waiting : null;
+      ctx.fillText(waiting !== null ? S.gateWaiting[waiting] : ready ? S.gateOpen : S.gateClosed, x, y - 126);
+    }
+  }
+  function celebrateGate(state, { progress, finale }, reduced) {
+    const { x, y: ground } = state.exit, y = ground - 66;
+    const ramp = (start, end) => smooth(Math.max(0, Math.min(1, (progress - start) / (end - start))));
+    const light = reduced ? .85 : ramp(0, .48);
+    ctx.save(); ctx.globalAlpha = light;
+    glow(ctx, x, y, 137, '#ffe4a55c');
+    arch(ctx, x - 38, ground - 107, 76, 107, '#fff0b9', 3);
+    circle(ctx, x, y, 19, '#f7e8b56b', '#fff7d7', 1.5);
+    if (reduced) { ctx.restore(); return; }
+    const arrival = ramp(.08, .63);
+    state.actors.forEach((actor, i) => {
+      const side = i === 0 ? -1 : 1, color = i === 0 ? '#b5f4ff' : '#ffdb8a';
+      const at = u => [actor.x + side * 13 + (x - actor.x - side * 13) * u + side * Math.sin(u * Math.PI) * 47,
+        actor.y - 28 + (y - actor.y + 28) * u - Math.sin(u * Math.PI) * 23];
+      ctx.globalAlpha = light * (1 - ramp(.63, .85));
+      line(ctx, Array.from({ length: 12 }, (_, j) => at(Math.max(0, arrival - (11 - j) * .024))), color, 2.25);
+      const [px, py] = at(arrival);
+      glow(ctx, px, py, 19, `${color}9c`); star(ctx, px, py, 5, color);
+    });
+    const joined = ramp(.51, .76), radius = 24 + joined * (finale ? 62 : 31);
+    ctx.globalAlpha = joined * (1 - ramp(.88, 1) * .5);
+    circle(ctx, x, y, radius, null, '#fff2c3c9', 1.6);
+    if (finale) {
+      const orbit = ramp(.63, .91), phaseRadius = radius + 13 * orbit;
+      ctx.globalAlpha *= orbit;
+      circle(ctx, x, y, phaseRadius, null, '#bde6e3a8', 1);
+      for (let i = 0; i < 8; i++) {
+        const angle = i * Math.PI / 4 - Math.PI / 2 + (1 - orbit) * .4;
+        const px = x + Math.cos(angle) * phaseRadius, py = y + Math.sin(angle) * phaseRadius;
+        circle(ctx, px, py, 6, '#243f4d', '#e6deb1', 1);
+        const phase = Math.cos(i * Math.PI / 4);
+        if (i === 0) circle(ctx, px, py, 4, '#fff0bf');
+        else if (i !== 4) ellipse(ctx, px + Math.sign(Math.sin(i * Math.PI / 4)) * (1 - phase), py, 1.3 + (phase + 1), 4, 0, '#fff0bf');
+      }
+    }
+    ctx.restore();
   }
   // An orb flies from the caster's hand to what they targeted (following it if it moves), then bursts on arrival.
   const FLIGHT = 12, BURST = 14;
@@ -409,13 +447,6 @@ export function createRenderer(canvas, S) {
     if (!options.paused && !options.reduced) visualTime += dt * 1000;
     const t = options.reduced ? 0 : visualTime;
     transform = camera.update(state, { width: frameWidth, height: frameHeight, dt, mode: options.mode, reduced: options.reduced, paused: options.paused, sceneKey: options.sceneKey, resetCamera: lastReset !== options.cameraReset, bottomInset: options.bottomInset || 0 });
-    if (options.paused && entryProgress < 1) {
-      const fit = Math.min(frameWidth / state.width, frameHeight / state.height);
-      const progress = entryProgress * entryProgress * (3 - 2 * entryProgress);
-      transform = { ...transform, scale: fit + (transform.scale - fit) * progress,
-        offsetX: (frameWidth - state.width * fit) / 2 * (1 - progress) + transform.offsetX * progress,
-        offsetY: (frameHeight - state.height * fit) / 2 * (1 - progress) + transform.offsetY * progress };
-    }
     lastReset = options.cameraReset;
     effects.update(state, { dt, reduced: options.reduced, paused: options.paused && state.status !== 'won', sceneKey: options.sceneKey });
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -479,6 +510,7 @@ export function createRenderer(canvas, S) {
       if (carrier) { ctx.setLineDash([12, 9]); circle(ctx, carrier.x, carrier.y - (options.tap.area ? 30 : 0), options.tap.ringRadius ?? meta.controls.range, '#f4e7b40c', '#f4e7b4c0', 2); ctx.setLineDash([]); }
       ctx.restore();
     }
+    if (options.celebration) celebrateGate(state, options.celebration, options.reduced);
     if (options.preview) freezePreview(options.preview);
     const selected = state.objects.find(o => o.id === target);
     if (state.status === 'playing' && selected) {
@@ -492,7 +524,7 @@ export function createRenderer(canvas, S) {
     ctx.restore();
     if (options.rewind) rewindOverlay(options.rewind.progress, t);
   }
-  return { setEntryProgress(value) { entryProgress = value; },
+  return {
     portrait(which) {
       const width = canvas.clientWidth || canvas.width || 120, height = canvas.clientHeight || canvas.height || 120;
       canvas.width = Math.round(width * Math.min(window.devicePixelRatio || 1, 2)); canvas.height = Math.round(height * Math.min(window.devicePixelRatio || 1, 2));
