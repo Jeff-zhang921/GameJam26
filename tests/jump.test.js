@@ -132,8 +132,8 @@ describe('jump feel', () => {
     expect(falling.events.some(e => e.kind === 'return' && e.actor === 0)).toBe(true);
   });
 
-  test('pause, switch and rewind clear queued input without cutting the ongoing arc', () => {
-    for (const type of ['pause', 'switch', 'rewind']) {
+  test('pause and switch clear queued input without cutting the ongoing arc', () => {
+    for (const type of ['pause', 'switch']) {
       let state = step(send(flat(), 'jump'), 3);
       const before = state.actors[0].vy;
       state = send(state, type);

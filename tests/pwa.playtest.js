@@ -30,22 +30,31 @@ async (page) => {
   }
   if (rooms[0] === rooms[1]) throw new Error('Room isolation failed');
   const snapshot = tab => tab.evaluate(() => window.__moonclock.snapshot());
-  const move = await host.locator('[data-hold="1"]').boundingBox();
-  const jump = await host.locator('[data-jump]').boundingBox();
+  // Joystick: one finger pushes right, then slides to the upper-right diagonal (Right + Jump).
+  const stick = await host.locator('.joystick-base').boundingBox();
   const cdp = await contexts[0].newCDPSession(host);
-  const point = (box, id) => ({ x: box.x + box.width / 2, y: box.y + box.height / 2, id });
+  const centre = { x: stick.x + stick.width / 2, y: stick.y + stick.height / 2 }, radius = stick.width / 2;
+  const at = (degrees, id) => ({ x: centre.x + Math.cos(degrees * Math.PI / 180) * radius * 0.9, y: centre.y - Math.sin(degrees * Math.PI / 180) * radius * 0.9, id });
   const before = await snapshot(host);
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point(move, 1)] });
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point(move, 1), point(jump, 2)] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ ...centre, id: 1 }] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [at(0, 1)] });
+  await host.waitForTimeout(60);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [at(45, 1)] });
   await host.waitForTimeout(180);
   const jumped = await snapshot(guest);
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-  if (jumped.actors[0].x <= before.actors[0].x || jumped.actors[0].grounded || jumped.actors[0].animation.name !== 'jump') throw new Error('Simultaneous touch move+jump failed');
+  if (jumped.actors[0].x <= before.actors[0].x || jumped.actors[0].grounded || jumped.actors[0].animation.name !== 'jump') throw new Error('Joystick diagonal move+jump failed');
   await host.waitForTimeout(100);
   if ((await snapshot(otherHost)).actors[0].x !== 180) throw new Error('Cross-room movement leak');
-  await host.getByTestId('touch-ability').tap();
+  // Abilities are used by tapping the object in the world: find the crate on screen and tap it.
+  const crateOnScreen = tab => tab.evaluate(() => {
+    const camera = window.__moonclock.presentation().camera, crate = window.__moonclock.snapshot().objects[0];
+    const rect = document.querySelector('#game').getBoundingClientRect();
+    return { x: rect.left + camera.offsetX + crate.x * camera.scale, y: rect.top + camera.offsetY + crate.y * camera.scale };
+  });
+  let spot = await crateOnScreen(host); await host.touchscreen.tap(spot.x, spot.y);
   await guest.waitForFunction(() => window.__moonclock.snapshot().objects[0].frozen);
-  await guest.getByTestId('touch-ability').tap();
+  spot = await crateOnScreen(guest); await guest.touchscreen.tap(spot.x, spot.y);
   await host.waitForFunction(() => !window.__moonclock.snapshot().objects[0].frozen);
   const id = await guest.evaluate(() => window.__moonclock.connection().playerId);
   await contexts[1].setOffline(true);

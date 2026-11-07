@@ -76,7 +76,7 @@ describe('lanterns', () => {
   });
 
   test('a frozen lantern hangs in the air as a platform', () => {
-    let s = arena([{ kind: 'lantern', id: 'l', x: 600, y: 300 }], [{ x: 450 }, { x: 1220 }]);
+    let s = arena([{ kind: 'lantern', id: 'l', x: 600, y: 300 }], [{ x: 520 }, { x: 1220 }]);
     s = action(s, { type: 'ability', actor: 0, target: 'l' });
     const top = enemyBox(get(s, 'l')).y;
     Object.assign(s.actors[0], { x: 600, y: top - 1, vy: 0, grounded: false, on: null });
@@ -281,20 +281,9 @@ describe('checkpoints and hits', () => {
     expect(s.actors[0].invuln).toBeGreaterThan(0);
   });
 
-  test('rewind gives both actors a moment of grace and enemy ids stay unique afterwards', () => {
-    let s = arena([{ kind: 'nest', id: 'n', x: 700, y: 540, every: 20, max: 9 }], [{ x: 60 }, { x: 120 }]);
-    s = step(s, 50);
-    s = action(s, { type: 'rewind' });
-    expect(s.actors.map(p => p.invuln)).toEqual([meta.time.invulnTicks, meta.time.invulnTicks]);
-    s = step(s, 100);
-    const ids = s.objects.map(o => o.id);
-    expect(new Set(ids).size).toBe(ids.length);
-  });
-
-  test('rewind leaves checkpoints lit and restart puts them out', () => {
+  test('restart puts lit checkpoints out', () => {
     let s = withCheckpoint([], [{ x: 520 }, { x: 60 }]);
     s = step(s, 30);
-    s = action(s, { type: 'rewind' });
     expect(s.checkpoint).toBe('cp-0');
     s = action(s, { type: 'restart' });
     expect(s.checkpoint).toBe(null);

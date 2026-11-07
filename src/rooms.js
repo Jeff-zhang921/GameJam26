@@ -3,7 +3,7 @@ import { setup, validateAction, applyAction, targetFor } from './logic.js';
 
 const characters = { still: 0, bloom: 1 };
 const lobbyStatuses = new Set(['WAITING', 'READY']);
-const inputTypes = new Set(['move', 'jump', 'jumpRelease', 'grab', 'ability', 'rewind']);
+const inputTypes = new Set(['move', 'jump', 'jumpRelease', 'grab', 'ability']);
 const codePattern = /^[A-Z0-9]{6}$/;
 const clone = value => JSON.parse(JSON.stringify(value));
 
@@ -32,8 +32,7 @@ export function createRoomManager({ now = Date.now, countdownMs = 3000, reconnec
   }
   function gameView(room) {
     if (!room.game) return null;
-    const { history, ...rest } = room.game;
-    return { ...clone(rest), history: [] };
+    return clone(room.game);
   }
   function envelope(room, type = 'room') {
     const result = { type, room: publicRoom(room), serverTime: now() };
@@ -197,7 +196,6 @@ export function createRoomManager({ now = Date.now, countdownMs = 3000, reconnec
     const castTarget = action.type === 'ability' ? targetFor(room.game, actorOf(player), authoritativeAction)?.id : null;
     room.game = applyAction(room.game, player.id, authoritativeAction);
     updateAnimations(room, action.type === 'ability' ? actorOf(player) : null, castTarget);
-    if (action.type === 'rewind') room.epoch++;
   }
   function disconnect(ws) {
     const membership = member(ws); if (!membership) return;

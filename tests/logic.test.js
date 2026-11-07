@@ -128,6 +128,7 @@ describe('time flow', () => {
     let s = planted();
     for (let i = 0; i < 3; i++) s = action(s, { type: 'ability', actor: 1 });
     s = step(s, G / 6);
+    s.actors[0].x = 450; // Still walks within reach of the flower
     s = action(s, { type: 'ability', actor: 0 });
     const rise = s.actors[1].y - apex(action(s, { type: 'jump', actor: 1 }), 1);
     const ground = setup({ level: 1 });
@@ -195,6 +196,7 @@ describe('still', () => {
     let s = action(planted(), { type: 'ability', actor: 1 });
     s = action(s, { type: 'ability', actor: 1 }); s = action(s, { type: 'ability', actor: 1 });
     s = step(s, 10);
+    s.actors[0].x = 450; // Still walks within reach of the flower
     s = action(s, { type: 'ability', actor: 0 });
     const frozen = { ...s.objects.find(o => o.kind === 'plant') };
     s = step(s, G / 10);
@@ -339,37 +341,12 @@ describe('movers', () => {
 });
 
 describe('assists', () => {
-  test('rewind restores world objects but not actors, and is limited per chamber', () => {
-    let s = step(setup({ level: 1 }), 10);
-    s.actors[1].x = 380;
-    s = action(s, { type: 'grab', actor: 1 });
-    s.actors[1].x = 600;
-    s = step(s, 20);
-    s = action(s, { type: 'grab', actor: 1 });
-    expect(s.pits[0].plant).not.toBe(null);
-    s = action(s, { type: 'rewind' });
-    expect(s.objects.some(o => o.kind === 'plant')).toBe(false);
-    expect(s.pits[0].plant).toBe(null);
-    expect(get(s, 'seed-1')).toMatchObject({ held: null, x: 380 });
-    expect(s.actors[1].x).toBe(600);
-    expect(s.rewindsLeft).toBe(meta.time.rewinds - 1);
-    s = step(s, 20); s = action(s, { type: 'rewind' });
-    s = step(s, 20); s = action(s, { type: 'rewind' });
-    s = step(s, 20);
-    expect(validateAction(s, 'local', { type: 'rewind' }).error).toBe('noRewinds');
-    expect(action(s, { type: 'restart' }).rewindsLeft).toBe(meta.time.rewinds);
-  });
-
-  test('rewind drops an item that was carried in the snapshot at its carrier\'s current feet', () => {
-    let s = setup({ level: 1 });
-    s.actors[1].x = 380;
-    s = action(s, { type: 'grab', actor: 1 });
-    s = step(s, 200);
-    s.actors[1].x = 600;
-    s = action(s, { type: 'grab', actor: 1 });
-    s = action(s, { type: 'rewind' });
-    expect(s.actors[1].carrying).toBe(null);
-    expect(get(s, 'seed-1')).toMatchObject({ held: null, x: 630 });
+  test('rewind is no longer an action and the state keeps no rewind history', () => {
+    const s = step(setup({ level: 1 }), 30);
+    expect(validateAction(s, 'local', { type: 'rewind', actor: 0 }).valid).toBe(false);
+    expect(applyAction(s, 'local', { type: 'rewind' })).toBe(s);
+    expect('history' in s).toBe(false);
+    expect('rewindsLeft' in s).toBe(false);
   });
 
   test('the clock starts on first input and the hint escalates after 90 idle seconds of play', () => {
@@ -423,7 +400,7 @@ describe('review fixes', () => {
     s.actors[1].x = 110; s = action(s, { type: 'grab', actor: 1 });
     s.actors[1].x = 60; s = action(s, { type: 'grab', actor: 1 });
     for (let i = 0; i < meta.time.maxSpeed; i++) s = action(s, { type: 'ability', actor: 1, target: 'plant-1' });
-    s.actors[1].x = 70;
+    s.actors[1].x = 130; // both pits within reach; the full-speed one is nearer
     s = action(s, { type: 'ability', actor: 1 });
     expect(get(s, 'plant-0').speed).toBe(1);
     expect(get(s, 'plant-1').speed).toBe(meta.time.maxSpeed);
@@ -447,12 +424,6 @@ describe('review fixes', () => {
     const seed = get(s, 'seed-9'), crate = get(s, 'crate-0');
     expect(seed.y).toBeCloseTo(crate.y - 27 - 10, 0);
     expect(crate.y).toBe(493);
-  });
-
-  test('rewind is rejected while paused', () => {
-    let s = step(setup(), 12);
-    s = action(s, { type: 'pause' });
-    expect(validateAction(s, 'local', { type: 'rewind' })).toEqual({ valid: false, error: 'paused' });
   });
 
   test('the clock starts on a first grab', () => {
