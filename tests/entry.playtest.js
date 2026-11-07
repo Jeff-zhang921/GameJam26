@@ -142,7 +142,7 @@ async function checkOnline(server) {
   await host.getByTestId('character-still').click(); await guest.getByTestId('character-bloom').click();
   await host.getByTestId('ready').click(); await guest.getByTestId('ready').click();
   await host.getByTestId('start-game').click();
-  await host.locator('.scene-veil').waitFor({ state: 'visible' });
+  await host.getByTestId('online-entrance').waitFor({ state: 'visible' });
   await Promise.all([ready(host), ready(guest)]);
 
   const room = server.rooms.rooms.get(code);
