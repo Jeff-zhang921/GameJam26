@@ -131,6 +131,11 @@ export function objectBox(o) {
 }
 const circleTouches = (c, b) => Math.hypot(Math.max(b.x - c.x, 0, c.x - (b.x + b.w)), Math.max(b.y - c.y, 0, c.y - (b.y + b.h))) <= c.radius;
 
+// Later areas are drawn on top. A tap in an overlap selects just that area.
+export function freezeAreaAt(state, point) {
+  return state.freezeAreas.findLast(a => a.ticksLeft > 0 && dist(a, point) <= a.radius);
+}
+
 // Every object (never a traveller) touching an active Freeze Area runs on slowed local time; leaving the
 // area, or the area fading, restores normal time. Recomputed every tick, so it is never left behind.
 export function applyFreezeAreas(state) {
@@ -225,9 +230,18 @@ export function validateAction(state, playerId, action) {
     return p.carrying !== null || pickable(state, p).length ? { valid: true } : no('grabRange');
   }
   if (action.type === 'ability') {
+    if (action.area !== undefined) {
+      if (action.actor !== STILL) return no('role');
+      if (typeof action.area !== 'string') return no('invalid');
+      const area = state.freezeAreas.find(a => a.id === action.area && a.ticksLeft > 0);
+      return area?.owner === playerId ? { valid: true } : no('freezeArea');
+    }
     if (action.target !== undefined && typeof action.target !== 'string') return no('invalid');
     if (action.actor === STILL) {
-      const check = freezeCheck(state, freezePoint(state, action));
+      const point = freezePoint(state, action);
+      const check = freezeCheck(state, point);
+      // A point cast from an older client snapshot must not spend a charge on a circle already there.
+      if (check === 'ok' && action.x !== undefined && freezeAreaAt(state, point)) return no('freezeCovered');
       return check === 'ok' ? { valid: true } : no(check === 'noCharges' ? 'noCharges' : 'freezeRange');
     }
     const target = targetFor(state, action.actor, action);
@@ -473,10 +487,6 @@ export function exitStatus(state) {
   return { open, at, waiting: open && at.some(Boolean) && !at.every(Boolean) ? at.indexOf(false) : null };
 }
 
-// A courtyard is lost only when it is provably unwinnable. Crates and loose seeds always return to their
-// spawn, so the only resource that can run out is seeds: a planted seed becomes a flower that withers and
-// vanishes for good. Anything that could still help (a seed anywhere, a flower that can still grow or
-// spring, any flower at all for a ledge that needs one) keeps the courtyard alive.
 // Who is still on the low side of a gate that sits on a raised ledge (by position, not by what they stand on).
 function belowExit(state) {
   const ledge = state.platforms.find(f => state.exit.x >= f.x && state.exit.x <= f.x + f.w && Math.abs(f.y - state.exit.y) <= 2);
@@ -541,10 +551,15 @@ export function applyAction(state, playerId, action) {
     }
   }
   if (action.type === 'ability') {
-    if (action.actor === STILL) {
+    if (action.area !== undefined) {
+      const area = s.freezeAreas.find(a => a.id === action.area);
+      s.freezeAreas = s.freezeAreas.filter(a => a !== area);
+      applyFreezeAreas(s);
+      event(s, 'unfreeze', area.x, area.y, { area: area.id });
+    } else if (action.actor === STILL) {
       // Still casts a Freeze Area at the chosen point; it costs one charge and starts slowing at once.
       const at = freezePoint(s, action), id = `freeze-${s.nextArea++}`;
-      s.freezeAreas.push({ id, x: at.x, y: at.y, radius: meta.freeze.radius, ticksLeft: meta.freeze.duration, duration: meta.freeze.duration });
+      s.freezeAreas.push({ id, owner: playerId, x: at.x, y: at.y, radius: meta.freeze.radius, ticksLeft: meta.freeze.duration, duration: meta.freeze.duration });
       s.freezeCharges--;
       applyFreezeAreas(s);
       event(s, 'freeze', at.x, at.y, { caster: action.actor, area: id });

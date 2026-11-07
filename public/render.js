@@ -10,9 +10,8 @@ export function createRenderer(canvas, S) {
   let currentDpr = 1, frameWidth = 1, frameHeight = 1, lastTime = null, visualTime = 0, lastReset = -1;
   const camera = createCamera(), effects = createParticles();
   let transform;
-  let entryProgress = 0;
   const cyan = '#a1e3e5', gold = '#e1c68a', muted = '#8aa89b';
-  const sprites = Object.fromEntries(['crate', 'seed', 'ground', 'mushroom-grow', 'mushroom-die', 'still', 'mage'].map(name => { const img = new Image(); img.src = `/sprites/${name}.png`; return [name, img]; }));
+  const sprites = Object.fromEntries(['crate', 'seed', 'ground', 'ground-fill', 'mushroom-grow', 'mushroom-die', 'still', 'mage'].map(name => { const img = new Image(); img.src = `/sprites/${name}.png`; return [name, img]; }));
   const loaded = (...names) => names.every(name => sprites[name].complete && sprites[name].naturalWidth > 0);
   // Draws a sprite cropped to its art, centred on x and standing on `bottom`.
   function sprite(name, x, bottom, height, alpha) {
@@ -65,31 +64,53 @@ export function createRenderer(canvas, S) {
       canvas.width = Math.round(width * currentDpr); canvas.height = Math.round(height * currentDpr);
     }
   }
-  // ground.png: 4x4 variants of a grassy strip (each platform keeps one, picked by its index so neighbours differ), FRAME px each, its moss surface WALK px from the top.
-  // A platform's top is capped with the strip: left end, an odd number of middle tiles (alternately mirrored so
-  // every seam meets a matching edge), right end. Ends that touch the world edge are left open.
-  const GROUND = { frame: [528, 122], walk: 54, left: 172, right: 392, scale: .55 };
-  function groundCap(p, index) {
-    const img = sprites.ground, [fw, fh] = GROUND.frame, k = GROUND.scale, n = (index * 7 + 3) % 16;
-    const sx0 = n % 4 * fw, sy0 = Math.floor(n / 4) * fh, top = p.y - GROUND.walk * k, h = fh * k;
-    const piece = (from, to, x, w, mirror = false) => {
-      if (!mirror) return ctx.drawImage(img, sx0 + from, sy0, to - from, fh, x, top, w, h);
-      ctx.save(); ctx.translate(x + w, 0); ctx.scale(-1, 1); ctx.drawImage(img, sx0 + from, sy0, to - from, fh, 0, top, w, h); ctx.restore();
+  // ground.png: the long mossy stone ledge (cut from picture/background/ground.png). A platform's top is capped
+  // with it: left end, wall tiles on either side of the hourglass emblem, right end. Tiles alternate mirrored so
+  // every seam meets a matching edge, and the tile next to the emblem is the one cut beside it, so those seams
+  // are seamless. Ends that touch the world edge stay open. Ranges are source x px; `walk` is the moss surface.
+  const GROUND = { height: 174, walk: 28, scale: .45, left: [0, 160], right: [1540, 1690], fillL: [240, 740], emblem: [740, 960], fillR: [960, 1460] };
+  function groundCap(p) {
+    const img = sprites.ground, k = GROUND.scale, h = GROUND.height * k, top = p.y - GROUND.walk * k;
+    const width = ([from, to]) => (to - from) * k;
+    const piece = ([from, to], x, w, mirror = false) => {
+      if (!mirror) return ctx.drawImage(img, from, 0, to - from, GROUND.height, x, top, w, h);
+      ctx.save(); ctx.translate(x + w, 0); ctx.scale(-1, 1); ctx.drawImage(img, from, 0, to - from, GROUND.height, 0, top, w, h); ctx.restore();
+    };
+    // Tiles fill x0..x1; the first one counted from `fromRight ? x1 : x0` is unmirrored.
+    const run = (src, x0, x1, fromRight) => {
+      const span = x1 - x0; if (span <= 0) return;
+      const count = Math.max(1, Math.round(span / width(src))), tile = span / count;
+      for (let i = 0; i < count; i++) piece(src, x0 + i * tile, tile + .5, (fromRight ? count - 1 - i : i) % 2 === 1);
     };
     const openLeft = p.x <= 0, openRight = p.x + p.w >= 1280;
-    const L = openLeft ? 0 : GROUND.left * k, R = openRight ? 0 : (fw - GROUND.right) * k, M = (GROUND.right - GROUND.left) * k;
-    let count = Math.max(1, Math.round((p.w - L - R) / M)); if (count % 2 === 0) count++;
-    const tile = (p.w - L - R) / count;
-    if (!openLeft) piece(0, GROUND.left, p.x, L);
-    for (let i = 0; i < count; i++) piece(GROUND.left, GROUND.right, p.x + L + i * tile, tile + .5, i % 2 === 1);
-    if (!openRight) piece(GROUND.right, fw, p.x + p.w - R, R);
+    const L = openLeft ? 0 : width(GROUND.left), R = openRight ? 0 : width(GROUND.right);
+    const x0 = p.x + L, x1 = p.x + p.w - R, E = width(GROUND.emblem);
+    if (x1 - x0 >= E + width(GROUND.fillR)) {
+      const ex = Math.round((x0 + x1 - E) / 2);
+      run(GROUND.fillL, x0, ex, true); run(GROUND.fillR, ex + E, x1, false); piece(GROUND.emblem, ex, E);
+    } else run(GROUND.fillR, x0, x1, false);
+    if (!openLeft) piece(GROUND.left, p.x, L);
+    if (!openRight) piece(GROUND.right, x1, R);
   }
-  function platform(p, index) {
-    if (loaded('ground')) {
-      const g = ctx.createLinearGradient(0, p.y, 0, 650); g.addColorStop(0, '#4f4a33'); g.addColorStop(1, '#1f2a22'); ctx.fillStyle = g; ctx.fillRect(p.x, p.y + 12, p.w, p.h - 12);
-      for (let x = p.x + 20; x < p.x + p.w - 30; x += 99) arch(ctx, x, p.y + 70, 63, p.h, '#c9b88a1c', 2);
-      line(ctx, [[p.x, p.y + 30], [p.x, 640]], '#d8c79a30'); line(ctx, [[p.x + p.w, p.y + 30], [p.x + p.w, 640]], '#d8c79a30');
-      return groundCap(p, index);
+  // Under the moss ledge: cobblestones (ground-fill.png, built from picture/background/ground2.png so it tiles
+  // both ways), anchored to the world and darkening with depth from `shade[0]` to `shade[1]`.
+  const FILL_SCALE = .6;
+  let fillPattern = null;
+  function groundFill(x, y, w, h, shade = [.12, .72]) {
+    if (w <= 0 || h <= 0) return;
+    if (!fillPattern) { fillPattern = ctx.createPattern(sprites['ground-fill'], 'repeat'); fillPattern.setTransform(new DOMMatrix().scale(FILL_SCALE)); }
+    ctx.fillStyle = fillPattern; ctx.fillRect(x, y, w, h);
+    const g = ctx.createLinearGradient(0, y, 0, y + h); g.addColorStop(0, `rgba(14,16,24,${shade[0]})`); g.addColorStop(1, `rgba(10,14,18,${shade[1]})`);
+    ctx.fillStyle = g; ctx.fillRect(x, y, w, h);
+  }
+  function platform(p) {
+    if (loaded('ground', 'ground-fill')) {
+      // The fill sits a little inside the ledge's ends, which step inward below the moss.
+      const x0 = p.x <= 0 ? p.x : p.x + 12, x1 = p.x + p.w >= 1280 ? p.x + p.w : p.x + p.w - 12;
+      groundFill(x0, p.y + 30, x1 - x0, p.h - 30);
+      if (p.x > 0) line(ctx, [[x0 + 1, p.y + 40], [x0 + 1, p.y + p.h]], '#15141c80', 2);
+      if (p.x + p.w < 1280) line(ctx, [[x1 - 1, p.y + 40], [x1 - 1, p.y + p.h]], '#15141c80', 2);
+      return groundCap(p);
     }
     const g = ctx.createLinearGradient(0, p.y, 0, 650); g.addColorStop(0, '#35534c'); g.addColorStop(1, '#123239'); ctx.fillStyle = g; ctx.fillRect(p.x, p.y, p.w, p.h);
     ctx.fillStyle = '#b9c0a4'; ctx.fillRect(p.x, p.y, p.w, 8); ctx.fillStyle = '#647c66'; ctx.fillRect(p.x, p.y + 8, p.w, 13); ctx.fillStyle = '#1b3839'; ctx.fillRect(p.x, p.y + 21, p.w, 6);
@@ -278,7 +299,10 @@ export function createRenderer(canvas, S) {
     for (const p of state.platforms) {
       const x0 = p.x <= 0 && left < 0 ? left : p.x, x1 = p.x + p.w >= W && right > W ? right : p.x + p.w;
       if (x0 !== p.x || x1 !== p.x + p.w) platform({ ...p, x: x0, w: x1 - x0 });
-      if (bottom > H && p.y + p.h >= H - 1) { ctx.fillStyle = '#123239'; ctx.fillRect(x0, H, x1 - x0, bottom - H); }
+      if (bottom > H && p.y + p.h >= H - 1) {
+        if (loaded('ground-fill')) groundFill(x0, H, x1 - x0, bottom - H, [.72, .8]);
+        else { ctx.fillStyle = '#123239'; ctx.fillRect(x0, H, x1 - x0, bottom - H); }
+      }
     }
   }
   // Still's Freeze Area: an icy disc with a slow inner ring, drifting specks and an arc counting down its time.
@@ -313,6 +337,11 @@ export function createRenderer(canvas, S) {
     ctx.restore(); circle(ctx, c.x, y, 3, '#ffffff');
   }
   function freezePreview(p) {
+    if (p.cancel) {
+      circle(ctx, p.x, p.y, p.radius + 2, null, '#f6db9fe6', 2.5);
+      label(p.x, p.y - p.radius - 14, S.cancelFreezePreview, gold);
+      return;
+    }
     ctx.save(); ctx.setLineDash([8, 8]);
     circle(ctx, p.x, p.y, p.radius, p.valid ? '#bfeef414' : '#f1a58f10', p.valid ? '#d4f4f6aa' : '#f1a58faa', 1.5);
     ctx.setLineDash([]); star(ctx, p.x, p.y, 5, p.valid ? '#effcfd' : '#f6c3b5'); ctx.restore();
@@ -342,14 +371,54 @@ export function createRenderer(canvas, S) {
     ctx.save(); ctx.beginPath(); ctx.moveTo(x - 30, y); ctx.lineTo(x - 30, y - 69); ctx.arc(x, y - 69, 30, Math.PI, 0); ctx.lineTo(x + 30, y); ctx.clip(); const g = ctx.createLinearGradient(x, y - 100, x, y); g.addColorStop(0, ready ? '#d5dfbd99' : '#497c7d33'); g.addColorStop(1, '#9ccac511'); ctx.fillStyle = g; ctx.fillRect(x - 30, y - 110, 60, 115);
     for (let i = 0; i < 9; i++) { const yy = y - ((t * .015 + i * 13) % 110); star(ctx, x + Math.sin(i * 2.2) * 19, yy, ready ? 2 : 1, ready ? '#f1e5b3bb' : '#b7d4ba44'); }
     ctx.restore(); circle(ctx, x, y - 67, 19, null, ready ? '#e4dbaf' : '#8aa89b88'); circle(ctx, x + 8, y - 73, 16, '#2c5b5c');
-    ctx.font = '9px "Segoe UI",sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = ready ? gold : '#9fb8a6'; const waiting = ready ? exitStatus(state).waiting : null;
-    ctx.fillText(waiting !== null ? S.gateWaiting[waiting] : ready ? S.gateOpen : S.gateClosed, x, y - 126);
+    if (state.status !== 'won') {
+      ctx.font = '9px "Segoe UI",sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = ready ? gold : '#9fb8a6'; const waiting = ready ? exitStatus(state).waiting : null;
+      ctx.fillText(waiting !== null ? S.gateWaiting[waiting] : ready ? S.gateOpen : S.gateClosed, x, y - 126);
+    }
+  }
+  function celebrateGate(state, { progress, finale }, reduced) {
+    const { x, y: ground } = state.exit, y = ground - 66;
+    const ramp = (start, end) => smooth(Math.max(0, Math.min(1, (progress - start) / (end - start))));
+    const light = reduced ? .85 : ramp(0, .48);
+    ctx.save(); ctx.globalAlpha = light;
+    glow(ctx, x, y, 137, '#ffe4a55c');
+    arch(ctx, x - 38, ground - 107, 76, 107, '#fff0b9', 3);
+    circle(ctx, x, y, 19, '#f7e8b56b', '#fff7d7', 1.5);
+    if (reduced) { ctx.restore(); return; }
+    const arrival = ramp(.08, .63);
+    state.actors.forEach((actor, i) => {
+      const side = i === 0 ? -1 : 1, color = i === 0 ? '#b5f4ff' : '#ffdb8a';
+      const at = u => [actor.x + side * 13 + (x - actor.x - side * 13) * u + side * Math.sin(u * Math.PI) * 47,
+        actor.y - 28 + (y - actor.y + 28) * u - Math.sin(u * Math.PI) * 23];
+      ctx.globalAlpha = light * (1 - ramp(.63, .85));
+      line(ctx, Array.from({ length: 12 }, (_, j) => at(Math.max(0, arrival - (11 - j) * .024))), color, 2.25);
+      const [px, py] = at(arrival);
+      glow(ctx, px, py, 19, `${color}9c`); star(ctx, px, py, 5, color);
+    });
+    const joined = ramp(.51, .76), radius = 24 + joined * (finale ? 62 : 31);
+    ctx.globalAlpha = joined * (1 - ramp(.88, 1) * .5);
+    circle(ctx, x, y, radius, null, '#fff2c3c9', 1.6);
+    if (finale) {
+      const orbit = ramp(.63, .91), phaseRadius = radius + 13 * orbit;
+      ctx.globalAlpha *= orbit;
+      circle(ctx, x, y, phaseRadius, null, '#bde6e3a8', 1);
+      for (let i = 0; i < 8; i++) {
+        const angle = i * Math.PI / 4 - Math.PI / 2 + (1 - orbit) * .4;
+        const px = x + Math.cos(angle) * phaseRadius, py = y + Math.sin(angle) * phaseRadius;
+        circle(ctx, px, py, 6, '#243f4d', '#e6deb1', 1);
+        const phase = Math.cos(i * Math.PI / 4);
+        if (i === 0) circle(ctx, px, py, 4, '#fff0bf');
+        else if (i !== 4) ellipse(ctx, px + Math.sign(Math.sin(i * Math.PI / 4)) * (1 - phase), py, 1.3 + (phase + 1), 4, 0, '#fff0bf');
+      }
+    }
+    ctx.restore();
   }
   // An orb flies from the caster's hand to what they targeted (following it if it moves), then bursts on arrival.
   const FLIGHT = 12, BURST = 14;
   function spell(state, e, reduced) {
     const age = state.tick - e.tick, caster = state.actors[e.caster];
     if (!caster || age < 0 || age > FLIGHT + BURST) return;
+    if (e.kind === 'freeze' && !state.freezeAreas.some(area => area.id === e.area)) return;
     const color = e.caster === 0 ? cyan : gold, [sx, sy] = handOf(caster, e.caster);
     const target = state.objects.find(o => o.id === e.target), { x: tx, y: ty } = target ? anchor(target) : e;
     const lift = Math.min(40, Math.hypot(tx - sx, ty - sy) * .2), cx = (sx + tx) / 2, cy = Math.min(sy, ty) - lift;
@@ -378,13 +447,6 @@ export function createRenderer(canvas, S) {
     if (!options.paused && !options.reduced) visualTime += dt * 1000;
     const t = options.reduced ? 0 : visualTime;
     transform = camera.update(state, { width: frameWidth, height: frameHeight, dt, mode: options.mode, reduced: options.reduced, paused: options.paused, sceneKey: options.sceneKey, resetCamera: lastReset !== options.cameraReset, bottomInset: options.bottomInset || 0 });
-    if (options.paused && entryProgress < 1) {
-      const fit = Math.min(frameWidth / state.width, frameHeight / state.height);
-      const progress = entryProgress * entryProgress * (3 - 2 * entryProgress);
-      transform = { ...transform, scale: fit + (transform.scale - fit) * progress,
-        offsetX: (frameWidth - state.width * fit) / 2 * (1 - progress) + transform.offsetX * progress,
-        offsetY: (frameHeight - state.height * fit) / 2 * (1 - progress) + transform.offsetY * progress };
-    }
     lastReset = options.cameraReset;
     effects.update(state, { dt, reduced: options.reduced, paused: options.paused && state.status !== 'won', sceneKey: options.sceneKey });
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -437,7 +499,7 @@ export function createRenderer(canvas, S) {
       ctx.fill();
     }
     if (options.reduced) for (const e of state.events) {
-      if (state.tick - e.tick < 12 && ['freeze', 'unfreeze', 'wake', 'grow', 'plant', 'shard', 'win', 'hit', 'checkpoint', 'strike'].includes(e.kind)) circle(ctx, e.x, e.y, 22, null, e.kind === 'hit' ? '#ffb3a1' : e.kind === 'strike' ? '#ff8a6a' : ['freeze', 'unfreeze'].includes(e.kind) ? cyan : gold, 2);
+      if (state.tick - e.tick < 12 && ['unfreeze', 'wake', 'grow', 'plant', 'shard', 'win', 'hit', 'checkpoint', 'strike'].includes(e.kind)) circle(ctx, e.x, e.y, 22, null, e.kind === 'hit' ? '#ffb3a1' : e.kind === 'strike' ? '#ff8a6a' : e.kind === 'unfreeze' ? cyan : gold, 2);
     }
     // Touch feedback: a pulse on the tapped object; an out-of-reach tap also shows the reach ring.
     if (options.tap && options.tap.age < 1) {
@@ -448,12 +510,13 @@ export function createRenderer(canvas, S) {
       if (carrier) { ctx.setLineDash([12, 9]); circle(ctx, carrier.x, carrier.y - (options.tap.area ? 30 : 0), options.tap.ringRadius ?? meta.controls.range, '#f4e7b40c', '#f4e7b4c0', 2); ctx.setLineDash([]); }
       ctx.restore();
     }
+    if (options.celebration) celebrateGate(state, options.celebration, options.reduced);
     if (options.preview) freezePreview(options.preview);
     const selected = state.objects.find(o => o.id === target);
     if (state.status === 'playing' && selected) {
       const top = isEnemy(selected) ? enemyBox(selected).y - 26 : selected.kind === 'plant' ? selected.base - selected.height - 53 : selected.kind === 'mover' ? selected.y - 30 : selected.y - 62;
       const x = selected.kind === 'mover' ? selected.x + selected.w / 2 : selected.x;
-      const words = options.touch ? S.tapLabels : { freeze: S.targetFreeze, release: S.targetRelease, wake: S.targetWake, hasten: S.targetHasten, max: S.targetMax };
+      const words = options.touch ? S.tapLabels : { freeze: S.targetFreeze, wake: S.targetWake, hasten: S.targetHasten, max: S.targetMax };
       if (state.active === 0) label(x, top, words.freeze);
       else if (selected.speed >= meta.time.maxSpeed) label(x, top, words.max, muted);
       else label(x, top, selected.speed ? words.hasten : words.wake, gold);
@@ -461,7 +524,7 @@ export function createRenderer(canvas, S) {
     ctx.restore();
     if (options.rewind) rewindOverlay(options.rewind.progress, t);
   }
-  return { setEntryProgress(value) { entryProgress = value; },
+  return {
     portrait(which) {
       const width = canvas.clientWidth || canvas.width || 120, height = canvas.clientHeight || canvas.height || 120;
       canvas.width = Math.round(width * Math.min(window.devicePixelRatio || 1, 2)); canvas.height = Math.round(height * Math.min(window.devicePixelRatio || 1, 2));

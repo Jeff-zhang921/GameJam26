@@ -1,11 +1,11 @@
 :root{--safe-top:env(safe-area-inset-top,0px);--safe-right:env(safe-area-inset-right,0px);--safe-bottom:env(safe-area-inset-bottom,0px);--safe-left:env(safe-area-inset-left,0px)}
-html,body{overscroll-behavior:none}.shell{min-height:0}.topbar{height:calc(66px + var(--safe-top));padding-top:var(--safe-top);padding-left:max(28px,var(--safe-left));padding-right:max(28px,var(--safe-right))}.shell.at-entry .topbar{margin-top:calc(-66px - var(--safe-top))}.entry-screen{padding:max(28px,var(--safe-top)) max(28px,var(--safe-right)) max(28px,var(--safe-bottom)) max(28px,var(--safe-left))}.entry-footer{bottom:max(16px,var(--safe-bottom))}.game-bottom{padding-bottom:max(18px,var(--safe-bottom));padding-left:max(26px,var(--safe-left));padding-right:max(26px,var(--safe-right))}.goal-panel{left:max(24px,var(--safe-left))}
+html,body{overscroll-behavior:none}.shell{min-height:0}.topbar{height:calc(66px + var(--safe-top));padding-top:var(--safe-top);padding-left:max(28px,var(--safe-left));padding-right:max(28px,var(--safe-right))}.game-bottom{padding-bottom:max(18px,var(--safe-bottom));padding-left:max(26px,var(--safe-left));padding-right:max(26px,var(--safe-right))}.goal-panel{left:max(24px,var(--safe-left))}
 .pwa-tools{position:fixed;z-index:75;left:max(12px,var(--safe-left));bottom:max(12px,var(--safe-bottom));max-width:min(410px,calc(100% - 24px));font-size:12px;color:#284f43;pointer-events:none}.pwa-tools [hidden]{display:none!important}.pwa-tools button{pointer-events:auto;min-height:42px;background:#f4f7eaf5;border:1px solid #92aa8c;border-radius:6px;padding:9px 13px;color:#345e4e}.pwa-tools p,.pwa-help{margin:5px 0;padding:10px 13px;background:#fbf8e9f5;border:1px solid #bdc9a9;border-radius:7px;line-height:1.5;box-shadow:0 3px 15px #193e3920}.pwa-actions{display:flex;flex-wrap:wrap;gap:6px}.pwa-help{display:flex;align-items:center;gap:12px;pointer-events:auto}.pwa-dismiss{flex-shrink:0}.pwa-tools:has(.pwa-offline:not([hidden])){bottom:max(145px,var(--safe-bottom))}.pwa-update:disabled{opacity:.8}
 .touch-device .game-frame,.touch-enabled .game-frame{touch-action:none}.touch-device .game-bottom .controls-strip,.touch-enabled .game-bottom .controls-strip{display:none}.touch-device .game-bottom .key,.touch-enabled .game-bottom .key{display:none}.touch-device .action-strip,.touch-enabled .action-strip{justify-content:flex-end}.touch-device .entry-content button,.touch-enabled .entry-content button{min-height:44px}.touch-device .iconbutton,.touch-enabled .iconbutton{min-width:40px;min-height:40px}.touch-device .online-dialog button,.touch-enabled .online-dialog button{min-height:44px}.online-dialog{padding-top:max(20px,var(--safe-top));padding-bottom:max(20px,var(--safe-bottom))}#online-root{padding-left:max(12px,var(--safe-left));padding-right:max(12px,var(--safe-right))}#online-room-badge{right:max(14px,var(--safe-right));bottom:calc(175px + var(--safe-bottom))}
 .orientation-tip{display:none;position:fixed;z-index:14;left:50%;transform:translateX(-50%);top:calc(70px + var(--safe-top));width:max-content;max-width:calc(100% - 24px);background:#f6f8ebee;color:#3c6655;border:1px solid #bbccad;border-radius:7px;padding:8px 12px;font-size:11px;align-items:center;gap:10px}.orientation-tip button{min-width:30px;min-height:30px;font-size:17px}.orientation-tip[hidden]{display:none!important}
 @media(orientation:portrait) and (pointer:coarse){.in-session .orientation-tip{display:flex}}
-@media(max-width:760px){.topbar{height:calc(58px + var(--safe-top));padding-left:max(12px,var(--safe-left));padding-right:max(12px,var(--safe-right))}.shell.at-entry .topbar{margin-top:calc(-58px - var(--safe-top))}.game-bottom{padding:28px max(14px,var(--safe-right)) max(14px,var(--safe-bottom)) max(14px,var(--safe-left));gap:7px}.goal-panel{left:max(14px,var(--safe-left))}.touch-device .brand,.touch-enabled .brand{display:none}.touch-device .topbar,.touch-enabled .topbar{gap:4px}.touch-device .goal-panel,.touch-enabled .goal-panel{max-width:calc(100% - 96px)}.pwa-tools{font-size:11px}}
-@media(orientation:landscape) and (max-height:560px){.topbar{height:calc(48px + var(--safe-top));padding-top:var(--safe-top)}.shell.at-entry .topbar{margin-top:calc(-48px - var(--safe-top))}.touch-device .goal-panel,.touch-enabled .goal-panel{width:245px;padding:9px 13px;top:9px}.goal-panel h2{font-size:16px;margin:4px 0 7px}.touch-device #objective,.touch-enabled #objective{font-size:10px;margin:5px 0}.touch-device .checklist,.touch-enabled .checklist{font-size:9px;padding-top:5px}.touch-device .game-bottom,.touch-enabled .game-bottom{padding-top:16px}.touch-device .status-strip,.touch-enabled .status-strip{font-size:9px}.touch-device .action-strip,.touch-enabled .action-strip{display:none}.touch-device #online-room-badge,.touch-enabled #online-room-badge{bottom:auto;top:calc(55px + var(--safe-top));right:calc(135px + var(--safe-right))}.touch-device .toast,.touch-enabled .toast{bottom:120px}.entry-content{padding:10px 0}.entry-content>p{margin-bottom:14px}.entry-screen .mode-selector{margin-bottom:12px}.entry-mark{display:none}.entry-footer{display:none}.entry-content h1{font-size:40px;margin:6px 0}.online-dialog{max-height:calc(100dvh - 16px)}.pwa-tools:has(.pwa-offline:not([hidden])){bottom:max(120px,var(--safe-bottom))}}
+@media(max-width:760px){.topbar{height:calc(58px + var(--safe-top));padding-left:max(12px,var(--safe-left));padding-right:max(12px,var(--safe-right))}.game-bottom{padding:28px max(14px,var(--safe-right)) max(14px,var(--safe-bottom)) max(14px,var(--safe-left));gap:7px}.goal-panel{left:max(14px,var(--safe-left))}.touch-device .brand,.touch-enabled .brand{display:none}.touch-device .topbar,.touch-enabled .topbar{gap:4px}.touch-device .goal-panel,.touch-enabled .goal-panel{max-width:calc(100% - 96px)}.pwa-tools{font-size:11px}}
+@media(orientation:landscape) and (max-height:560px){.topbar{height:calc(48px + var(--safe-top));padding-top:var(--safe-top)}.touch-device .goal-panel,.touch-enabled .goal-panel{width:245px;padding:9px 13px;top:9px}.goal-panel h2{font-size:16px;margin:4px 0 7px}.touch-device #objective,.touch-enabled #objective{font-size:10px;margin:5px 0}.touch-device .checklist,.touch-enabled .checklist{font-size:9px;padding-top:5px}.touch-device .game-bottom,.touch-enabled .game-bottom{padding-top:16px}.touch-device .status-strip,.touch-enabled .status-strip{font-size:9px}.touch-device .action-strip,.touch-enabled .action-strip{display:none}.touch-device #online-room-badge,.touch-enabled #online-room-badge{bottom:auto;top:calc(55px + var(--safe-top));right:calc(135px + var(--safe-right))}.touch-device .toast,.touch-enabled .toast{bottom:120px}.online-dialog{max-height:calc(100dvh - 16px)}.pwa-tools:has(.pwa-offline:not([hidden])){bottom:max(120px,var(--safe-bottom))}}
 /* ---- Game surface: no text selection, long-press callouts or image drags (dialogs and the lobby are outside .shell) ---- */
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 .shell{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
@@ -13,32 +13,51 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 .iconbutton{position:relative}.iconbutton .hint-dot{position:absolute;top:5px;right:5px}
 .touch-pause{display:none}
 /* ---- Touch layout: phones, iPad (incl. iPadOS desktop mode) or Settings > Show touch controls ---- */
-body.touch-layout{--stick:clamp(118px,19vmin,184px);--interact:clamp(70px,10.5vmin,96px);--edge:clamp(14px,3.2vmin,34px)}
+body.touch-layout{
+  --stick:clamp(174px,27vmin,248px);
+  --primary-touch:clamp(105px,15.75vmin,144px);
+  --edge:clamp(12px,3vmin,30px);
+  --control-gap:clamp(10px,1.7vmin,16px);
+  --jump-step:calc((var(--stick) + var(--primary-touch)) * .36 + var(--control-gap));
+  --action-step:calc(var(--primary-touch) * .73 + var(--control-gap));
+  --switch-size:48px;
+}
 body.touch-layout .topbar{display:none}
 body.touch-layout .game-frame{touch-action:none}
 body.touch-layout .touch-controls{position:absolute;inset:0;display:block;z-index:4;pointer-events:none}
 .touch-controls,.touch-controls *,.touch-pause{-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
-.joystick{--pad:22px;position:absolute;left:calc(var(--edge) + var(--safe-left) - var(--pad));bottom:calc(var(--edge) + var(--safe-bottom) - var(--pad));width:calc(var(--stick) + 2 * var(--pad));height:calc(var(--stick) + 2 * var(--pad));border-radius:50%;pointer-events:auto;touch-action:none}
-.joystick-base{position:absolute;inset:var(--pad);border-radius:50%;background:radial-gradient(circle at 50% 42%,#f6f9ee2e,#183f3a47 72%);border:2px solid #eef5e28c;box-shadow:inset 0 0 0 7px #f4f7eb12,0 8px 26px #0d2c2833;-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);transition:border-color .15s,box-shadow .15s,background .15s}
+.touch-movement,.touch-actions{position:absolute;bottom:calc(var(--edge) + var(--safe-bottom));pointer-events:none}
+.touch-movement{left:calc(var(--edge) + var(--safe-left))}
+.touch-actions{right:calc(var(--edge) + var(--safe-right))}
+.joystick{position:absolute;left:0;bottom:0;width:var(--stick);height:var(--stick);border-radius:50%;pointer-events:auto;touch-action:none}
+.joystick-base{position:absolute;inset:0;border-radius:50%;background:radial-gradient(circle at 50% 42%,#f6f9ee2e,#183f3a47 72%);border:2px solid #eef5e28c;box-shadow:inset 0 0 0 7px #f4f7eb12,0 8px 26px #0d2c2833;-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);transition:border-color .15s,box-shadow .15s,background .15s;pointer-events:none}
 .joystick-base:before{content:"";position:absolute;inset:22%;border-radius:50%;border:1px dashed #eef5e255}
-.joystick-jump{position:absolute;left:50%;top:6%;transform:translateX(-50%);display:flex;color:#f2f1d6;opacity:.5;transition:opacity .15s,color .15s,filter .15s}
-.joystick-jump svg{width:clamp(18px,2.6vmin,26px);height:clamp(18px,2.6vmin,26px);stroke-width:2}
 .joystick-thumb{position:absolute;left:50%;top:50%;width:calc(var(--stick) * .42);height:calc(var(--stick) * .42);margin:calc(var(--stick) * -.21) 0 0 calc(var(--stick) * -.21);border-radius:50%;background:radial-gradient(circle at 38% 32%,#fdfdf6f2,#dce9d6d9 55%,#a8c4b3cc);border:1px solid #ffffffb3;box-shadow:0 5px 16px #0d2d2959,inset 0 -3px 8px #5d8a7a33;transform:translate(var(--tx,0px),var(--ty,0px));transition:transform .14s ease-out;pointer-events:none}
 .joystick.active .joystick-thumb{transition:none}
 .joystick.active .joystick-base{border-color:#f0e3abd9;background:radial-gradient(circle at 50% 42%,#f6f9ee3d,#183f3a59 72%);box-shadow:inset 0 0 0 7px #f4f7eb1a,0 0 0 4px #e9d99a26,0 8px 26px #0d2c2840}
-.joystick.jumping .joystick-jump{opacity:1;color:#f6df91;filter:drop-shadow(0 0 6px #f3d88acc)}
-.touch-actions{position:absolute;right:calc(var(--edge) + var(--safe-right));bottom:calc(var(--edge) + var(--safe-bottom));width:var(--interact);height:calc(var(--interact) + 74px);pointer-events:none}
-.touch-actions button{position:absolute;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:0;border-radius:50%;pointer-events:auto;touch-action:none;font-size:clamp(10px,1.45vmin,13px);font-weight:600;letter-spacing:.04em;line-height:1;-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);transition:transform .1s ease-out,box-shadow .15s,opacity .15s}
-.touch-actions button.pressed{transform:scale(.9)}
-.touch-actions .touch-interact,.touch-actions .touch-interact:hover{right:0;bottom:0;width:var(--interact);height:var(--interact);background:radial-gradient(circle at 50% 36%,#f7fbf2e6,#c9dcc6c7 68%,#9fbfaabd);border:2px solid #ffffffcc;color:#24503f;box-shadow:0 8px 22px #0d2d2952,inset 0 -5px 12px #2f6f6b2b}
-.touch-actions .touch-interact:not([data-kind="pickup"]){border-color:#efd88df0;color:#6a4f17}
-.touch-actions .touch-interact.unavailable{opacity:.6}
-.touch-actions .touch-interact.pressed{box-shadow:0 0 0 6px #ffffff4d,0 0 22px #f3e6a899}
-.touch-interact svg{width:36%;height:36%;stroke-width:1.8}
-.touch-interact span{font-size:clamp(9px,1.3vmin,12px)}
-.touch-actions .touch-switch,.touch-actions .touch-switch:hover{right:calc((var(--interact) - 52px) / 2);bottom:calc(var(--interact) + 22px);width:52px;height:52px;background:#f2f7ebb8;border:1px solid #ffffffa6;color:#2d5a4b;box-shadow:0 4px 14px #0d2d2940}
+.touch-controls button{position:absolute;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:0;border-radius:50%;pointer-events:auto;touch-action:none;font-size:clamp(10px,1.6vmin,14px);font-weight:600;line-height:1;-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);transition:box-shadow .15s,opacity .15s}
+.touch-controls .touch-skill,.touch-controls .touch-skill:hover{width:var(--primary-touch);height:var(--primary-touch);background:radial-gradient(circle at 50% 36%,#f7fbf2de,#c9dcc6a8 68%,#9fbfaab0);border:2px solid #ffffffcc;color:#24503f;box-shadow:0 8px 22px #0d2d2952,inset 0 -5px 12px #2f6f6b2b}
+.touch-skill svg{width:36%;height:36%;stroke-width:1.8;pointer-events:none}
+.touch-skill span{pointer-events:none}
+.touch-jump{left:calc((var(--stick) - var(--primary-touch)) / 2 + var(--jump-step));bottom:calc((var(--stick) - var(--primary-touch)) / 2 + var(--jump-step))}
+.touch-ability{right:0;bottom:0}
+.touch-controls .touch-ability,.touch-controls .touch-ability:hover{background:radial-gradient(circle at 50% 36%,#edfcffed,#99c9cba6 68%,#75aaaeb8);color:#164856;border-color:#dcf6f5e6}
+.touch-controls .touch-ability.bloom,.touch-controls .touch-ability.bloom:hover{background:radial-gradient(circle at 50% 36%,#fff4d6ed,#e4cc87ac 68%,#b59c54b8);color:#5e461a;border-color:#fff3bce6}
+.touch-interact{right:var(--action-step);bottom:var(--action-step)}
+.touch-controls .touch-interact:not([data-kind="pickup"]){border-color:#efd88df0;color:#6a4f17}
+.touch-interact.unavailable{opacity:.68}
+.touch-actions .touch-switch,.touch-actions .touch-switch:hover{right:calc((var(--primary-touch) - var(--switch-size)) / 2);bottom:calc(var(--primary-touch) + var(--control-gap));width:var(--switch-size);height:var(--switch-size);background:#f2f7ebb8;border:1px solid #ffffffa6;color:#2d5a4b;box-shadow:0 4px 14px #0d2d2940}
+.touch-controls button.pressed{box-shadow:0 0 0 5px #ffffff4d,0 0 22px #f3e6a899}
 .touch-switch svg{width:22px;height:22px}
 .online-mode .touch-actions .touch-switch{display:none}
+@media(orientation:landscape) and (max-height:360px){
+  body.touch-layout{--stick:clamp(140px,45dvh,164px);--primary-touch:clamp(88px,27dvh,100px)}
+}
+@media(max-width:520px){
+  body.touch-layout{--stick:clamp(124px,36vw,170px);--primary-touch:clamp(76px,24vw,102px);--switch-size:44px}
+  .touch-interact{right:0;bottom:calc(var(--primary-touch) + var(--control-gap))}
+  .touch-actions .touch-switch,.touch-actions .touch-switch:hover{right:calc(var(--primary-touch) + var(--control-gap));bottom:calc((var(--primary-touch) - var(--switch-size)) / 2)}
+}
 body.touch-layout .touch-pause,body.touch-layout .touch-pause:hover{position:absolute;z-index:5;top:calc(var(--safe-top) + 12px);right:calc(var(--safe-right) + 12px);display:grid;place-items:center;width:52px;height:52px;border-radius:50%;background:#f4f8ece6;border:1px solid #c9d8bf;color:#2f5a4b;box-shadow:0 4px 16px #0d2d2933;touch-action:manipulation}
 .touch-pause svg{width:22px;height:22px}.touch-pause .hint-dot{position:absolute;top:9px;right:9px;width:8px;height:8px}
 /* Compact HUD: goal card top-left, status pill top-centre, toast and PWA notes clear of the thumbs. */
@@ -64,6 +83,6 @@ body.touch-layout .modal button,body.touch-layout .modal .toggle{min-height:44px
 .modal-actions .text-button svg{width:15px;height:15px}
 @media(max-height:560px){.pause-whisper{margin-top:10px;padding:9px 12px}.pause-whisper p{font-size:11px;line-height:1.5}.pause-actions{margin-top:10px}}
 .pause-levels{margin-top:12px}.pause-levels .goal-heading{justify-content:center}.pause-chapters .chapter-button:disabled{opacity:.45}
-.freeze-count{margin-left:10px;padding:2px 8px;border-radius:999px;background:#bfeef42b;color:#e3fbfd;letter-spacing:.5px;white-space:nowrap}.freeze-count.empty{background:#f1a58f33;color:#ffd7cb}body.rewinding .touch-controls,body.rewinding .touch-pause{opacity:.35;pointer-events:none}
+.freeze-count{margin-left:10px;padding:2px 8px;border-radius:999px;background:#bfeef42b;color:#e3fbfd;letter-spacing:.5px;white-space:nowrap}.freeze-count.empty{background:#f1a58f33;color:#ffd7cb}body.rewinding .touch-controls,body.rewinding .touch-controls button,body.rewinding .touch-controls .joystick,body.rewinding .touch-pause{pointer-events:none}body.rewinding .touch-controls,body.rewinding .touch-pause{opacity:.35}
 body.touch-layout .hud-label{display:none}
 body.rewinding .toast{opacity:0!important}

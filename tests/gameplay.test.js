@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { setup, applyAction, validateAction, meta, exitStatus, failureReason, assessFailure, freezePoint } from '../src/logic.js';
+import { setup, applyAction, validateAction, meta, exitStatus, failureReason, assessFailure, freezeAreaAt, freezePoint } from '../src/logic.js';
 import { createCamera } from '../public/presentation.js';
 
 const act = (state, action) => applyAction(state, 'local', action);
@@ -138,6 +138,34 @@ describe('Freeze Areas', () => {
     expect(s.freezeAreas).toHaveLength(0);
     expect(get(s, 'crate-0').frozen).toBe(false);
     expect(s.events.some(e => e.kind === 'thaw')).toBe(true);
+  });
+
+  test('cancelling a selected area preserves other coverage and never changes charges', () => {
+    let s = setup({ level: 0 });
+    const first = { x: 290, y: 493 };
+    s = send(s, 'ability', STILL, first);
+    const [older] = s.freezeAreas;
+    // A stale point cast cannot consume another charge while the first area is active.
+    expect(validateAction(s, 'local', { type: 'ability', actor: STILL, ...first }).error).toBe('freezeCovered');
+    expect(act(s, { type: 'ability', actor: STILL, area: 'missing', x: 80, y: 430 })).toBe(s);
+    s = send(s, 'ability', STILL, { x: 435, y: 493 });
+    const selected = freezeAreaAt(s, { x: 360, y: 493 });
+    expect(selected.id).toBe(s.freezeAreas[1].id);
+    expect(s.freezeCharges).toBe(0);
+    s = send(s, 'ability', STILL, { area: selected.id });
+    expect(s.freezeAreas.map(a => a.id)).toEqual([older.id]);
+    expect(get(s, 'crate-0').frozen).toBe(true);
+    expect(s.freezeCharges).toBe(0);
+    expect(act(s, { type: 'ability', actor: STILL, area: selected.id, ...first })).toBe(s);
+    expect(validateAction(s, 'local', { type: 'ability', actor: BLOOM, area: older.id }).error).toBe('role');
+    s.freezeAreas[0].owner = 'someone-else';
+    expect(validateAction(s, 'local', { type: 'ability', actor: STILL, area: older.id }).error).toBe('freezeArea');
+    s.freezeAreas[0].owner = 'local';
+    s.actors[STILL].x = 900;
+    s = send(s, 'ability', STILL, { area: older.id });
+    expect(s.freezeAreas).toHaveLength(0);
+    expect(s.freezeCharges).toBe(0);
+    expect(get(s, 'crate-0').frozen).toBe(false);
   });
 
   test('refused casts (no charges, too far, off the world) cost nothing', () => {

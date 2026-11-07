@@ -1,0 +1,59 @@
+.entry-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  align-items: center;
+  overflow: auto;
+  padding: max(28px, var(--safe-top)) max(24px, var(--safe-right)) max(28px, var(--safe-bottom)) max(7vw, calc(var(--safe-left) + 20px));
+  color: #f5edce;
+  background: linear-gradient(90deg, #081923 0%, #081923ed 21%, #08192378 46%, transparent 72%),
+    #0a202b url('/art/moonlit-conservatory.svg') 68% center / cover no-repeat;
+}
+.entry-content { width: min(100%, 430px); }
+.entry-kicker { display: flex; align-items: center; gap: 13px; color: #bde8e1; font-size: 11px; letter-spacing: .32em; }
+.entry-kicker svg { width: 27px; height: 27px; color: #ebcc8e; }
+.entry-screen h1 { margin: 10px 0 6px; font: 400 clamp(54px, 8vw, 108px)/.95 Georgia, serif; letter-spacing: -.055em; }
+.entry-screen p { margin: 0 0 34px; color: #cbdfd7; font: clamp(15px, 2vw, 20px)/1.4 Georgia, serif; }
+.entry-screen .mode-selector { margin: 0 0 10px; border-color: #9dbfba57; background: #0e2633bd; }
+.entry-screen .mode-selector button { min-height: 44px; color: #c3dbd7; }
+.entry-screen .mode-selector .selected { color: #fff1ce; background: #33565c; }
+.entry-screen .primary { width: 100%; min-height: 52px; min-width: 0; border: 1px solid #f4dda3; background: #e8c986; color: #152b32; font-weight: 600; }
+.entry-screen .primary:hover:not(:disabled) { background: #f6dfa8; }
+.entry-screen .online-entry-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+.entry-screen .online-entry-actions button { min-height: 44px; padding: 8px; border-color: #9dbfba73; background: #102c38df; color: #e0ede7; }
+.entry-screen .online-entry-actions button:hover { background: #254957; }
+.entry-audio { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 8px; margin: 12px 0 0 -8px; color: #c3dbd7; font-size: 11px; }
+.entry-audio svg { width: 16px; height: 16px; }
+.entry-screen button:focus-visible { outline-color: #f7de95; outline-offset: 2px; }
+
+.scene-veil { position: fixed; inset: 0; z-index: 80; background: #0a202b; opacity: 0; pointer-events: auto; }
+.scene-veil[hidden] { display: none; }
+.celebrating .goal-panel, .celebrating .game-bottom, .celebrating .touch-controls, .celebrating .touch-pause { opacity: 0; }
+.results-reveal { animation: results-reveal 260ms ease-out both; }
+@keyframes results-reveal { from { opacity: 0; } to { opacity: 1; } }
+body.reduced-motion .results-reveal { animation: results-reveal 140ms ease-out both !important; }
+
+@media (orientation: portrait) {
+  .entry-screen {
+    align-items: end;
+    justify-items: center;
+    padding: max(24px, var(--safe-top)) max(20px, var(--safe-right)) max(20px, var(--safe-bottom)) max(20px, var(--safe-left));
+    background: linear-gradient(180deg, #08192300 8%, #0819234d 34%, #081923ee 60%, #081923 93%),
+      #0a202b url('/art/moonlit-conservatory.svg') 72% top / auto 76% no-repeat;
+  }
+  .entry-content { text-align: center; }
+  .entry-kicker { justify-content: center; }
+  .entry-screen p { margin-bottom: 20px; }
+  .entry-audio { margin: 6px 0 0; }
+}
+@media (orientation: landscape) and (max-height: 470px) {
+  .entry-screen { padding-top: max(12px, var(--safe-top)); padding-bottom: max(12px, var(--safe-bottom)); }
+  .entry-content { width: min(100%, 345px); }
+  .entry-kicker { gap: 8px; font-size: 9px; }
+  .entry-kicker svg { width: 19px; height: 19px; }
+  .entry-screen h1 { font-size: clamp(42px, 8vw, 64px); margin: 5px 0 3px; }
+  .entry-screen p { margin-bottom: 12px; }
+  .entry-screen .primary { min-height: 44px; }
+  .entry-audio { margin-top: 4px; }
+}

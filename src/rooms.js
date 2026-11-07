@@ -208,12 +208,15 @@ export function createRoomManager({ now = Date.now, countdownMs = 3000, reconnec
     const action = message.action;
     if (!action || typeof action !== 'object' || Array.isArray(action) || !inputTypes.has(action.type) || (action.actor !== undefined && action.actor !== actorOf(player))) { error(ws, 'INVALID_ACTION', 'You may control only your own character.', seq); return; }
     if (room.status !== 'PLAYING' || room.suspended || room.rewind) { error(ws, 'NOT_PLAYING', 'Wait until both players are playing.', seq); return; }
-    const authoritativeAction = { type: action.type, actor: actorOf(player), ...(action.type === 'move' ? { dir: action.dir } : {}), ...(action.type === 'ability' && action.target !== undefined ? { target: action.target } : {}), ...(action.type === 'ability' && (action.x !== undefined || action.y !== undefined) ? { x: action.x, y: action.y } : {}) };
+    const authoritativeAction = { type: action.type, actor: actorOf(player), ...(action.type === 'move' ? { dir: action.dir } : {}) };
+    if (action.type === 'ability') Object.assign(authoritativeAction, { target: action.target, x: action.x, y: action.y, area: action.area });
     const result = validateAction(room.game, player.id, authoritativeAction);
     if (!result.valid) { error(ws, result.error, 'That action is unavailable.', seq); return; }
-    const castTarget = action.type === 'ability' ? targetFor(room.game, actorOf(player), authoritativeAction)?.id : null;
+    const casting = action.type === 'ability' && action.area === undefined;
+    const castTarget = casting ? targetFor(room.game, actorOf(player), authoritativeAction)?.id : null;
     room.game = applyAction(room.game, player.id, authoritativeAction);
-    updateAnimations(room, action.type === 'ability' ? actorOf(player) : null, castTarget);
+    updateAnimations(room, casting ? actorOf(player) : null, castTarget);
+    if (action.type === 'ability' && action.area !== undefined) broadcast(room, 'snapshot');
   }
   function disconnect(ws) {
     const membership = member(ws); if (!membership) return;

@@ -1,6 +1,6 @@
 import { playEffect, createGrowthAudio, createRewindAudio } from './sfx.js';
 import { createMusic } from './music.js';
-import { setup, applyAction, validateAction, viewFor, targetFor, hintLevel, levelCount, interactionFor, abilityCheck, abilityTargets, timeObjectAt, anchor, exitStatus, freezeCheck, meta } from '../src/logic.js';
+import { setup, applyAction, validateAction, viewFor, targetFor, hintLevel, levelCount, interactionFor, abilityCheck, abilityTargets, timeObjectAt, anchor, exitStatus, freezeAreaAt, freezeCheck, meta } from '../src/logic.js';
 import { createHistory, compactFrame, rewindFrame, REWIND } from './rewind.js';
 import { S } from './strings.js';
 import { createRenderer } from './render.js';
@@ -53,8 +53,8 @@ const clock = ticks => { const sec = Math.floor(ticks / 60); return `${String(Ma
 let lastTime = 0, accumulator = 0, frameCount = 0, sceneKey = 0, cameraReset = 0;
 let onlineMode = false, networkEpoch = null, networkStatus = 'offline';
 const held = new Set();
-const touchMoves = new Map();
-let touchJumpPointer = null, touchJumpActor = null, uiChapter = '', uiProgress = '', uiMode = '', touchKey = '';
+const touchPointers = new Map();
+let touchJumpActor = null, uiChapter = '', uiProgress = '', uiMode = '', touchKey = '';
 // Touch: the last drawn world (for tap hit-testing) and the short-lived feedback of the last tap.
 let lastView = null, tapEffect = null, tapIntroShown = false;
 // Height (px) the bottom touch controls take up; the camera lowers the world only as far as keeps the
@@ -66,8 +66,7 @@ history.reset(state);
 let rewind = null;
 // Dead-end warnings already shown on this screen (per courtyard run), and the desktop Freeze preview.
 let warnedSeq = 0, warnKey = '', freezePreview = null;
-// The joystick owns at most one pointer. `dir` is the last horizontal direction sent; `jumping` drives hysteresis.
-const joy = { pointer: null, actor: null, dx: 0, dy: 0, dir: null, jumping: false };
+const joy = { pointer: null, actor: null, dx: 0, dy: 0, dir: 0 };
 const app = document.querySelector('#app');
 app.innerHTML = `
   <div class="shell">
@@ -86,56 +85,91 @@ app.innerHTML = `
         <div class="action-strip"><span class="controls-strip" id="controls"></span><button class="ability-chip" data-action="ability" id="ability" data-testid="ability">${icon('snow')}<span id="ability-label"></span>${key('F')}</button><button class="text-button switch-button" data-action="switch" aria-label="${S.switchRole}">${icon('swap')}${key('Tab')}</button></div>
       </div>
       <div class="touch-controls" data-testid="touch-controls">
-        <div class="joystick" data-testid="joystick" role="group" aria-label="${S.joystick}"><div class="joystick-base" aria-hidden="true"><span class="joystick-jump">${icon('up')}</span></div><div class="joystick-thumb" aria-hidden="true"></div></div>
+        <div class="touch-movement">
+          <div class="joystick" data-testid="joystick" role="group" aria-label="${S.joystick}"><div class="joystick-base" aria-hidden="true"></div><div class="joystick-thumb" aria-hidden="true"></div></div>
+          <button type="button" class="touch-skill touch-jump" data-touch="jump" data-testid="touch-jump" aria-label="${S.jump}">${icon('up')}<span>${S.jump}</span></button>
+        </div>
         <div class="touch-actions">
           <button type="button" class="touch-switch" data-touch="switch" data-testid="touch-switch" aria-label="${S.switchRole}">${icon('swap')}</button>
-          <button type="button" class="touch-interact" data-touch="grab" data-testid="touch-interact" aria-label="${S.interact.pickup}">${icon('pickup')}<span>${S.interact.pickup}</span></button>
+          <button type="button" class="touch-skill touch-interact" data-touch="grab" data-testid="touch-interact" aria-label="${S.interact.pickup}">${icon('pickup')}<span>${S.interact.pickup}</span></button>
+          <button type="button" class="touch-skill touch-ability" data-touch="ability" data-testid="touch-ability" aria-label="${S.ability[0]}">${icon('snow')}<span>${S.ability[0]}</span></button>
         </div>
       </div>
       <button type="button" class="touch-pause" data-action="pause" data-testid="touch-pause" aria-label="${S.pause}" title="${S.pause}">${icon('pause')}<span class="hint-dot" aria-hidden="true"></span></button>
       <div class="toast" role="status" id="toast"></div><div class="debug" id="debug" hidden></div>
     </main>
-  </div><div id="modal-root"></div>`;
-let entering = false;
+  </div><div id="modal-root"></div><div class="scene-veil" aria-hidden="true" hidden></div>`;
+const shell = document.querySelector('.shell');
+const modalRoot = document.querySelector('#modal-root');
+const veil = document.querySelector('.scene-veil');
+let sceneFade = null, celebration = null, nextPending = false;
+let onlineStarting = false, awaitingOnlineState = true;
+const stageBusy = () => !!(sceneFade || celebration);
 const canvas = document.querySelector('#game');
 const renderer = createRenderer(canvas, S);
 const debug = new URLSearchParams(location.search).has('debug');
 const network = createNetwork({
   onRoom(room, playerId, serverTime) {
+    if (onlineStarting && room.status === 'PLAYING' && !room.suspended) startFade(null, { revealOnly: true });
+    onlineStarting = room.status === 'STARTING';
     lobby.update(room, playerId, serverTime);
     if (['WAITING', 'READY', 'STARTING'].includes(room.status) || room.canReturnLobby) {
+      if (stageBusy()) clearStage();
+      nextPending = false;
       modal = 'online'; renderModal();
     } else if (room.status === 'PLAYING' && network.latest && modal === 'online' && !room.suspended) {
-      modal = null; renderModal(); canvas.focus({ preventScroll: true });
+      modal = null; renderModal(); if (!stageBusy()) canvas.focus({ preventScroll: true });
     }
   },
   onState(game, info) {
-    const previousStatus = state.status;
+    const previous = state;
+    const live = !awaitingOnlineState && !network.room.suspended;
+    awaitingOnlineState = false;
     state = { ...game, active: network.actor };
     if (!rewind) history.record(game);
-    if (game.status === 'paused' && previousStatus !== 'paused') resetTouchState();
+    if (game.status === 'paused' && previous.status !== 'paused') resetTouchState();
     if (networkEpoch !== info.epoch) {
+      const from = live && !rewind && previous.status === 'won' && game.status === 'playing' && previous.level !== game.level
+        ? { state: previous, sceneKey, cameraReset } : null;
       networkEpoch = info.epoch; sceneKey++; cameraReset++; seenEvent = state.eventSeq;
       shownHint = 0; uiChapter = ''; resetTouchState(); history.reset(game);
       if (rewind) rewind.arrived = true; // the server has installed the courtyard's start
-      modal = network.room.status === 'STARTING' ? 'online' : null;
+      nextPending = false;
+      if (from) startFade(revealCourtyard, { from });
+      else modal = network.room.status === 'STARTING' ? 'online' : null;
     }
     const seenBefore = seenEvent;
     for (const e of state.events) if (e.id > seenEvent) {
       if (!(e.kind === 'return' && state.events.some(h => h.kind === 'hit' && h.actor === e.actor && h.id > seenBefore))) chime(e);
       if (e.kind === 'return' && e.actor === network.actor) cameraReset++; seenEvent = e.id;
     }
-    if (game.status === 'won') modal = 'win';
+    if (game.status === 'won' && !rewind && !network.room.canReturnLobby) {
+      if (live && !info.changedScene && previous.status === 'playing') startCelebration();
+      else if (!celebration) modal = 'win';
+    }
     else if (game.status === 'paused' && (!modal || modal === 'online')) modal = 'pause';
-    else if (game.status === 'playing' && modal === 'pause' && previousStatus === 'paused') modal = null;
-    if (network.room.status === 'STARTING') modal = 'online';
-    updateUI();
-    const root = document.querySelector('#modal-root');
-    if (root.dataset.phase !== String(modal)) { renderModal(); if (!modal) canvas.focus({ preventScroll: true }); }
+    else if (game.status === 'playing' && modal === 'pause' && previous.status === 'paused') modal = null;
+    if (network.room.status === 'STARTING' || network.room.canReturnLobby) modal = 'online';
+    if (!sceneFade?.from) updateUI();
+    if (modalRoot.dataset.phase !== String(modal)) { renderModal(); if (!modal && !stageBusy()) canvas.focus({ preventScroll: true }); }
   },
   onReplay(replay, game) { startRewind({ end: replay.end, current: game, online: true }); },
-  onConnection(status) { networkStatus = status; lobby.setConnection(status); if (status !== 'connected') resetTouchState(); },
-  onError(message) { lobby.setError(message); toast(message); },
+  onConnection(status) {
+    networkStatus = status; lobby.setConnection(status);
+    if (status === 'connected') return;
+    awaitingOnlineState = true;
+    if (stageBusy() || nextPending) {
+      const wasTransitioning = stageBusy();
+      clearStage();
+      if (wasTransitioning) modal = state.status === 'won' ? 'win' : null;
+      renderModal();
+    }
+    resetTouchState();
+  },
+  onError(message) {
+    if (nextPending) { nextPending = false; renderModal(); }
+    lobby.setError(message); toast(message);
+  },
 });
 const lobby = createLobby({
   createRoom() { enterOnline(); network.create(); },
@@ -147,29 +181,31 @@ const lobby = createLobby({
   returnToLobby() { network.returnToLobby(); },
   retry() { network.retry(); },
 });
-const pwa = createPWA({ isBusy: () => onlineMode || entering || modal !== 'intro' });
+const pwa = createPWA({ isBusy: () => onlineMode || stageBusy() || modal !== 'intro' });
 const orientationTip = document.createElement('aside'); orientationTip.className = 'orientation-tip'; orientationTip.setAttribute('role', 'status');
 orientationTip.innerHTML = '<span>Rotate to landscape for a wider view. You can keep playing.</span><button type="button" aria-label="Dismiss orientation tip">×</button>';
 orientationTip.querySelector('button').addEventListener('click', () => { orientationTip.hidden = true; }); document.body.append(orientationTip);
 function enterOnline() {
-  clearInputs(); onlineMode = true; modal = 'online'; entering = false;
-  renderer.setEntryProgress?.(1); document.body.classList.add('online-mode'); renderModal();
+  clearInputs(); onlineMode = true; modal = 'online'; onlineStarting = false; awaitingOnlineState = true;
+  document.body.classList.add('online-mode'); renderModal();
 }
 function leaveOnline() {
+  clearStage();
   resetTouchState();
   network.leave(); lobby.hide(); onlineMode = false; networkEpoch = null;
   document.body.classList.remove('online-mode');
   state = setup({ level: Number.isInteger(saved.level) ? saved.level : 0 });
   sceneKey++; seenEvent = 0; uiChapter = ''; uiMode = ''; modal = 'intro'; history.reset(state);
-  renderer.setEntryProgress?.(0); updateUI(); renderModal();
+  updateUI(); renderModal();
 }
 // Solo / local co-op "Leave": back to the main menu, keeping the current courtyard and unlocks.
 function returnToMenu() {
+  clearStage();
   clearInputs(); persist();
   const { level, unlocked } = state;
   state = setup({ level }); state.unlocked = unlocked;
   sceneKey++; cameraReset++; seenEvent = 0; shownHint = 0; uiChapter = ''; uiMode = ''; modal = 'intro'; history.reset(state);
-  renderer.setEntryProgress?.(0); updateUI(); renderModal();
+  updateUI(); renderModal();
 }
 
 function persist() {
@@ -188,6 +224,7 @@ function chime(event) {
 }
 function dispatch(action, quiet = false) {
   if (rewind && action.type !== 'tick') return { valid: false };
+  if (stageBusy() && ['tick', 'move', 'jump', 'jumpRelease', 'grab', 'ability', 'switch'].includes(action.type)) return { valid: false };
   if (onlineMode) {
     if (action.actor !== undefined && action.actor !== network.actor) return { valid: false };
     if (['switch', 'tick'].includes(action.type)) return { valid: false };
@@ -206,7 +243,9 @@ function dispatch(action, quiet = false) {
   }
   const seenBefore = seenEvent;
   for (const e of state.events) if (e.id > seenEvent) { if (!(e.kind === 'return' && state.events.some(h => h.kind === 'hit' && h.actor === e.actor && h.id > seenBefore))) chime(e); if (e.kind === 'return' && e.actor !== undefined) cameraReset++; seenEvent = e.id; }
-  if (state.status === 'won' && oldStatus !== 'won') { held.clear(); best[state.level] = Math.min(best[state.level] ?? Infinity, state.elapsed); modal = 'win'; persist(); renderModal(); }
+  if (state.status === 'won' && oldStatus !== 'won') {
+    best[state.level] = Math.min(best[state.level] ?? Infinity, state.elapsed); persist(); startCelebration();
+  }
   if (action.type !== 'tick' || state.status !== oldStatus) updateUI();
   return { valid: true };
 }
@@ -255,11 +294,11 @@ function updateUI() {
 }
 // Forget every held key, finger and joystick state without sending anything.
 function resetTouchState() {
-  held.clear(); touchMoves.clear(); touchJumpActor = null; touchJumpPointer = null;
-  Object.assign(joy, { pointer: null, actor: null, dx: 0, dy: 0, dir: null, jumping: false });
+  held.clear(); touchPointers.clear(); touchJumpActor = null;
+  Object.assign(joy, { pointer: null, actor: null, dx: 0, dy: 0, dir: 0 });
   const stick = document.querySelector('.joystick');
-  if (stick) { stick.classList.remove('active', 'jumping'); stick.style.setProperty('--tx', '0px'); stick.style.setProperty('--ty', '0px'); }
-  for (const button of document.querySelectorAll('.touch-actions .pressed')) button.classList.remove('pressed');
+  if (stick) { stick.classList.remove('active'); stick.style.setProperty('--tx', '0px'); stick.style.setProperty('--ty', '0px'); }
+  for (const button of document.querySelectorAll('.touch-controls .pressed')) button.classList.remove('pressed');
 }
 function measureControls() {
   const base = document.querySelector('.joystick-base'), frameEl = document.querySelector('.game-frame');
@@ -276,6 +315,59 @@ function clearInputs() {
   resetTouchState();
   for (let i = 0; i < 2; i++) { if (onlineMode && i !== network.actor) continue; dispatch({ type: 'move', actor: i, dir: 0 }, true); dispatch({ type: 'jumpRelease', actor: i }, true); }
 }
+const smoothFade = t => t * t * (3 - 2 * t);
+function syncStage() {
+  shell.inert = modalRoot.inert = stageBusy();
+  document.body.classList.toggle('celebrating', !!celebration);
+  document.body.classList.toggle('scene-changing', !!sceneFade);
+}
+function clearStage() {
+  sceneFade = celebration = null;
+  nextPending = false;
+  veil.hidden = true;
+  syncStage();
+}
+function startFade(swap, { from = null, revealOnly = false } = {}) {
+  const now = performance.now();
+  celebration = null;
+  resetTouchState(); freezePreview = tapEffect = null;
+  sceneFade = { swap, from, start: now, half: reduced ? 90 : 450, covered: false, revealAt: revealOnly ? now : null };
+  veil.style.opacity = revealOnly ? 1 : 0;
+  veil.hidden = false;
+  syncStage();
+}
+function revealCourtyard() {
+  modal = null; accumulator = 0; previousTick = null;
+  updateUI(); renderModal();
+}
+function startCelebration() {
+  resetTouchState(); freezePreview = tapEffect = null;
+  document.querySelector('#toast').classList.remove('show');
+  const finale = state.level === levelCount - 1;
+  celebration = { start: performance.now(), duration: reduced ? 350 : finale ? 2500 : 1600, finale };
+  modal = 'celebration'; syncStage(); renderModal();
+}
+function advanceStage(time) {
+  if (celebration && time - celebration.start >= celebration.duration) {
+    celebration = null; modal = 'win'; syncStage(); renderModal();
+  }
+  const fade = sceneFade;
+  if (!fade) return;
+  if (fade.revealAt === null) {
+    const progress = Math.max(0, Math.min(1, (time - fade.start) / fade.half));
+    veil.style.opacity = smoothFade(progress);
+    if (progress < 1) return;
+    // Paint a fully covered frame before swapping worlds, even after a slow or hidden frame.
+    if (!fade.covered) { fade.covered = true; return; }
+    fade.revealAt = time; fade.from = null; fade.swap?.();
+  } else {
+    const progress = Math.max(0, Math.min(1, (time - fade.revealAt) / fade.half));
+    veil.style.opacity = 1 - smoothFade(progress);
+    if (progress < 1) return;
+    clearStage(); resetTouchState(); accumulator = 0;
+    if (!modal) canvas.focus({ preventScroll: true });
+  }
+}
 // Opening any menu releases held input. Offline it also pauses the local simulation; online the
 // server-authoritative world keeps running for both players (the menu is local to this screen).
 // A possible dead end (decided by the game/server) opens a warning once per new reason. Closing it changes
@@ -284,7 +376,7 @@ function checkWarning() {
   const key = `${state.level}:${onlineMode ? networkEpoch : sceneKey}`;
   if (key !== warnKey) { warnKey = key; warnedSeq = 0; }
   if (modal === 'warning' && !state.failure) { resume(); return; }
-  if (rewind || entering || modal || !state.failure || state.status !== 'playing') return;
+  if (rewind || stageBusy() || modal || !state.failure || state.status !== 'playing') return;
   if ((state.failureSeq ?? 0) > warnedSeq) { warnedSeq = state.failureSeq; setModal('warning'); }
 }
 // Restart = rewind time to the courtyard's start over 4 s. Local play rewinds at once; online the host asks
@@ -296,6 +388,7 @@ function requestRestart() {
 }
 function startRewind({ end, current, online }) {
   if (rewind) return;
+  clearStage();
   clearInputs();
   const frames = [...history.frames];
   if (current && (!frames.length || frames[frames.length - 1].tick !== current.tick)) frames.push(compactFrame(current));
@@ -311,20 +404,18 @@ function finishRewind() {
   modal = null; renderModal(); updateUI(); canvas.focus({ preventScroll: true });
 }
 function setModal(type) {
-  if (rewind) return;
+  if (rewind || stageBusy()) return;
   if (type && modal === null) { clearInputs(); if (!onlineMode && state.status === 'playing') dispatch({ type: 'pause' }, true); }
   modal = type; renderModal();
 }
 function resume() { modal = null; if (state.status === 'paused') { if (onlineMode) network.pause(false); else dispatch({ type: 'pause' }, true); } accumulator = 0; renderModal(); canvas.focus({ preventScroll: true }); }
 function renderModal() {
-  const root = document.querySelector('#modal-root');
+  const root = modalRoot;
   root.dataset.phase = String(modal);
-  if (modal === 'online') { root.innerHTML = ''; document.querySelector('.shell').classList.remove('at-entry'); return; }
-  document.querySelector('.shell').classList.toggle('at-entry', modal === 'intro' || entering);
-  if (!modal) { root.innerHTML = ''; return; }
+  shell.classList.toggle('at-entry', modal === 'intro');
+  if (!modal || modal === 'online' || modal === 'celebration') { root.innerHTML = ''; return; }
   let contents = '';
   const close = `<button class="iconbutton close" data-action="close" aria-label="${S.close}">${icon('close')}</button>`;
-  if (modal === 'intro') contents = `<div class="intro-icon">${icon('moon')}</div><div class="eyebrow">${S.english} · A COOPERATIVE TIME TALE</div><h1>${S.title}</h1><p>${S.intro}<br>${S.introBody}</p><div class="mode-selector"><button data-mode="solo" class="${mode === 'solo' ? 'selected' : ''}" data-testid="mode-solo">${S.solo}</button><button data-mode="coop" class="${mode === 'coop' ? 'selected' : ''}" data-testid="mode-coop">${S.coop}</button></div><button class="primary" data-action="start" data-testid="start">${saved.unlocked ? S.continue : S.start}${icon('arrow')}</button><p class="intro-foot">${S.subtitle}</p>`;
   if (modal === 'help') contents = `${close}<div class="intro-icon">${icon('help')}</div><h2>${S.helpTitle}</h2><p>${S.helpBody}</p><div class="help-grid">${(touchLayout() ? S.touchKeys : S.keys).map(([k, v]) => `${key(k)}<span>${v}</span>`).join('')}</div>${touchLayout() ? '' : `<p>${S.coopKeys}</p>`}<button class="primary" data-action="close">${S.continue}${icon('arrow')}</button>`;
   if (modal === 'settings') contents = `${close}<div class="intro-icon">${icon('settings')}</div><h2>${S.settings}</h2><p class="music-credit">Chamber 01 · 她未曾见过的 (What She Hasn’t Seen) · The 1999<br>Full track · looped<br><br>Menu / other chambers · Gymnopédie No. 1 · Erik Satie<br>Performed by <a href="https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100787" target="_blank" rel="noopener">Kevin MacLeod</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a><br>Excerpt 0:00–0:50; fades applied.</p><div class="settings-row"><span>${S.sound}</span><button class="toggle" role="switch" aria-checked="${sound}" data-action="sound" aria-label="${S.sound}" data-testid="setting-sound"></button></div><div class="settings-row"><span>${S.motion}</span><button class="toggle" role="switch" aria-checked="${reduced}" data-action="motion" aria-label="${S.motion}" data-testid="setting-motion"></button></div><div class="settings-row"><span>${S.touchControls}</span><button class="toggle" role="switch" aria-checked="${touchControls}" data-action="touch-controls" aria-label="${S.touchControls}" data-testid="setting-touch"></button></div><div class="mode-selector"><button data-mode="solo" class="${mode === 'solo' ? 'selected' : ''}">${S.solo}</button><button data-mode="coop" class="${mode === 'coop' ? 'selected' : ''}">${S.coop}</button></div><button class="primary" data-action="close">${S.continue}${icon('arrow')}</button>`;
   if (modal === 'pause') {
@@ -343,13 +434,26 @@ function renderModal() {
   if (modal === 'confirm-restart') contents = `<div class="intro-icon">${icon('restart')}</div><div class="eyebrow">${S.restartLevel}</div><h2>${S.restartBothTitle}</h2><p>${S.restartBothBody}</p><button class="primary" data-action="confirm-restart" data-testid="confirm-restart">${S.restartBoth}${icon('restart')}</button><div class="modal-actions"><button class="text-button" data-action="pause" data-testid="cancel-restart">${S.cancel}</button></div>`;
   if (modal === 'win') contents = `<div class="intro-icon">${icon('leaf')}</div><div class="eyebrow">CHAMBER 0${state.level + 1} · RESTORED</div><h2>${state.level === levelCount - 1 ? S.complete : S.chamberComplete}</h2><p>${state.level === levelCount - 1 ? S.completeBody : S.chamberCompleteBody}</p><p>${S.clear} ${clock(state.elapsed)} · ${S.best} ${clock(best[state.level] ?? state.elapsed)}</p><div class="win-stars">✦ ${state.shards[0].taken ? '✦' : '◇'} ✦</div><p>${S.memory} ${state.shards.filter(s => s.taken).length} / ${state.shards.length}</p><button class="primary" data-action="next" data-testid="next">${state.level === levelCount - 1 ? S.replay : S.next}${icon('arrow')}</button>`;
   if (modal === 'intro') {
-    root.innerHTML = `<section class="entry-screen" role="dialog" aria-modal="true" aria-label="${S.title}"><div class="entry-content"><div class="entry-mark">${icon('moon')}</div><div class="eyebrow">${S.english}</div><h1>${S.title}</h1><p>${S.subtitle}</p><div class="mode-selector"><button data-mode="solo" class="${mode === 'solo' ? 'selected' : ''}" aria-pressed="${mode === 'solo'}">${S.solo}</button><button data-mode="coop" class="${mode === 'coop' ? 'selected' : ''}" aria-pressed="${mode === 'coop'}">${S.coop}</button></div><button class="primary" data-action="start" data-testid="start">${saved.unlocked ? S.continue : S.start}${icon('arrow')}</button><div class="online-entry-actions"><button data-action="create-room" data-testid="create-room">${S.createRoom}</button><button data-action="join-room" data-testid="join-room">${S.joinRoom}</button></div></div><span class="entry-footer"><button class="text-button" data-action="sound" aria-pressed="${sound}">${icon(sound ? 'sound' : 'mute')} Music ${sound ? 'On' : 'Off'}</button> · A COOPERATIVE TIME TALE</span></section>`;
+    root.innerHTML = `<section class="entry-screen" role="dialog" aria-modal="true" aria-labelledby="entry-title">
+      <div class="entry-content">
+        <div class="entry-kicker">${icon('moon')}<span>${S.english}</span></div>
+        <h1 id="entry-title">${S.title}</h1><p>${S.subtitle}</p>
+        <div class="mode-selector" role="group" aria-label="${S.mode}">
+          <button type="button" data-mode="solo" data-testid="mode-solo" class="${mode === 'solo' ? 'selected' : ''}" aria-pressed="${mode === 'solo'}">${S.solo}</button>
+          <button type="button" data-mode="coop" data-testid="mode-coop" class="${mode === 'coop' ? 'selected' : ''}" aria-pressed="${mode === 'coop'}">${S.coop}</button>
+        </div>
+        <button type="button" class="primary" data-action="start" data-testid="start">${saved.unlocked ? S.continue : S.start}${icon('arrow')}</button>
+        <div class="online-entry-actions"><button type="button" data-action="create-room" data-testid="create-room">${S.createRoom}</button><button type="button" data-action="join-room" data-testid="join-room">${S.joinRoom}</button></div>
+        <button type="button" class="entry-audio" data-action="sound" aria-pressed="${sound}">${icon(sound ? 'sound' : 'mute')} ${S.music} ${sound ? S.on : S.off}</button>
+      </div>
+    </section>`;
     root.querySelector('.primary').focus({ preventScroll: true }); return;
   }
-  root.innerHTML = `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="${modal === 'intro' ? S.title : S[modal] || S.title}">${contents}</section></div>`;
+  root.innerHTML = `<div class="modal-backdrop${modal === 'win' ? ' results-reveal' : ''}"><section class="modal" role="dialog" aria-modal="true" aria-label="${modal === 'win' ? S.clear : S[modal] || S.title}">${contents}</section></div>`;
   if (onlineMode) {
     if (!network.host) root.querySelectorAll('[data-action="next"],[data-action="restart"],[data-action="rewind-restart"]').forEach(button => { button.disabled = true; button.title = S.hostControls; });
     if (modal === 'win') {
+      if (nextPending) root.querySelector('[data-testid="next"]').disabled = true;
       const back = document.createElement('button'); back.className = 'text-button'; back.dataset.action = 'return-lobby'; back.textContent = S.returnLobby; root.querySelector('.modal').append(back);
     }
   }
@@ -366,7 +470,7 @@ document.addEventListener('pointerdown', unlockEntryMusic, { capture: true });
 document.addEventListener('keydown', unlockEntryMusic, { capture: true });
 document.addEventListener('click', event => {
   const button = event.target.closest('[data-action], [data-level], [data-mode]'); if (!button) return;
-  if (entering) return;
+  if (stageBusy()) return;
   if (['start', 'create-room', 'join-room'].includes(button.dataset.action) && !pwa.sessionAllowed()) return;
   if (button.dataset.action === 'create-room') { enterOnline(); network.create(); return; }
   if (button.dataset.action === 'join-room') { enterOnline(); lobby.showJoin(); return; }
@@ -381,21 +485,10 @@ document.addEventListener('click', event => {
   }
   const action = button.dataset.action;
   if (action === 'start') {
-    if (entering) return;
-    entering = true; clearInputs(); initAudio();
-    const entry = document.querySelector('.entry-screen');
-    entry.classList.add('departing');
-    const duration = reduced ? 200 : 2000;
-    let elapsed = 0, previous;
-    function advance(now) {
-      if (previous !== undefined && !document.hidden && document.hasFocus()) elapsed += Math.min(now - previous, 50);
-      previous = now;
-      renderer.setEntryProgress?.(Math.min(1, elapsed / duration));
-      if (elapsed < duration) { requestAnimationFrame(advance); return; }
-      entering = false; modal = null; accumulator = 0; persist(); renderModal();
-      canvas.focus({ preventScroll: true });
-    }
-    requestAnimationFrame(advance); return;
+    if (modal !== 'intro') return;
+    clearInputs();
+    startFade(() => { persist(); revealCourtyard(); });
+    return;
   }
   if (action === 'sound') { sound = !sound; if (!sound) audioContext?.suspend(); initAudio(); updateUI(); persist(); if (['settings', 'intro', 'pause'].includes(modal)) renderModal(); else if (!modal) canvas.focus({ preventScroll: true }); return; }
   if (action === 'touch-controls') { touchControls = !touchControls; updateUI(); persist(); renderModal(); return; }
@@ -411,15 +504,23 @@ document.addEventListener('click', event => {
   if (action === 'confirm-restart') { if (!onlineMode || !network.host) return; requestRestart(); return; }
   if (action === 'rewind-restart') { if (onlineMode && !network.host) return; requestRestart(); return; }
   if (action === 'leave') { if (onlineMode) leaveOnline(); else returnToMenu(); return; }
-  if (action === 'next') { if (onlineMode && !network.host) return; dispatch({ type: 'next' }); modal = null; renderModal(); persist(); return; }
+  if (action === 'next') {
+    if (modal !== 'win' || nextPending) return;
+    if (onlineMode) {
+      if (network.host && dispatch({ type: 'next' }).valid) { nextPending = true; button.disabled = true; }
+    } else {
+      startFade(() => { dispatch({ type: 'next' }); persist(); revealCourtyard(); });
+    }
+    return;
+  }
   if (modal) return;
   canvas.focus({ preventScroll: true });
   if (action === 'switch') { clearInputs(); dispatch({ type: 'switch' }); return; }
   dispatch({ type: action });
 });
 function movement() {
-  if (modal || state.status !== 'playing') return;
-  const touching = (actor, dir) => [...touchMoves.values()].some(touch => touch.actor === actor && touch.dir === dir);
+  if (modal || stageBusy() || state.status !== 'playing') return;
+  const touching = (actor, dir) => joy.actor === actor && joy.dir === dir;
   if (mode === 'coop' && !onlineMode) {
     dispatch({ type: 'move', actor: 0, dir: Number(held.has('KeyD') || touching(0, 1)) - Number(held.has('KeyA') || touching(0, -1)) }, true);
     dispatch({ type: 'move', actor: 1, dir: Number(held.has('ArrowRight') || touching(1, 1)) - Number(held.has('ArrowLeft') || touching(1, -1)) }, true);
@@ -428,7 +529,7 @@ function movement() {
 document.addEventListener('keydown', event => {
   const code = event.code;
   if (rewind) return;
-  if (entering) { event.preventDefault(); return; }
+  if (stageBusy()) { event.preventDefault(); return; }
   if (code === 'Escape') { event.preventDefault(); if (modal && !['intro', 'win'].includes(modal)) resume(); else if (!modal) setModal('pause'); return; }
   if (modal) {
     if (code === 'Tab') {
@@ -445,7 +546,8 @@ document.addEventListener('keydown', event => {
   if (!controls.includes(code)) return;
   const actor = onlineMode ? network.actor : mode === 'coop' ? ['ArrowUp', 'Enter', 'KeyL'].includes(code) ? 1 : 0 : state.active;
   const alreadyJumping = keyboardJumpHeld(actor) || touchJumpActor === actor;
-  event.preventDefault(); initAudio(); held.add(code); movement(); if (event.repeat) return;
+  event.preventDefault(); if (event.repeat) return;
+  initAudio(); held.add(code); movement();
   if (code === 'Tab' && !onlineMode) { clearInputs(); dispatch({ type: 'switch' }); }
   if (['KeyW', 'Space', 'ArrowUp'].includes(code) && !alreadyJumping) dispatch({ type: 'jump', actor });
   if (['KeyE', 'Enter'].includes(code)) dispatch({ type: 'grab', actor });
@@ -463,8 +565,7 @@ document.addEventListener('keyup', event => {
   }
   movement();
 });
-// ---- Virtual joystick: horizontal movement, plus Jump when pushed into the upper (diagonal) region. ----
-// It writes into the same touchMoves / touchJump state as before, so every move still goes through dispatch().
+// The joystick only sends horizontal movement. Jump owns a separate pointer and shares the keyboard's jump state.
 const joystick = document.querySelector('.joystick');
 const joystickBase = joystick.querySelector('.joystick-base');
 const touchActor = () => onlineMode ? network.actor : state.active;
@@ -474,31 +575,12 @@ function canJumpNow(actor) {
   const p = onlineMode ? network.ownActor : state.actors[actor];
   return !!p && (p.grounded || p.coyote > 0);
 }
-function releaseStickJump() {
-  joy.jumping = false; joystick.classList.remove('jumping');
-  if (touchJumpActor === null || touchJumpPointer !== joy.pointer) return;
-  const actor = touchJumpActor; touchJumpActor = null; touchJumpPointer = null;
-  if (!keyboardJumpHeld(actor)) dispatch({ type: 'jumpRelease', actor }, true);
-}
 function applyStick() {
-  if (joy.pointer === null) return;
-  const actor = touchActor();
-  if (joy.actor !== null && joy.actor !== actor) { releaseStickJump(); joy.dir = null; }
-  joy.actor = actor;
-  const reading = readJoystick(joy.dx, joy.dy, joy.jumping);
+  const reading = readJoystick(joy.dx, joy.dy, joy.dir);
   const travel = joystickBase.clientWidth * 0.3;
   joystick.style.setProperty('--tx', `${(reading.x * travel).toFixed(1)}px`);
   joystick.style.setProperty('--ty', `${(reading.y * travel).toFixed(1)}px`);
-  if (reading.dir !== joy.dir) { joy.dir = reading.dir; touchMoves.set(joy.pointer, { actor, dir: reading.dir }); movement(); }
-  if (reading.jump && !joy.jumping) {
-    // Fires once on entering the region; holding it keeps the jump held (full height), leaving it releases.
-    // Entering it in mid-air does nothing and is used up: landing never starts a jump on its own.
-    joy.jumping = true; joystick.classList.add('jumping');
-    if (!modal && state.status === 'playing' && canJumpNow(actor)) {
-      touchJumpPointer = joy.pointer; touchJumpActor = actor;
-      dispatch({ type: 'jump', actor }, true);
-    }
-  } else if (!reading.jump && joy.jumping) releaseStickJump();
+  if (reading.dir !== joy.dir) { joy.dir = reading.dir; movement(); }
 }
 function readStick(event) {
   const rect = joystickBase.getBoundingClientRect(), radius = rect.width / 2 || 1;
@@ -507,43 +589,62 @@ function readStick(event) {
 }
 function releaseStick() {
   if (joy.pointer === null) return;
-  releaseStickJump(); touchMoves.delete(joy.pointer);
-  Object.assign(joy, { pointer: null, actor: null, dx: 0, dy: 0, dir: null });
+  Object.assign(joy, { pointer: null, actor: null, dx: 0, dy: 0, dir: 0 });
   joystick.classList.remove('active'); joystick.style.setProperty('--tx', '0px'); joystick.style.setProperty('--ty', '0px');
   movement();
 }
 joystick.addEventListener('pointerdown', event => {
-  if (modal || entering || joy.pointer !== null) return;
+  if (modal || stageBusy() || rewind || event.button !== 0 || joy.pointer !== null) return;
   event.preventDefault(); initAudio();
   try { joystick.setPointerCapture(event.pointerId); } catch { }
-  joy.pointer = event.pointerId; joy.dir = null; joystick.classList.add('active'); readStick(event);
+  joy.pointer = event.pointerId; joy.actor = touchActor(); joystick.classList.add('active'); readStick(event);
 });
 joystick.addEventListener('pointermove', event => { if (event.pointerId === joy.pointer) { event.preventDefault(); readStick(event); } });
 for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) joystick.addEventListener(name, event => { if (event.pointerId === joy.pointer) releaseStick(); });
 
-// ---- Circular ability / interact / switch buttons. Each acts on its own pointer, so they work while the joystick is held. ----
+function releaseTouchJump() {
+  const actor = touchJumpActor; touchJumpActor = null;
+  if (actor !== null && !keyboardJumpHeld(actor)) dispatch({ type: 'jumpRelease', actor }, true);
+}
+
 function touchAction(type) {
   if (type === 'switch') {
     if (onlineMode) return;
     const stick = joy.pointer !== null && joystick.hasPointerCapture?.(joy.pointer) ? { pointer: joy.pointer, dx: joy.dx, dy: joy.dy } : null;
     clearInputs(); dispatch({ type: 'switch' });
-    if (stick) { Object.assign(joy, stick, { dir: null }); joystick.classList.add('active'); applyStick(); }
+    if (stick) { Object.assign(joy, stick, { actor: touchActor() }); joystick.classList.add('active'); applyStick(); }
     return;
   }
-  dispatch({ type, actor: touchActor() });
+  const actor = touchActor();
+  if (type === 'jump') {
+    touchJumpActor = actor;
+    if (!keyboardJumpHeld(actor) && canJumpNow(actor)) dispatch({ type, actor }, true);
+  } else dispatch({ type, actor });
 }
+// Each circle captures only its own pointer, so presses coexist with held movement and with each other.
 for (const button of document.querySelectorAll('[data-touch]')) {
   button.addEventListener('pointerdown', event => {
-    if (modal || entering) return;
+    if (modal || stageBusy() || rewind || event.button !== 0 || touchPointers.has(button)) return;
     event.preventDefault(); initAudio();
     try { button.setPointerCapture(event.pointerId); } catch { }
-    button.classList.add('pressed'); touchAction(button.dataset.touch);
+    touchAction(button.dataset.touch);
+    touchPointers.set(button, event.pointerId); button.classList.add('pressed');
   });
-  for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) button.addEventListener(name, () => button.classList.remove('pressed'));
+  for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) button.addEventListener(name, event => {
+    if (touchPointers.get(button) !== event.pointerId) return;
+    touchPointers.delete(button); button.classList.remove('pressed');
+    if (button.dataset.touch === 'jump') releaseTouchJump();
+  });
   // Keyboard / switch-access activation (pointer taps were already handled on pointerdown).
-  button.addEventListener('click', event => { if (event.detail === 0 && !modal) touchAction(button.dataset.touch); });
+  button.addEventListener('keydown', event => { if (event.repeat && ['Enter', ' '].includes(event.key)) event.preventDefault(); });
+  button.addEventListener('click', event => {
+    if (event.detail !== 0 || modal || stageBusy() || rewind || touchPointers.has(button)) return;
+    touchAction(button.dataset.touch);
+    if (button.dataset.touch === 'jump') releaseTouchJump();
+  });
 }
 const interactButton = document.querySelector('.touch-interact');
+const abilityButton = document.querySelector('.touch-ability');
 function updateTouchControls(view) {
   if (!document.body.classList.contains('touch-layout') || !view?.actors) return;
   const actor = onlineMode ? network.actor : view.active;
@@ -551,6 +652,9 @@ function updateTouchControls(view) {
   const next = `${actor}:${interaction.kind}:${interaction.available}`;
   if (next === touchKey) return;
   touchKey = next;
+  abilityButton.classList.toggle('bloom', actor === 1);
+  abilityButton.innerHTML = `${icon(actor === 1 ? 'leaf' : 'snow')}<span>${S.ability[actor]}</span>`;
+  abilityButton.setAttribute('aria-label', S.ability[actor]);
   interactButton.classList.toggle('bloom', actor === 1);
   interactButton.classList.toggle('unavailable', !interaction.available);
   interactButton.dataset.kind = interaction.kind;
@@ -568,10 +672,16 @@ gameSurface.addEventListener('dblclick', event => event.preventDefault());
 // ---- Tap a time object in the world to use your character's ability on it (touch layout only). ----
 // The tap becomes the existing Ability action with an explicit target, so reach and rules stay
 // server-authoritative online; this only explains locally why a tap could not act.
-function castFreeze(view, point) {
+function toggleFreeze(view, point) {
+  const area = freezeAreaAt(view, point);
+  if (area) {
+    tapEffect = freezePreview = null;
+    dispatch({ type: 'ability', actor: 0, area: area.id });
+    return { result: 'cancel' };
+  }
   const result = freezeCheck(view, point);
   tapEffect = { x: point.x, y: point.y, at: performance.now(), ok: result === 'ok', ring: result === 'range' ? 0 : null, ringRadius: meta.freeze.range, area: true };
-  if (result === 'ok') { document.querySelector('#toast').classList.remove('show'); dispatch({ type: 'ability', actor: 0, x: Math.round(point.x), y: Math.round(point.y) }); }
+  if (result === 'ok') { document.querySelector('#toast').classList.remove('show'); dispatch({ type: 'ability', actor: 0, x: point.x, y: point.y }); }
   else if (result === 'noCharges') toast(S.noCharges);
   else if (result === 'range') toast(S.freezeTooFar);
   return { result };
@@ -581,7 +691,7 @@ function tapWorld(clientX, clientY) {
   if (!view || !camera || view.status !== 'playing' || rewind) return { result: 'idle' };
   const point = renderer.worldPoint(clientX, clientY);
   if (!point) return { result: 'idle' };
-  if (touchActor() === 0) return castFreeze(view, point);
+  if (touchActor() === 0) return toggleFreeze(view, point);
   const hit = timeObjectAt(view, point, Math.max(12, 30 / camera.scale));
   if (!hit) return { result: 'empty' };
   const actor = touchActor();
@@ -596,19 +706,27 @@ function tapWorld(clientX, clientY) {
 const mouseCasts = () => !document.body.classList.contains('touch-layout') && (!onlineMode || network.actor === 0);
 canvas.addEventListener('pointerdown', event => {
   canvas.focus({ preventScroll: true });
-  if (modal || entering || rewind) return;
+  if (modal || stageBusy() || rewind || event.button !== 0) return;
   if (document.body.classList.contains('touch-layout')) { event.preventDefault(); initAudio(); tapWorld(event.clientX, event.clientY); return; }
-  if (event.pointerType !== 'mouse' || event.button !== 0 || !mouseCasts()) return;
+  if (event.pointerType !== 'mouse' || !mouseCasts()) return;
   const point = renderer.worldPoint(event.clientX, event.clientY);
-  if (point && lastView?.status === 'playing') { initAudio(); castFreeze(lastView, point); }
+  if (point && lastView?.status === 'playing') { initAudio(); toggleFreeze(lastView, point); }
 });
 canvas.addEventListener('pointermove', event => {
-  freezePreview = event.pointerType === 'mouse' && mouseCasts() && !modal && !rewind ? renderer.worldPoint(event.clientX, event.clientY) : null;
+  freezePreview = event.pointerType === 'mouse' && mouseCasts() && !modal && !stageBusy() && !rewind ? renderer.worldPoint(event.clientX, event.clientY) : null;
 });
 canvas.addEventListener('pointerleave', () => { freezePreview = null; });
 window.addEventListener('blur', () => { clearInputs(); if (!onlineMode && !modal && state.status === 'playing') setModal('pause'); audioContext?.suspend(); });
 window.addEventListener('orientationchange', () => clearInputs());
-document.addEventListener('visibilitychange', () => { if (document.hidden) { clearInputs(); if (!onlineMode && !modal && state.status === 'playing') setModal('pause'); audioContext?.suspend(); } else if (onlineMode) network.wake(); });
+// A hidden tab stops drawing frames. A local rewind picks up where it left off; an online one follows the
+// server's clock, so it simply catches up (the server has already installed the start).
+let hiddenAt = null;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { hiddenAt = performance.now(); clearInputs(); if (!onlineMode && !modal && state.status === 'playing') setModal('pause'); audioContext?.suspend(); return; }
+  if (rewind && !rewind.online && hiddenAt !== null) rewind.start += performance.now() - hiddenAt;
+  hiddenAt = null;
+  if (onlineMode) network.wake();
+});
 window.addEventListener('pageshow', () => { if (onlineMode) network.wake(); });
 touchMedia.addEventListener('change', updateUI);
 window.__moonclock = {
@@ -630,7 +748,7 @@ function blendTicks(a, b, t) {
   };
 }
 function frame(time) {
-  const musicEnabled = sound && !document.hidden && (modal === 'intro' || entering || !modal || modal === 'win');
+  const musicEnabled = sound && !document.hidden && (modal === 'intro' || stageBusy() || !modal || modal === 'win');
   const firstLevel = state.level === 0 && modal !== 'intro';
   music.sync(musicEnabled && !firstLevel);
   firstLevelMusic.sync(musicEnabled && firstLevel);
@@ -639,8 +757,11 @@ function frame(time) {
   pwa.refresh();
   if (lastTime === 0) lastTime = time;
   accumulator += Math.min(100, time - lastTime); lastTime = time;
+  advanceStage(time);
   const step = 1000 / 60;
-  if (!onlineMode && !modal && !rewind && state.status === 'playing') { while (accumulator >= step) { previousTick = state; dispatch({ type: 'tick' }, true); history.record(state); accumulator -= step; } } else accumulator = 0;
+  if (!onlineMode && !modal && !stageBusy() && !rewind && state.status === 'playing') {
+    while (accumulator >= step && !celebration) { previousTick = state; dispatch({ type: 'tick' }, true); history.record(state); accumulator -= step; }
+  } else accumulator = 0;
   let rewindView = null, rewindInfo = null;
   if (rewind) {
     const now = performance.now(), u = Math.min(1, (now - rewind.start) / rewind.duration);
@@ -655,28 +776,34 @@ function frame(time) {
   // of step, so draw positions blended between the last two ticks instead of holding/jumping frames.
   const smooth = !onlineMode && !modal && state.status === 'playing' && previousTick?.level === state.level && previousTick.tick === state.tick - 1;
   const liveView = onlineMode ? network.render(Math.min(.1, (time - (frame.previous ?? time)) / 1000), time) || state : smooth ? blendTicks(previousTick, state, accumulator / step) : state;
-  const displayState = rewindView && rewind ? rewindView : liveView;
+  const outgoing = sceneFade?.from;
+  const displayState = outgoing?.state ?? (rewindView && rewind ? rewindView : liveView);
   frame.previous = time;
   // Online, a local menu does not stop the shared world, so keep animating behind it.
   const localMenu = ['pause', 'help', 'settings', 'confirm-restart', 'confirm-level'].includes(modal);
-  const worldPaused = (onlineMode ? modal !== null && !localMenu : !!modal) || state.status !== 'playing' || (onlineMode && (!network.connected || network.room?.suspended));
+  const worldPaused = stageBusy() || (onlineMode ? modal !== null && !localMenu : !!modal) || state.status !== 'playing' || (onlineMode && (!network.connected || network.room?.suspended));
   const touch = touchLayout(), viewActor = onlineMode ? network.actor : state.active;
+  const cancelPreview = freezePreview && freezeAreaAt(displayState, freezePreview);
   lastView = displayState;
   const tapAge = tapEffect ? (performance.now() - tapEffect.at) / 1400 : 1;
   if (tapAge >= 1) tapEffect = null;
   renderer.draw(displayState, time, {
-    reduced, mode: touch ? 'coop' : onlineMode ? 'solo' : mode, paused: worldPaused && !rewindInfo, sceneKey, cameraReset,
+    reduced, mode: touch ? 'coop' : onlineMode ? 'solo' : mode, paused: worldPaused && !rewindInfo,
+    sceneKey: outgoing?.sceneKey ?? sceneKey, cameraReset: outgoing?.cameraReset ?? cameraReset,
+    celebration: celebration && { progress: Math.max(0, Math.min(1, (time - celebration.start) / celebration.duration)), finale: celebration.finale },
     target: touch && viewActor === 0 ? null : targetFor(state, state.active)?.id,
     touch, tappable: touch && viewActor === 1 && displayState.status === 'playing' ? new Set(abilityTargets(displayState, viewActor).map(o => o.id)) : null,
     rewind: rewindInfo,
-    preview: freezePreview && displayState.status === 'playing' ? { ...freezePreview, radius: meta.freeze.radius, valid: freezeCheck(displayState, freezePreview) === 'ok' } : null,
+    preview: freezePreview && displayState.status === 'playing' ? cancelPreview ? { ...cancelPreview, cancel: true } : { ...freezePreview, radius: meta.freeze.radius, valid: freezeCheck(displayState, freezePreview) === 'ok' } : null,
     tap: tapEffect && { ...tapEffect, age: tapAge },
     bottomInset: touch ? controlsReserve : 0,
   });
-  updateTouchControls(displayState);
-  if (touch && !tapIntroShown && !modal && !entering && state.status === 'playing') { tapIntroShown = true; toast(S.tapIntro); }
-  checkWarning();
-  frameCount++; if (frameCount % 10 === 0) updateUI();
+  if (!outgoing) {
+    updateTouchControls(displayState);
+    if (touch && !tapIntroShown && !modal && !stageBusy() && state.status === 'playing') { tapIntroShown = true; toast(S.tapIntro); }
+    checkWarning();
+    frameCount++; if (frameCount % 10 === 0) updateUI();
+  }
   if (debug) { const el = document.querySelector('#debug'); el.hidden = false; el.textContent = `tick ${state.tick} | phase ${modal || state.status}\nentities ${state.actors.length + state.objects.length}\nactor ${state.active} | ${Math.round(state.actors[state.active].x)},${Math.round(state.actors[state.active].y)}`; }
   requestAnimationFrame(frame);
 }
