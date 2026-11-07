@@ -2,6 +2,7 @@ import stillwater from './stillwater.js';
 import rootrise from './rootrise.js';
 import afterbloom from './afterbloom.js';
 import withtime from './withtime.js';
+import trials from './trials.js';
 
 // Play order of the chambers.
-export const LEVELS = [stillwater, rootrise, afterbloom, withtime];
+export const LEVELS = [stillwater, rootrise, afterbloom, withtime, trials];
