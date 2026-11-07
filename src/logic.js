@@ -342,13 +342,17 @@ function ageObjects(state) {
   }
 }
 
+// A living mushroom's stem is solid from the side, for actors and items alike; only its cap top is standable.
+const stemBoxes = state => state.objects.filter(o => o.kind === 'plant' && !o.withered && o.height > 0)
+  .map(o => { const w = Math.min(84, Math.max(30, canopyWidth(o))); return { x: o.x - w / 2, y: o.base - o.height, w, h: o.height }; });
+
 // One physics tick for a loose crate or seed. Returns whether it landed (and how hard) and whether it hit a wall.
 function stepItem(state, o, all) {
   const half = o.kind === 'crate' ? 27 : 10, k = o.frozen ? meta.time.frozenRate : 1, previous = o.y + half;
   let landed = null, wall = false;
   o.vy += 0.3 * k; o.x += o.vx * k;
-  // Platform sides are walls: an item flying into one stops against it instead of passing through.
-  for (const f of state.platforms) if (o.y + half > f.y + 3 && o.y - half < f.y + f.h && o.x + half > f.x && o.x - half < f.x + f.w) {
+  // Platform sides and mushroom stems are walls: an item flying into one stops against it instead of passing through.
+  for (const f of [...state.platforms, ...stemBoxes(state)]) if (o.y + half > f.y + 3 && o.y - half < f.y + f.h && o.x + half > f.x && o.x - half < f.x + f.w) {
     o.x = o.x < f.x + f.w / 2 ? f.x - half : f.x + f.w + half; o.vx = 0; wall = true;
   }
   o.y += o.vy * k;
@@ -407,9 +411,12 @@ function moveActors(state) {
     const body = () => ({ x: p.x - 15, y: p.y - 52, w: 30, h: 51 });
     const crates = state.objects.filter(o => (o.kind === 'crate' && o.held === null) || isSolidEnemy(o)).map(o => o.kind === 'crate' ? { id: o.id, x: o.x - 27, y: o.y - 27, w: 54, h: 54 } : { id: o.id, ...enemyBox(o) });
     const inside = crates.filter(c => rectOverlap({ x: oldX - 15, y: p.y - 52, w: 30, h: 51 }, c));
+    // A mushroom that grows into you only lets you walk out of it.
+    const stems = stemBoxes(state);
+    const inStem = stems.filter(s => rectOverlap({ x: oldX - 15, y: p.y - 52, w: 30, h: 51 }, s) && p.y > s.y + 9);
     for (const f of state.platforms) if (rectOverlap(body(), f) && p.y > f.y + 9) p.x = oldX;
     for (const c of crates) if (!inside.includes(c) && rectOverlap(body(), c) && p.y > c.y + 9) p.x = oldX;
-    for (const o of state.objects) if (o.kind === 'plant' && o.barrier && !o.withered && rectOverlap(body(), { x: o.x - 42, y: o.base - o.height, w: 84, h: o.height })) p.x = oldX;
+    for (const s of stems) if (inStem.includes(s) ? Math.abs(p.x - (s.x + s.w / 2)) < Math.abs(oldX - (s.x + s.w / 2)) : rectOverlap(body(), s) && p.y > s.y + 9) p.x = oldX;
     if (p.move && state.tick % 18 === 0) {
       if (p.x === oldX) event(state, 'collision', p.x, p.y, { actor: p.id });
       else if (p.grounded) event(state, 'step', p.x, p.y, { actor: p.id });

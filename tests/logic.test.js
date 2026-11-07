@@ -97,6 +97,45 @@ describe('time flow', () => {
     expect(s.flags.treeLifted).toBe(true);
   });
 
+  test('a growing plant is solid from the side', () => {
+    let s = planted();
+    s.actors[1].x = 400;
+    s = action(s, { type: 'ability', actor: 1, target: 'plant-0' });
+    s = step(s, G / 2);
+    s.actors[0].x = 500;
+    s = action(s, { type: 'move', actor: 0, dir: 1 });
+    s = step(s, 60);
+    expect(s.actors[0].x).toBeLessThan(600 - 15);
+    expect(s.actors[0].grounded).toBe(true);
+  });
+
+  test('a plant that grows into an actor beside it lets them walk out but not through', () => {
+    let s = planted();
+    s.actors[1].x = 400;
+    s.actors[0].x = 545;
+    s = action(s, { type: 'ability', actor: 1, target: 'plant-0' });
+    s = step(s, G / 2);
+    s = action(s, { type: 'move', actor: 0, dir: 1 });
+    s = step(s, 30);
+    expect(s.actors[0].x).toBe(545);
+    s = action(s, { type: 'move', actor: 0, dir: -1 });
+    s = step(s, 30);
+    expect(s.actors[0].x).toBeLessThan(545);
+  });
+
+  test('crates and seeds thrown at a growing plant stop against its stem', () => {
+    let s = planted();
+    s.actors[1].x = 400;
+    s = action(s, { type: 'ability', actor: 1, target: 'plant-0' });
+    s = step(s, G / 2);
+    s.objects.push(
+      { kind: 'crate', id: 'crate-test', x: 500, y: 513, vx: 6, vy: 0, frozen: false, held: null, spawnX: 500, spawnY: 513 },
+      { kind: 'seed', id: 'seed-test', x: 700, y: 500, vx: -6, vy: 0, frozen: false, held: null, spawnX: 700, spawnY: 500 });
+    s = step(s, 40);
+    expect(get(s, 'crate-test').x).toBeLessThan(600 - 15 - 27 + 1);
+    expect(get(s, 'seed-test').x).toBeGreaterThan(600 + 15 + 10 - 1);
+  });
+
   test('a fully grown plant stays lush for a while, then withers, then vanishes, freeing its pit and dropping its rider', () => {
     let s = planted();
     for (let i = 0; i < 3; i++) s = action(s, { type: 'ability', actor: 1, target: 'plant-0' });
