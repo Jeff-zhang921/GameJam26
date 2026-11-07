@@ -141,8 +141,8 @@ export function createRenderer(canvas, S) {
   }
   function enemy(o, targeted, t) {
     const b = enemyBox(o), cx = b.x + b.w / 2, cy = b.y + b.h / 2, f = lifeFraction(o);
+    ctx.save(); ctx.globalAlpha = f > .9 ? 1 - (f - .9) / .1 * .6 : 1;
     timeRing(cx, cy, Math.max(b.w, b.h) / 2 + 12, o, t);
-    ctx.save(); ctx.globalAlpha = f > .75 ? 1 - (f - .75) / .25 * .8 : 1;
     const ice = o.frozen ? '#bceef0' : null;
     if (o.kind === 'guard') {
       ctx.fillStyle = '#3d4f58'; ctx.beginPath(); ctx.roundRect(b.x, b.y + 6, b.w, b.h - 6, 8); ctx.fill();
@@ -173,7 +173,7 @@ export function createRenderer(canvas, S) {
       const stage = miteStage(o), color = o.frozen ? '#c9d9c8' : ['#8fae7a', '#c9604a', '#9a9a8a'][stage];
       for (const dx of [-.3, 0, .3]) line(ctx, [[cx + b.w * dx, b.y + b.h * .7], [cx + b.w * dx * 1.4, b.y + b.h]], '#3b3a2e', 2);
       ellipse(ctx, cx, b.y + b.h * .55, b.w / 2, b.h * .45, 0, color);
-      if (stage === 1) for (let i = 0; i < 4; i++) { ctx.fillStyle = color; ctx.beginPath(); ctx.moveTo(b.x + 8 + i * 9, b.y + 10); ctx.lineTo(b.x + 12 + i * 9, b.y); ctx.lineTo(b.x + 16 + i * 9, b.y + 10); ctx.fill(); }
+      if (stage === 1) { const gap = (b.w - 16) / 4; for (let i = 0; i < 4; i++) { ctx.fillStyle = color; ctx.beginPath(); ctx.moveTo(b.x + 4 + i * gap, b.y + 10); ctx.lineTo(b.x + 4 + i * gap + gap / 2, b.y); ctx.lineTo(b.x + 4 + (i + 1) * gap, b.y + 10); ctx.fill(); } }
       circle(ctx, cx + o.dir * b.w * .3, b.y + b.h * .45, 2.5, '#1f1a14');
     }
     if (ice) { ctx.strokeStyle = ice; ctx.lineWidth = 1.5; ctx.strokeRect(b.x - 2, b.y - 2, b.w + 4, b.h + 4); for (let i = 0; i < 4; i++) star(ctx, b.x + (i % 2 ? b.w + 4 : -4), b.y + (i < 2 ? -4 : b.h + 4), 2, '#c9f3ef'); }
@@ -216,9 +216,16 @@ export function createRenderer(canvas, S) {
     for (const shard of state.shards) if (!shard.taken) { const yy = shard.y + Math.sin(t * .002 + shard.id) * 5; glow(ctx, shard.x, yy, 40, '#e7d2a51b'); ctx.save(); ctx.translate(shard.x, yy); ctx.rotate(Math.PI / 4); ctx.fillStyle = '#e2d194'; ctx.fillRect(-5, -5, 10, 10); ctx.strokeStyle = '#f4e7b477'; ctx.strokeRect(-10, -10, 20, 20); ctx.restore(); }
     for (const o of state.objects) if (o.kind === 'crate' && o.held === null) crate(o, o.id === target && state.active === 0, t);
     for (const o of state.objects) if (o.kind === 'seed' && o.held === null) seed(o, t);
-    for (const o of state.objects) if (isEnemy(o)) enemy(o, o.id === target, t);
-    for (const actorState of state.actors) if (!(actorState.invuln > 0 && Math.floor(state.tick / 4) % 2)) actor(actorState, actorState.id, actorState.id === state.active, t);
+    const flying = o => !o.frozen && ['dart', 'orb', 'lantern'].includes(o.kind);
+    for (const o of state.objects) if (isEnemy(o) && !flying(o)) enemy(o, o.id === target, t);
+    for (const actorState of state.actors) {
+      const inv = actorState.invuln > 0;
+      if (inv && !options.reduced && !options.paused && Math.floor(state.tick / 4) % 2) continue;
+      if (inv && options.reduced) ctx.globalAlpha = .5;
+      actor(actorState, actorState.id, actorState.id === state.active, t); ctx.globalAlpha = 1;
+    }
     for (const o of state.objects) if (o.held !== undefined && o.held !== null) o.kind === 'crate' ? crate(o, false, t) : seed(o, t);
+    for (const o of state.objects) if (isEnemy(o) && flying(o)) enemy(o, o.id === target, t);
     for (const kind of ['ambient', 'dust', 'crystal', 'leaf', 'spark']) {
       ctx.beginPath();
       for (const p of effects.particles) {
@@ -234,7 +241,7 @@ export function createRenderer(canvas, S) {
       ctx.fill();
     }
     if (options.reduced) for (const e of state.events) {
-      if (state.tick - e.tick < 12 && ['freeze', 'unfreeze', 'wake', 'grow', 'plant', 'shard', 'win'].includes(e.kind)) circle(ctx, e.x, e.y, 22, null, ['freeze', 'unfreeze'].includes(e.kind) ? cyan : gold, 2);
+      if (state.tick - e.tick < 12 && ['freeze', 'unfreeze', 'wake', 'grow', 'plant', 'shard', 'win', 'hit', 'checkpoint'].includes(e.kind)) circle(ctx, e.x, e.y, 22, null, e.kind === 'hit' ? '#ffb3a1' : ['freeze', 'unfreeze'].includes(e.kind) ? cyan : gold, 2);
     }
     const selected = state.objects.find(o => o.id === target);
     if (state.status === 'playing' && selected) {

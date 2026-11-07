@@ -79,7 +79,8 @@ function dispatch(action, quiet = false) {
     sceneKey++; if (action.type !== 'rewind') cameraReset++;
     shownHint = 0;
   }
-  for (const e of state.events) if (e.id > seenEvent) { chime(e.kind); if (e.kind === 'return' && e.actor !== undefined) cameraReset++; seenEvent = e.id; }
+  const seenBefore = seenEvent;
+  for (const e of state.events) if (e.id > seenEvent) { if (!(e.kind === 'return' && state.events.some(h => h.kind === 'hit' && h.actor === e.actor && h.id > seenBefore))) chime(e.kind); if (e.kind === 'return' && e.actor !== undefined) cameraReset++; seenEvent = e.id; }
   if (state.status === 'won' && oldStatus !== 'won') { held.clear(); best[state.level] = Math.min(best[state.level] ?? Infinity, state.elapsed); modal = 'win'; persist(); renderModal(); }
   if (action.type !== 'tick' || state.status !== oldStatus) updateUI();
   return { valid: true };
