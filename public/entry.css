@@ -15,9 +15,6 @@
 .entry-kicker svg { width: 27px; height: 27px; color: #ebcc8e; }
 .entry-screen h1 { margin: 10px 0 6px; font: 400 clamp(54px, 8vw, 108px)/.95 Georgia, serif; letter-spacing: -.055em; }
 .entry-screen p { margin: 0 0 34px; color: #cbdfd7; font: clamp(15px, 2vw, 20px)/1.4 Georgia, serif; }
-.entry-screen .mode-selector { margin: 0 0 10px; border-color: #9dbfba57; background: #0e2633bd; }
-.entry-screen .mode-selector button { min-height: 44px; color: #c3dbd7; }
-.entry-screen .mode-selector .selected { color: #fff1ce; background: #33565c; }
 .entry-screen .primary { width: 100%; min-height: 52px; min-width: 0; border: 1px solid #f4dda3; background: #e8c986; color: #152b32; font-weight: 600; }
 .entry-screen .primary:hover:not(:disabled) { background: #f6dfa8; }
 .entry-screen .online-entry-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }

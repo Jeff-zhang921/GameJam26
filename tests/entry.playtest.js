@@ -50,7 +50,7 @@ async function checkMenu(url) {
     const page = await openPage({ viewport: { width, height }, isMobile: name !== 'desktop', hasTouch: name !== 'desktop' });
     await page.goto(url);
     assert.equal(await page.getByRole('heading', { name: 'Moonclock', exact: true }).count(), 1);
-    for (const id of ['start', 'mode-solo', 'mode-coop', 'create-room', 'join-room']) {
+    for (const id of ['start', 'create-room', 'join-room']) {
       const bounds = await page.getByTestId(id).boundingBox();
       assert.ok(bounds && bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= width && bounds.y + bounds.height <= height, `${name}: ${id} is outside the screen`);
     }
@@ -71,7 +71,7 @@ async function checkMenu(url) {
 async function checkLocal(url, { reducedMotion = 'no-preference', finale = false } = {}) {
   const page = await openPage({ reducedMotion });
   const level = finale ? 4 : 0;
-  if (finale) await page.addInitScript(() => localStorage.setItem('moonclock-v1', JSON.stringify({ level: 4, unlocked: 4, mode: 'coop' })));
+  if (finale) await page.addInitScript(() => localStorage.setItem('moonclock-v1', JSON.stringify({ level: 4, unlocked: 4 })));
   // Replace only the test's starting positions. The real physics, gate rule and next-level reset still run.
   await page.route(url => url.pathname === '/src/logic.js' && !url.search, route => route.fulfill({ contentType: 'application/javascript', body: `
     export * from '/src/logic.js?playtest-original';
@@ -85,7 +85,6 @@ async function checkLocal(url, { reducedMotion = 'no-preference', finale = false
   ` }));
   await page.goto(url);
   if (finale) assert.match(await page.getByTestId('start').innerText(), /Continue Journey/);
-  await page.getByTestId('mode-coop').click();
   await watchReveal(page);
   await page.getByTestId('start').click();
   await page.locator('.scene-veil').waitFor({ state: 'visible' });
@@ -100,6 +99,7 @@ async function checkLocal(url, { reducedMotion = 'no-preference', finale = false
   assert.equal(waiting.level, level);
   assert.equal(waiting.actors[0].x, waiting.exit.x);
   assert.equal(waiting.status, 'playing');
+  await page.keyboard.press('Tab'); // switch to Bloom, who waits beside the gate
   await page.keyboard.down('ArrowRight');
   await stage(page, 'celebration');
   const began = Date.now();

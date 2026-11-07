@@ -42,7 +42,6 @@ let saved = {};
 try { saved = JSON.parse(localStorage.getItem('moonclock-v1') || '{}'); } catch { }
 let state = setup({ level: Number.isInteger(saved.level) ? saved.level : 0 });
 state.unlocked = Math.max(state.level, Math.min(levelCount - 1, saved.unlocked || 0));
-let mode = saved.mode === 'coop' ? 'coop' : 'solo';
 let sound = saved.sound !== false;
 let touchControls = saved.touchControls === true;
 const touchMedia = window.matchMedia('(pointer: coarse)');
@@ -218,7 +217,7 @@ function leaveOnline() {
   sceneKey++; seenEvent = 0; uiChapter = ''; uiMode = ''; modal = 'intro'; history.reset(state);
   updateUI(); renderModal();
 }
-// Solo / local co-op "Leave": back to the main menu, keeping the current courtyard and unlocks.
+// Local "Leave": back to the main menu, keeping the current courtyard and unlocks.
 function returnToMenu() {
   clearStage();
   clearInputs(); persist();
@@ -229,7 +228,7 @@ function returnToMenu() {
 }
 
 function persist() {
-  const data = { level: state.level, unlocked: state.unlocked, mode, sound, reduced, best, touchControls };
+  const data = { level: state.level, unlocked: state.unlocked, sound, reduced, best, touchControls };
   saved = data;
   try { localStorage.setItem('moonclock-v1', JSON.stringify(data)); } catch { }
 }
@@ -291,9 +290,9 @@ function updateUI() {
     if (uiProgress && !reduced) document.querySelector('.goal-panel').animate([{ borderColor: '#dcba63', background: '#fffce9' }, {}], { duration: 900 });
     uiProgress = progress;
   }
-  if (uiMode !== `${mode}:${onlineMode}`) {
-    document.querySelector('#controls').innerHTML = mode === 'coop' && !onlineMode ? `<span>${key('A D / ← →')}${S.move}</span><span>${key('W / ↑')}${S.jump}</span><span>${key('E / Enter')}${S.touchGrab}</span><span>${key('F / L')}${S.skills}</span>` : `<span>${key('A D')}${S.move}</span><span>${key('Space')}${S.jump}</span><span>${key('E')}${S.touchGrab}</span>`;
-    uiMode = `${mode}:${onlineMode}`;
+  if (uiMode !== String(onlineMode)) {
+    document.querySelector('#controls').innerHTML = `<span>${key('A D')}${S.move}</span><span>${key('Space')}${S.jump}</span><span>${key('E')}${S.touchGrab}</span>`;
+    uiMode = String(onlineMode);
   }
   document.querySelector('#ability-label').textContent = `${S.roleLabels[state.active]} · ${S.ability[state.active]}`;
   document.querySelector('#ability').classList.toggle('bloom', state.active === 1);
@@ -437,8 +436,8 @@ function renderModal() {
   if (!modal || modal === 'online' || modal === 'celebration') { root.innerHTML = ''; return; }
   let contents = '';
   const close = `<button class="iconbutton close" data-action="close" aria-label="${S.close}">${icon('close')}</button>`;
-  if (modal === 'help') contents = `${close}<div class="intro-icon">${icon('help')}</div><h2>${S.helpTitle}</h2><p>${S.helpBody}</p><div class="help-grid">${(touchLayout() ? S.touchKeys : S.keys).map(([k, v]) => `${key(k)}<span>${v}</span>`).join('')}</div>${touchLayout() ? '' : `<p>${S.coopKeys}</p>`}<button class="primary" data-action="close">${S.continue}${icon('arrow')}</button>`;
-  if (modal === 'settings') contents = `${close}<div class="intro-icon">${icon('settings')}</div><h2>${S.settings}</h2><p class="music-credit">Menu / Pause · 共生 (Symbiosis) · The 1999<br>Full track · looped<br><br>Chamber 01 · 她未曾见过的 (What She Hasn’t Seen) · The 1999<br>Full track · looped<br><br>Chamber 02 · 叠子对望 (Doubled Pawns) · The 1999<br>Full track · looped<br><br>Chamber 03 · 瑞尼尔雪山的丧钟 · The 1999<br>Full track · looped<br><br>Chamber 04 · 梦境之主 (Lord of Dream) · The 1999<br>Full track · looped<br><br>Chamber 05 · 贝希摩斯 (Behemoth) · The 1999<br>Full track · looped<br><br>Other chambers · Gymnopédie No. 1 · Erik Satie<br>Performed by <a href="https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100787" target="_blank" rel="noopener">Kevin MacLeod</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a><br>Excerpt 0:00–0:50; fades applied.</p><div class="settings-row"><span>${S.sound}</span><button class="toggle" role="switch" aria-checked="${sound}" data-action="sound" aria-label="${S.sound}" data-testid="setting-sound"></button></div><div class="settings-row"><span>${S.motion}</span><button class="toggle" role="switch" aria-checked="${reduced}" data-action="motion" aria-label="${S.motion}" data-testid="setting-motion"></button></div><div class="settings-row"><span>${S.touchControls}</span><button class="toggle" role="switch" aria-checked="${touchControls}" data-action="touch-controls" aria-label="${S.touchControls}" data-testid="setting-touch"></button></div><div class="mode-selector"><button data-mode="solo" class="${mode === 'solo' ? 'selected' : ''}">${S.solo}</button><button data-mode="coop" class="${mode === 'coop' ? 'selected' : ''}">${S.coop}</button></div><button class="primary" data-action="close">${S.continue}${icon('arrow')}</button>`;
+  if (modal === 'help') contents = `${close}<div class="intro-icon">${icon('help')}</div><h2>${S.helpTitle}</h2><p>${S.helpBody}</p><div class="help-grid">${(touchLayout() ? S.touchKeys : S.keys).map(([k, v]) => `${key(k)}<span>${v}</span>`).join('')}</div><button class="primary" data-action="close">${S.continue}${icon('arrow')}</button>`;
+  if (modal === 'settings') contents = `${close}<div class="intro-icon">${icon('settings')}</div><h2>${S.settings}</h2><p class="music-credit">Menu / Pause · 共生 (Symbiosis) · The 1999<br>Full track · looped<br><br>Chamber 01 · 她未曾见过的 (What She Hasn’t Seen) · The 1999<br>Full track · looped<br><br>Chamber 02 · 叠子对望 (Doubled Pawns) · The 1999<br>Full track · looped<br><br>Chamber 03 · 瑞尼尔雪山的丧钟 · The 1999<br>Full track · looped<br><br>Chamber 04 · 梦境之主 (Lord of Dream) · The 1999<br>Full track · looped<br><br>Chamber 05 · 贝希摩斯 (Behemoth) · The 1999<br>Full track · looped<br><br>Other chambers · Gymnopédie No. 1 · Erik Satie<br>Performed by <a href="https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100787" target="_blank" rel="noopener">Kevin MacLeod</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a><br>Excerpt 0:00–0:50; fades applied.</p><div class="settings-row"><span>${S.sound}</span><button class="toggle" role="switch" aria-checked="${sound}" data-action="sound" aria-label="${S.sound}" data-testid="setting-sound"></button></div><div class="settings-row"><span>${S.motion}</span><button class="toggle" role="switch" aria-checked="${reduced}" data-action="motion" aria-label="${S.motion}" data-testid="setting-motion"></button></div><div class="settings-row"><span>${S.touchControls}</span><button class="toggle" role="switch" aria-checked="${touchControls}" data-action="touch-controls" aria-label="${S.touchControls}" data-testid="setting-touch"></button></div><button class="primary" data-action="close">${S.continue}${icon('arrow')}</button>`;
   if (modal === 'pause') {
     const lockLevels = onlineMode && !network.host;
     const chapters = `<div class="pause-levels"><div class="goal-heading">${icon('arrow')}<span>${S.chooseLevel}</span></div><nav class="pause-chapters" aria-label="${S.chapters}">${Array.from({ length: levelCount }, (_, i) => `<button class="chapter-button ${i < state.unlocked ? 'done' : ''}" data-level="${i}" data-testid="level-${i}" aria-label="${S.levels[i].name}" title="${S.levels[i].name}" ${i === state.level ? 'aria-current="step"' : ''} ${lockLevels ? 'disabled' : ''}><span>${String(i + 1).padStart(2, '0')}</span></button>`).join('')}</nav></div>`;
@@ -459,10 +458,6 @@ function renderModal() {
       <div class="entry-content">
         <div class="entry-kicker">${icon('moon')}<span>${S.english}</span></div>
         <h1 id="entry-title">${S.title}</h1><p>${S.subtitle}</p>
-        <div class="mode-selector" role="group" aria-label="${S.mode}">
-          <button type="button" data-mode="solo" data-testid="mode-solo" class="${mode === 'solo' ? 'selected' : ''}" aria-pressed="${mode === 'solo'}">${S.solo}</button>
-          <button type="button" data-mode="coop" data-testid="mode-coop" class="${mode === 'coop' ? 'selected' : ''}" aria-pressed="${mode === 'coop'}">${S.coop}</button>
-        </div>
         <button type="button" class="primary" data-action="start" data-testid="start">${saved.unlocked ? S.continue : S.start}${icon('arrow')}</button>
         <div class="online-entry-actions"><button type="button" data-action="create-room" data-testid="create-room">${S.createRoom}</button><button type="button" data-action="join-room" data-testid="join-room">${S.joinRoom}</button></div>
         <button type="button" class="entry-audio" data-action="sound" aria-pressed="${sound}">${icon(sound ? 'sound' : 'mute')} ${S.music} ${sound ? S.on : S.off}</button>
@@ -490,14 +485,13 @@ function unlockEntryMusic() {
 document.addEventListener('pointerdown', unlockEntryMusic, { capture: true });
 document.addEventListener('keydown', unlockEntryMusic, { capture: true });
 document.addEventListener('click', event => {
-  const button = event.target.closest('[data-action], [data-level], [data-mode]'); if (!button) return;
+  const button = event.target.closest('[data-action], [data-level]'); if (!button) return;
   if (stageBusy()) return;
   if (['start', 'create-room', 'join-room'].includes(button.dataset.action) && !pwa.sessionAllowed()) return;
   if (button.dataset.action === 'create-room') { enterOnline(); network.create(); return; }
   if (button.dataset.action === 'join-room') { enterOnline(); lobby.showJoin(); return; }
   if (button.dataset.action === 'return-lobby') { clearInputs(); network.returnToLobby(); return; }
   initAudio();
-  if (button.dataset.mode) { if (onlineMode) return; mode = button.dataset.mode; clearInputs(); updateUI(); persist(); renderModal(); return; }
   if (button.dataset.level !== undefined) {
     const level = Number(button.dataset.level);
     if ((!modal || modal === 'pause') && !onlineMode) { clearInputs(); dispatch({ type: 'level', level }); modal = null; renderModal(); persist(); canvas.focus({ preventScroll: true }); }
@@ -542,10 +536,7 @@ document.addEventListener('click', event => {
 function movement() {
   if (modal || stageBusy() || state.status !== 'playing') return;
   const touching = (actor, dir) => joy.actor === actor && joy.dir === dir;
-  if (mode === 'coop' && !onlineMode) {
-    dispatch({ type: 'move', actor: 0, dir: Number(held.has('KeyD') || touching(0, 1)) - Number(held.has('KeyA') || touching(0, -1)) }, true);
-    dispatch({ type: 'move', actor: 1, dir: Number(held.has('ArrowRight') || touching(1, 1)) - Number(held.has('ArrowLeft') || touching(1, -1)) }, true);
-  } else dispatch({ type: 'move', dir: Number(held.has('KeyD') || held.has('ArrowRight') || touching(state.active, 1)) - Number(held.has('KeyA') || held.has('ArrowLeft') || touching(state.active, -1)) }, true);
+  dispatch({ type: 'move', dir: Number(held.has('KeyD') || held.has('ArrowRight') || touching(state.active, 1)) - Number(held.has('KeyA') || held.has('ArrowLeft') || touching(state.active, -1)) }, true);
 }
 document.addEventListener('keydown', event => {
   const code = event.code;
@@ -566,8 +557,8 @@ document.addEventListener('keydown', event => {
   if ((code === 'Tab' && event.shiftKey) || (event.target.closest('button,summary') && ['Space', 'Enter', 'Tab'].includes(code))) return;
   const controls = ['KeyA', 'KeyD', 'KeyW', 'Space', 'KeyE', 'KeyF', 'Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'Enter', 'KeyL'];
   if (!controls.includes(code)) return;
-  const actor = onlineMode ? network.actor : mode === 'coop' ? ['ArrowUp', 'Enter', 'KeyL'].includes(code) ? 1 : 0 : state.active;
-  const alreadyJumping = keyboardJumpHeld(actor) || touchJumpActor === actor;
+  const actor = onlineMode ? network.actor : state.active;
+  const alreadyJumping = keyboardJumpHeld() || touchJumpActor === actor;
   event.preventDefault(); if (event.repeat) return;
   initAudio(); held.add(code); movement();
   if (code === 'Tab' && !onlineMode) { clearInputs(); dispatch({ type: 'switch' }); }
@@ -575,15 +566,14 @@ document.addEventListener('keydown', event => {
   if (['KeyE', 'Enter'].includes(code)) dispatch({ type: 'grab', actor });
   if (['KeyF', 'KeyL'].includes(code)) dispatch({ type: 'ability', actor });
 });
-function keyboardJumpHeld(actor) {
-  const keys = mode === 'coop' && !onlineMode ? actor === 0 ? ['KeyW', 'Space'] : ['ArrowUp'] : ['KeyW', 'Space', 'ArrowUp'];
-  return keys.some(code => held.has(code));
+function keyboardJumpHeld() {
+  return ['KeyW', 'Space', 'ArrowUp'].some(code => held.has(code));
 }
 document.addEventListener('keyup', event => {
   held.delete(event.code);
   if (['KeyW', 'Space', 'ArrowUp'].includes(event.code) && !modal) {
-    const actor = onlineMode ? network.actor : mode === 'coop' ? event.code === 'ArrowUp' ? 1 : 0 : state.active;
-    if (!keyboardJumpHeld(actor) && touchJumpActor !== actor) dispatch({ type: 'jumpRelease', actor }, true);
+    const actor = onlineMode ? network.actor : state.active;
+    if (!keyboardJumpHeld() && touchJumpActor !== actor) dispatch({ type: 'jumpRelease', actor }, true);
   }
   movement();
 });
@@ -626,7 +616,7 @@ for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) joystic
 
 function releaseTouchJump() {
   const actor = touchJumpActor; touchJumpActor = null;
-  if (actor !== null && !keyboardJumpHeld(actor)) dispatch({ type: 'jumpRelease', actor }, true);
+  if (actor !== null && !keyboardJumpHeld()) dispatch({ type: 'jumpRelease', actor }, true);
 }
 
 function touchAction(type) {
@@ -640,7 +630,7 @@ function touchAction(type) {
   const actor = touchActor();
   if (type === 'jump') {
     touchJumpActor = actor;
-    if (!keyboardJumpHeld(actor) && canJumpNow(actor)) dispatch({ type, actor }, true);
+    if (!keyboardJumpHeld() && canJumpNow(actor)) dispatch({ type, actor }, true);
   } else dispatch({ type, actor });
 }
 const interactButton = document.querySelector('.touch-interact');
@@ -890,7 +880,7 @@ function frame(time) {
   const tapAge = tapEffect ? (performance.now() - tapEffect.at) / 1400 : 1;
   if (tapAge >= 1) tapEffect = null;
   renderer.draw(displayState, time, {
-    reduced, mode: touch ? 'coop' : onlineMode ? 'solo' : mode, paused: worldPaused && !rewindInfo,
+    reduced, mode: touch ? 'coop' : 'solo', paused: worldPaused && !rewindInfo,
     sceneKey: outgoing?.sceneKey ?? sceneKey, cameraReset: outgoing?.cameraReset ?? cameraReset,
     celebration: celebration && { progress: Math.max(0, Math.min(1, (time - celebration.start) / celebration.duration)), finale: celebration.finale },
     target: aim ? aim.target : touch && viewActor === 0 ? null : targetFor(state, state.active)?.id,
