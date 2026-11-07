@@ -8,6 +8,7 @@ export function createRenderer(canvas, S) {
   let currentDpr = 1, frameWidth = 1, frameHeight = 1, lastTime = null, visualTime = 0, lastReset = -1;
   const camera = createCamera(), effects = createParticles();
   let transform;
+  let entryProgress = 0;
   const cyan = '#a1e3e5', gold = '#e1c68a', muted = '#8aa89b';
   function line(c, points, color, width = 1) { c.beginPath(); c.moveTo(points[0][0], points[0][1]); for (let i = 1; i < points.length; i++) c.lineTo(points[i][0], points[i][1]); c.strokeStyle = color; c.lineWidth = width; c.stroke(); }
   function circle(c, x, y, r, fill, stroke, width = 1) { c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); if (fill) { c.fillStyle = fill; c.fill(); } if (stroke) { c.strokeStyle = stroke; c.lineWidth = width; c.stroke(); } }
@@ -150,6 +151,13 @@ export function createRenderer(canvas, S) {
     if (!options.paused && !options.reduced) visualTime += dt * 1000;
     const t = options.reduced ? 0 : visualTime;
     transform = camera.update(state, { width: frameWidth, height: frameHeight, dt, mode: options.mode, reduced: options.reduced, paused: options.paused, sceneKey: options.sceneKey, resetCamera: lastReset !== options.cameraReset });
+    if (options.paused && entryProgress < 1) {
+      const fit = Math.min(frameWidth / state.width, frameHeight / state.height);
+      const progress = entryProgress * entryProgress * (3 - 2 * entryProgress);
+      transform = { ...transform, scale: fit + (transform.scale - fit) * progress,
+        offsetX: (frameWidth - state.width * fit) / 2 * (1 - progress) + transform.offsetX * progress,
+        offsetY: (frameHeight - state.height * fit) / 2 * (1 - progress) + transform.offsetY * progress };
+    }
     lastReset = options.cameraReset;
     effects.update(state, { dt, reduced: options.reduced, paused: options.paused && state.status !== 'won', sceneKey: options.sceneKey });
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -197,7 +205,7 @@ export function createRenderer(canvas, S) {
     }
     ctx.restore();
   }
-  return {
+  return { setEntryProgress(value) { entryProgress = value; },
     draw,
     worldPoint(clientX, clientY) {
       const rect = canvas.getBoundingClientRect();
