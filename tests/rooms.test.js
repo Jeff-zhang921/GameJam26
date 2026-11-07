@@ -87,7 +87,7 @@ describe('rooms and shared lobby', () => {
     expect(f.room.game.actors[1].abilityTarget).toBe('crate-0');
     f.advance(50);
     expect(f.last(f.host, 'snapshot')).toEqual(f.last(f.guest, 'snapshot'));
-    expect(f.last(f.host, 'snapshot').game.history).toEqual([]);
+    expect(f.last(f.host, 'snapshot').game.history).toBeUndefined();
   });
   test('different room codes isolate input and state', () => {
     const f = fixture(); f.start();
@@ -138,3 +138,15 @@ describe('rooms and shared lobby', () => {
 });
 
 function cloneActor(actor) { return JSON.parse(JSON.stringify(actor)); }
+
+describe('rewind removal', () => {
+  test('the server rejects rewind input and snapshots carry no rewind history', () => {
+    const f = fixture(); f.start();
+    f.send(f.guest, { type: 'input', seq: 1, action: { type: 'rewind' } });
+    expect(f.last(f.guest, 'error')).toMatchObject({ code: 'INVALID_ACTION', seq: 1 });
+    f.advance(50);
+    const game = f.last(f.host, 'snapshot').game;
+    expect(game.history).toBeUndefined();
+    expect(game.rewindsLeft).toBeUndefined();
+  });
+});

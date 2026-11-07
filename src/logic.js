@@ -3,8 +3,8 @@ import { LEVELS } from './levels/index.js';
 
 export const meta = {
   name: 'CLOCKBLOOM', minPlayers: 1, maxPlayers: 2, tickRate: 60,
-  controls: { speed: 4.2, airSpeed: 4.8, jump: -12.5, springJump: -15.3, gravity: 0.48, fallGravity: 0.8, maxFall: 16, jumpCut: 0.45, coyote: 7, jumpBuffer: 7, range: 420, reach: 95, pitReach: 50 },
-  time: { moverSpeed: 1, maxSpeed: 3, rewinds: 3, hintTicks: 90 * 60, invulnTicks: 60, frozenRate: FROZEN_RATE },
+  controls: { speed: 4.2, airSpeed: 4.8, jump: -12.5, springJump: -15.3, gravity: 0.48, fallGravity: 0.8, maxFall: 16, jumpCut: 0.45, coyote: 7, jumpBuffer: 7, range: 300, reach: 95, pitReach: 50 },
+  time: { moverSpeed: 1, maxSpeed: 3, hintTicks: 90 * 60, invulnTicks: 60, frozenRate: FROZEN_RATE },
   plant: { maxHeight: 235, springHeight: 45, growTicks: 960, matureTicks: 480, witherTicks: 480 },
 };
 const STILL = 0, BLOOM = 1;
@@ -16,6 +16,24 @@ const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const rectOverlap = (a, b) => a.x + a.w > b.x && a.x < b.x + b.w && a.y + a.h > b.y && a.y < b.y + b.h;
 const find = (state, id) => state.objects.find(o => o.id === id);
 const free = o => o.held === undefined || o.held === null;
+
+// Where a carried item sits relative to its carrier. Logic and every renderer use the same offset.
+export function heldPosition(o, carrier) {
+  const crate = o.kind === 'crate';
+  return { x: carrier.x + carrier.facing * (crate ? 37 : 22), y: carrier.y - (crate ? 53 : 40) };
+}
+
+// Snap every carried item to its carrier. Mutates `state`; held items never get physics of their own.
+export function attachHeld(state) {
+  for (const o of state.objects) {
+    if (free(o)) continue;
+    const carrier = state.actors[o.held];
+    if (!carrier) continue;
+    Object.assign(o, heldPosition(o, carrier));
+    o.vx = 0; o.vy = 0;
+  }
+  return state;
+}
 
 export function anchor(o) {
   if (isEnemy(o)) { const b = enemyBox(o); return { x: b.x + b.w / 2, y: b.y + b.h / 2 }; }
@@ -51,7 +69,7 @@ function makeLevel(index, players, unlocked, totalShards, collected = LEVELS.map
     checkpoints: (level.checkpoints ?? []).map((c, i) => ({ id: `cp-${i}`, x: c.x, y: c.y, lit: false })), checkpoint: null,
     exit: clone(level.exit), shards: level.shards.map((p, i) => ({ ...p, id: i, taken: false })),
     flags: { frozenTouched: false, treeLifted: false, withered: false, sproutJump: false, moverRide: false, dartRide: false, miteGone: false },
-    needs: clone(level.need), needsDone: 0, events: [], eventSeq: 0, history: [], rewindsLeft: meta.time.rewinds,
+    needs: clone(level.need), needsDone: 0, events: [], eventSeq: 0,
     started: false, elapsed: 0, lastProgressTick: 0, falls: 0,
   };
 }
@@ -67,10 +85,50 @@ function actorAllowed(state, playerId, actor) {
   return index >= 0 && (state.playerIds.length === 1 || actor === index);
 }
 
+// Objects a time ability can ever act on (crates, plants, moving platforms, creatures).
+const timeObject = o => o.kind === 'plant' || o.kind === 'mover' || o.kind === 'crate' || isEnemy(o);
+// Still holds anything; Bloom can only release a crate Still has frozen.
+const canAffect = (actor, o) => timeObject(o) && (o.kind !== 'crate' || actor === STILL || o.frozen);
+
+// Everything this actor's ability can reach right now.
+export function abilityTargets(state, actor) {
+  const p = state.actors[actor];
+  if (!p) return [];
+  return state.objects.filter(o => canAffect(actor, o) && free(o) && dist(p, anchor(o)) <= meta.controls.range);
+}
+
+// Why a chosen object can or cannot take this actor's ability: 'ok', 'range', 'unsupported', 'held', 'maxSpeed' or 'missing'.
+export function abilityCheck(state, actor, id) {
+  const p = state.actors[actor], o = find(state, id);
+  if (!p || !o || !timeObject(o)) return 'missing';
+  if (!free(o)) return 'held';
+  if (!canAffect(actor, o)) return 'unsupported';
+  if (dist(p, anchor(o)) > meta.controls.range) return 'range';
+  if (actor === BLOOM && !o.frozen && o.speed >= meta.time.maxSpeed) return 'maxSpeed';
+  return 'ok';
+}
+
+// The time object under a world-space point (touch tap), allowing `slop` world units of finger tolerance.
+export function timeObjectAt(state, point, slop = 0) {
+  let best = null, bestDistance = Infinity, bestArea = Infinity;
+  for (const o of state.objects) {
+    if (!timeObject(o) || !free(o)) continue;
+    let box;
+    if (o.kind === 'crate') box = { x: o.x - 27, y: o.y - 27, w: 54, h: 54 };
+    else if (o.kind === 'mover') box = { x: o.x, y: o.y - 6, w: o.w, h: 26 };
+    else if (o.kind === 'plant') { const w = Math.max(44, canopyWidth(o)); box = { x: o.x - w / 2, y: o.base - o.height - 24, w, h: o.height + 30 }; }
+    else box = enemyBox(o);
+    const dx = Math.max(box.x - point.x, 0, point.x - (box.x + box.w)), dy = Math.max(box.y - point.y, 0, point.y - (box.y + box.h));
+    const distance = Math.hypot(dx, dy), area = box.w * box.h;
+    if (distance > slop) continue;
+    if (distance < bestDistance || (distance === bestDistance && area < bestArea)) { best = o; bestDistance = distance; bestArea = area; }
+  }
+  return best;
+}
+
 export function targetFor(state, actor, action = {}) {
   const p = state.actors[actor];
-  const fits = o => o.kind === 'plant' || o.kind === 'mover' || isEnemy(o) || (o.kind === 'crate' && (actor === STILL || o.frozen));
-  const candidates = state.objects.filter(o => fits(o) && free(o) && dist(p, anchor(o)) <= meta.controls.range);
+  const candidates = abilityTargets(state, actor);
   if (action.target) return candidates.find(o => o.id === action.target);
   const moving = o => isEnemy(o) ? isMoving(o) : !o.frozen && (o.kind === 'crate' ? Math.abs(o.vx) + Math.abs(o.vy) > 0.5 : o.speed > 0 && !o.withered);
   const score = o => {
@@ -86,17 +144,31 @@ function pickable(state, p) {
     .sort((a, b) => dist(p, a) - dist(p, b));
 }
 
+function plantingPit(state, p) {
+  return state.pits.filter(t => t.plant === null && Math.abs(t.x - p.x) <= meta.controls.pitReach && Math.abs(t.y - p.y) <= 30)
+    .sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0];
+}
+
+// What the grab action would do for this actor right now: 'pickup', 'throw', 'plant' or 'drop'.
+export function interactionFor(state, actor) {
+  const p = state?.actors?.[actor];
+  if (!p) return { kind: 'pickup', available: false };
+  if (p.carrying !== null && p.carrying !== undefined) {
+    const o = find(state, p.carrying);
+    if (o?.kind === 'crate') return { kind: 'throw', available: true };
+    return { kind: plantingPit(state, p) ? 'plant' : 'drop', available: true };
+  }
+  return { kind: 'pickup', available: pickable(state, p).length > 0 };
+}
+
 export function validateAction(state, playerId, action) {
   const no = error => ({ valid: false, error });
   if (!state || !action || typeof action !== 'object' || Array.isArray(action)) return no('invalid');
   if (!state.playerIds.includes(playerId)) return no('player');
-  if (['tick', 'switch', 'pause', 'restart', 'rewind', 'next', 'level'].includes(action.type)) {
+  if (['tick', 'switch', 'pause', 'restart', 'next', 'level'].includes(action.type)) {
     if (action.type === 'tick' && playerId !== state.playerIds[0]) return no('host');
     if (action.type === 'next' && state.status !== 'won') return no('unfinished');
     if (action.type === 'level' && (!Number.isInteger(action.level) || action.level < 0 || action.level >= LEVELS.length)) return no('invalid');
-    if (action.type === 'rewind' && state.status !== 'playing') return no('paused');
-    if (action.type === 'rewind' && state.rewindsLeft <= 0) return no('noRewinds');
-    if (action.type === 'rewind' && !state.history.length) return no('history');
     return { valid: true };
   }
   if (state.status !== 'playing') return no('paused');
@@ -133,12 +205,6 @@ function surfaces(state) {
   return result;
 }
 
-function remember(state) {
-  if (state.tick % 10 !== 0) return;
-  state.history.push({ objects: clone(state.objects), pits: clone(state.pits), tick: state.tick });
-  if (state.history.length > 19) state.history.shift();
-}
-
 function ageObjects(state) {
   for (const o of [...state.objects]) {
     const slow = o.frozen ? meta.time.frozenRate : 1;
@@ -172,11 +238,8 @@ function moveItems(state) {
   for (const o of state.objects) {
     if (o.kind !== 'crate' && o.kind !== 'seed') continue;
     const crate = o.kind === 'crate', half = crate ? 27 : 10;
-    if (o.held !== null) {
-      const p = state.actors[o.held];
-      o.x = p.x + p.facing * (crate ? 37 : 22); o.y = p.y - (crate ? 53 : 40); o.vx = 0; o.vy = 0;
-      continue;
-    }
+    // Carried items take no physics step; attachHeld places them after their carrier has moved.
+    if (o.held !== null) continue;
     const k = o.frozen ? meta.time.frozenRate : 1, previous = o.y + half;
     o.vy += 0.3 * k; o.x += o.vx * k; o.y += o.vy * k;
     for (const f of all) if (f.id !== o.id) if (o.vy >= 0 && previous <= f.y + 3 && o.y + half >= f.y && o.x + half > f.x && o.x - half < f.x + f.w) {
@@ -293,7 +356,6 @@ function resolveStrikes(state, strikes) {
 }
 
 function tick(state) {
-  remember(state);
   state.tick++;
   if (state.started) state.elapsed++;
   const before = new Map(state.objects.filter(o => o.kind === 'crate' || o.kind === 'mover' || isEnemy(o)).map(o => [o.id, [o.x, o.y]]));
@@ -302,6 +364,8 @@ function tick(state) {
   carryRiders(state, before, moveItems(state));
   moveActors(state);
   resolveStrikes(state, strikes);
+  // Carriers have finished moving for this tick, so carried items land exactly on them (no one-tick trail).
+  attachHeld(state);
   const done = state.needs.filter(key => state.flags[key]).length;
   if (done > state.needsDone) { state.needsDone = done; state.lastProgressTick = state.elapsed; }
   if (done === state.needs.length && state.actors.some(p => Math.abs(p.x - state.exit.x) < 46 && Math.abs(p.y - state.exit.y) < 55)) {
@@ -322,17 +386,6 @@ export function applyAction(state, playerId, action) {
   if (action.type === 'tick') { if (s.status === 'playing') tick(s); return s; }
   if (action.type === 'pause') { if (s.status !== 'won') s.status = s.status === 'paused' ? 'playing' : 'paused'; for (const p of s.actors) { p.move = 0; p.jumpHeld = false; p.jumpCut = true; p.jumpBuffer = 0; } return s; }
   if (action.type === 'switch') { for (const p of s.actors) { p.move = 0; p.jumpHeld = false; p.jumpCut = true; p.jumpBuffer = 0; } s.active = 1 - s.active; return s; }
-  if (action.type === 'rewind') {
-    const frame = s.history[0];
-    s.objects = clone(frame.objects); s.pits = clone(frame.pits); s.history = []; s.rewindsLeft--;
-    for (const p of s.actors) { p.carrying = null; p.invuln = meta.time.invulnTicks; p.move = 0; p.jumpHeld = false; p.jumpCut = true; p.jumpBuffer = 0; }
-    for (const o of s.objects) if (!free(o)) {
-      const p = s.actors[o.held];
-      o.held = null; o.x = p.x + p.facing * 30; o.y = p.y - (o.kind === 'crate' ? 27 : 10); o.vx = 0; o.vy = 0;
-    }
-    event(s, 'rewind', s.actors[s.active].x, s.actors[s.active].y - 30);
-    return s;
-  }
   const p = s.actors[action.actor];
   if (action.type === 'jump' || action.type === 'grab' || action.type === 'ability' || (action.type === 'move' && action.dir !== 0)) s.started = true;
   if (action.type === 'move') p.move = action.dir;
@@ -346,8 +399,7 @@ export function applyAction(state, playerId, action) {
         o.frozen = false; o.x = p.x + p.facing * 48; o.y = p.y - 48; o.vx = p.facing * 6.8; o.vy = -6;
         event(s, 'throw', o.x, o.y);
       } else {
-        const pit = s.pits.filter(t => t.plant === null && Math.abs(t.x - p.x) <= meta.controls.pitReach && Math.abs(t.y - p.y) <= 30)
-          .sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0];
+        const pit = plantingPit(s, p);
         if (pit) {
           s.objects = s.objects.filter(x => x !== o);
           s.objects.push(makePlant(`plant-${s.nextPlant++}`, pit));
@@ -361,6 +413,7 @@ export function applyAction(state, playerId, action) {
       const o = pickable(s, p)[0];
       o.held = action.actor; if (o.kind === 'crate') o.frozen = false; p.carrying = o.id;
       event(s, 'grab', o.x, o.y);
+      Object.assign(o, heldPosition(o, p)); o.vx = 0; o.vy = 0;
     }
   }
   if (action.type === 'ability') {

@@ -91,7 +91,7 @@ export function playEffect(context, event) {
     freeze: [1000, 1500, .4, .025], unfreeze: [1300, 600, .3, .02],
     plant: [260, 520, .25, .025], vanish: [330, 80, .45, .02],
     shard: [880, 1760, .45, .025], win: [392, 784, .8, .03],
-    return: [180, 440, .35, .02], rewind: [800, 200, .5, .025],
+    return: [180, 440, .35, .02],
     hit: [300, 90, .35, .035], checkpoint: [523, 1046, .5, .025], strike: [260, 70, .18, .04],
   };
   const profile = profiles[kind]; if (!profile) return;

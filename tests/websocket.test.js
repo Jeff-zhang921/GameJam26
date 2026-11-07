@@ -65,7 +65,7 @@ describe('real WebSocket multiplayer', () => {
     p.guest.send({ type: 'input', seq: 1, action: { type: 'move', dir: 1 } });
     const moved = await p.host.next('snapshot', m => m.game.actors[0].x > 180);
     const same = await p.guest.next('snapshot', m => m.game.tick === moved.game.tick);
-    expect(same.game).toEqual(moved.game); expect(same.game.history).toEqual([]);
+    expect(same.game).toEqual(moved.game); expect(same.game.history).toBeUndefined();
     p.guest.send({ type: 'input', seq: 2, action: { type: 'jump' } });
     const jumping = await p.host.next('snapshot', m => m.game.actors[0].animation.name === 'jump');
     expect(jumping.game.actors[0].grounded).toBe(false);
@@ -95,6 +95,7 @@ describe('real WebSocket multiplayer', () => {
     p.host.send({ type: 'input', seq: 4, action: { type: 'ability', target: 'plant-0' } });
     p.host.send({ type: 'input', seq: 5, action: { type: 'ability', target: 'plant-0' } });
     const fast = await p.guest.next('snapshot', m => m.game.objects.some(o => o.id === 'plant-0' && o.speed === 3));
+    p.room.game.actors[0].x = 450; // Still walks within reach of the flower
     p.guest.send({ type: 'input', seq: 1, action: { type: 'ability', target: 'plant-0' } });
     const frozen = await p.host.next('snapshot', m => m.game.objects.some(o => o.id === 'plant-0' && o.frozen));
     expect((await p.guest.next('snapshot', m => m.game.tick === frozen.game.tick)).game).toEqual(frozen.game);

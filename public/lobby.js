@@ -30,7 +30,8 @@ export function createLobby(callbacks) {
   const badge = document.createElement('div');
   badge.id = 'online-room-badge';
   badge.hidden = true;
-  badge.innerHTML = '<span class="online-badge-dot" aria-hidden="true"></span><span class="online-badge-code"></span><button type="button" aria-label="Leave online room">Leave</button>';
+  // Leaving during play lives in the pause menu; the badge only shows the room code.
+  badge.innerHTML = '<span class="online-badge-dot" aria-hidden="true"></span><span class="online-badge-code"></span>';
   document.body.append(root, badge);
 
   let room = null, playerId = null, connection = 'connected', view = null, timeOffset = 0;
@@ -192,7 +193,6 @@ export function createLobby(callbacks) {
     const method = { create: 'createRoom', leave: 'leaveRoom', start: 'startGame', retry: 'retry', return: 'returnToLobby' }[action];
     if (method) invoke(method);
   });
-  badge.querySelector('button').addEventListener('click', () => invoke('leaveRoom'));
 
   function keyboard(event) {
     if (root.hidden) return;
