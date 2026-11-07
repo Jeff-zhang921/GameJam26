@@ -26,7 +26,7 @@ export function createRenderer(canvas, S) {
     budget.elapsed = budget.frames = budget.slow = 0;
   }
   const camera = createCamera(), effects = createParticles();
-  let transform, towerScene, towerReversed = false;
+  let transform;
   const cyan = '#a1e3e5', gold = '#e1c68a', muted = '#8aa89b';
   const sprites = Object.fromEntries(['crate', 'seed', 'mushroom-grow', 'mushroom-die', 'still', 'mage'].map(name => { const img = new Image(); img.src = `/sprites/${name}.png`; return [name, img]; }));
   const loaded = (...names) => names.every(name => sprites[name].complete && sprites[name].naturalWidth > 0);
@@ -596,17 +596,6 @@ export function createRenderer(canvas, S) {
     transform = camera.update(state, { width: frameWidth, height: frameHeight, dt, mode: options.mode, reduced: options.reduced, paused: options.paused, sceneKey: options.sceneKey, resetCamera: lastReset !== options.cameraReset, bottomInset: options.bottomInset || 0 });
     const coda = state.level === 0 && options.celebration?.tower ? options.celebration : null;
     const codaProgress = coda?.progress ?? 0;
-    if (towerScene !== options.sceneKey) { towerScene = options.sceneKey; towerReversed = false; }
-    if (codaProgress >= .435) towerReversed = true;
-    if (coda && !options.reduced) {
-      const focus = smooth(Math.min(1, Math.max(0, (codaProgress - .08) / .22))) * (1 - smooth(Math.min(1, Math.max(0, (codaProgress - .9) / .1))));
-      const scale = Math.min(frameWidth / 320, frameHeight / 260);
-      transform = { ...transform,
-        scale: transform.scale + (scale - transform.scale) * focus,
-        offsetX: transform.offsetX + (frameWidth * .5 - 1080 * scale - transform.offsetX) * focus,
-        offsetY: transform.offsetY + (frameHeight * .39 - 190 * scale - transform.offsetY) * focus,
-      };
-    }
     lastReset = options.cameraReset;
     effects.update(state, { dt, reduced: options.reduced, paused: options.paused && state.status !== 'won', sceneKey: options.sceneKey });
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -620,47 +609,6 @@ export function createRenderer(canvas, S) {
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.beginPath(); ctx.rect(cx0, cy0, cx1 - cx0, cy1 - cy0); ctx.clip();
     ctx.setTransform(k, 0, 0, k, ox, oy);
     ctx.drawImage(background, 0, 0);
-    if (coda) {
-      // The tower appears only in the ending shot, outside the playable scenery.
-      ctx.save(); ctx.translate(1080, 190);
-      ctx.fillStyle = '#648e87'; ctx.fillRect(-47, -66, 94, 290);
-      const stone = ctx.createLinearGradient(-47, 0, 47, 0);
-      stone.addColorStop(0, '#375d59'); stone.addColorStop(.3, '#729389'); stone.addColorStop(1, '#3d6861');
-      ctx.fillStyle = stone; ctx.fillRect(-47, -66, 94, 290);
-      for (let row = 0; row < 16; row++) {
-        const y = -57 + row * 18;
-        line(ctx, [[-45, y], [45, y]], '#b3c4ac25', .65);
-        for (let col = 0; col < 3; col++) {
-          const x = -38 + col * 33 + (row % 2) * 16;
-          if (x < 45) line(ctx, [[x, y], [x, y + 18]], '#254d4833', .65);
-        }
-      }
-      ctx.fillStyle = '#507a75'; ctx.beginPath(); ctx.moveTo(-61, -66); ctx.lineTo(0, -133); ctx.lineTo(61, -66); ctx.closePath(); ctx.fill();
-      line(ctx, [[0, -153], [0, -130]], '#b7c4aa', 2);
-      ctx.fillStyle = '#a2b7a177'; ctx.fillRect(-52, -70, 104, 7); ctx.fillRect(-51, 63, 102, 7);
-      for (const x of [-22, 22]) arch(ctx, x - 9, 92, 18, 70, '#355e59', 6);
-      circle(ctx, 0, 1.5, 42, '#2e514d', '#adc1a055', 1);
-      circle(ctx, 0, 0, 39, '#b9c4a6', '#d7d0aa', 1.4);
-      circle(ctx, 0, 0, 35.5, '#7d9885', '#3b5a50', .8);
-      circle(ctx, 0, 0, 27, '#abb69a33', '#d6cba755', .5);
-      for (let i = 0; i < 60; i++) {
-        const a = i * Math.PI / 30, major = i % 5 === 0;
-        line(ctx, [[Math.sin(a) * (major ? 29 : 32), -Math.cos(a) * (major ? 29 : 32)], [Math.sin(a) * 34, -Math.cos(a) * 34]], major ? '#263f37' : '#405c49', major ? 1.6 : .55);
-      }
-      ctx.font = '5px Georgia'; ctx.textAlign = 'center'; ctx.fillStyle = '#253f35';
-      ['XII', 'III', 'VI', 'IX'].forEach((word, i) => ctx.fillText(word, Math.sin(i * Math.PI / 2) * 23, -Math.cos(i * Math.PI / 2) * 23 + 1.6));
-      const step = coda ? Math.min(1, Math.max(0, (codaProgress - .39) / .045)) : towerReversed ? 1 : 0;
-      // One clearly legible hour division, with a small mechanical recoil.
-      const backward = step < .72 ? smooth(step / .72) * 1.09 : 1 + .09 * (1 - smooth((step - .72) / .28));
-      if (coda && step > 0 && step < 1) {
-        ctx.save(); ctx.globalAlpha = .28 * (1 - step); line(ctx, [[0, 5], [0, -30]], '#f7ebba', 2.3); ctx.restore();
-      }
-      ctx.save(); ctx.rotate(-backward * Math.PI / 6);
-      line(ctx, [[0, 6], [0, -30]], '#1b322c', 2.4);
-      line(ctx, [[-.6, 0], [-.6, -28]], '#e0d4a4', .7); ctx.restore();
-      line(ctx, [[0, 0], [-15, -9]], '#203b32', 3);
-      circle(ctx, 0, 0, 3, '#dfc78e', '#3c5542', .7); ctx.restore();
-    }
     if (theme.background.draw === 'greenhouse') { ctx.save(); ctx.translate(780, 158); ctx.rotate(t * .00003); line(ctx, [[0, 9], [0, -62]], '#d8c99777', 2); line(ctx, [[-28, 0], [8, 0]], '#d8c99777', 2); circle(ctx, 0, 0, 3, '#cfc7a1'); ctx.restore(); }
     state.platforms.forEach(platform);
     for (const a of state.freezeAreas ?? []) freezeArea(a, t);
