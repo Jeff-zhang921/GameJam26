@@ -205,6 +205,15 @@ export function createNetwork({ onRoom, onState, onConnection, onError, onReplay
         let a = frames[0], b = frames[0];
         for (const frame of frames) { if (frame.at <= delayed) a = frame; if (frame.at >= delayed) { b = frame; break; } b = frame; }
         if (a && b) game = interpolateGame(a.game, b.game, a === b ? 1 : Math.max(0, Math.min(1, (delayed - a.at) / (b.at - a.at))), actor);
+        // Keep positions smoothed, but show casts and cancellations as soon as the server confirms them.
+        if (game.freezeAreas !== latest.freezeAreas) {
+          game.freezeAreas = latest.freezeAreas; game.freezeCharges = latest.freezeCharges;
+          const slowed = new Set(latest.objects.filter(o => o.frozen).map(o => o.id));
+          game.objects = game.objects.map(o => {
+            const frozen = slowed.has(o.id);
+            return o.frozen === frozen ? o : { ...o, frozen };
+          });
+        }
         const desired = predicted.actors[actor];
         if (!renderActor || Math.hypot(renderActor.x - desired.x, renderActor.y - desired.y) > 80) renderActor = { x: desired.x, y: desired.y };
         else {

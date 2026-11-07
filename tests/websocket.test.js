@@ -101,6 +101,16 @@ describe('real WebSocket multiplayer', () => {
     expect((await p.guest.next('snapshot', m => m.game.tick === frozen.game.tick)).game).toEqual(frozen.game);
     expect(frozen.game.objects.find(o => o.id === 'plant-0').age).toBeGreaterThan(0);
     expect(fast.game.objects.find(o => o.id === 'plant-0').speed).toBe(3);
+    const [area] = frozen.game.freezeAreas;
+    expect(area.owner).toBe(p.g.playerId);
+    p.host.send({ type: 'input', seq: 6, action: { type: 'ability', area: area.id, owner: p.g.playerId } });
+    expect((await p.host.next('error')).code).toBe('role');
+    p.guest.send({ type: 'input', seq: 2, action: { type: 'ability', area: area.id } });
+    const cancelled = await p.host.next('snapshot', m => m.ack[p.g.playerId] === 2);
+    expect((await p.guest.next('snapshot', m => m.ack[p.g.playerId] === 2)).game).toEqual(cancelled.game);
+    expect(cancelled.game.freezeAreas).toEqual([]);
+    expect(cancelled.game.freezeCharges).toBe(frozen.game.freezeCharges);
+    expect(cancelled.game.objects.find(o => o.id === 'plant-0')).toMatchObject({ frozen: false, speed: 3 });
   });
   test('private session restores disconnected slot without duplicate actors', async () => {
     const server = serve({ reconnectMs: 1500 }), p = await pair(server); await start(p);

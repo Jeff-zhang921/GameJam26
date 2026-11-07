@@ -1,7 +1,7 @@
 import { drawCharacterPortrait } from './render.js';
 
 const characters = [
-  { id: 'still', name: 'Stillkeeper', label: 'STILL', ability: 'Freeze Area', description: 'Cast a Freeze Area near you: crates, plants, platforms and creatures inside slow to a crawl until it fades.' },
+  { id: 'still', name: 'Stillkeeper', label: 'STILL', ability: 'Freeze Area', description: 'Spend a charge to slow objects in a nearby circle. Tap or click the circle again to end it.' },
   { id: 'bloom', name: 'Bloomkeeper', label: 'BLOOM', ability: 'Wake / Hasten', description: 'Wake an object and hasten it up to 3×.' },
 ];
 
