@@ -21,6 +21,8 @@ export function createRenderer(canvas, S) {
     const img = artCache.get(src); return img.complete && img.naturalWidth > 0 ? img : null;
   }
   let theme = themeFor(0), backgroundKey = null;
+  // The backdrop's average colour along its top and bottom edges, for the space beyond the world.
+  let edge = { top: '#86b4b0', bottom: '#609d91' };
   // Draws a sprite cropped to its art, centred on x and standing on `bottom`.
   function sprite(name, x, bottom, height, alpha) {
     if (alpha <= .01 || height <= 0) return;
@@ -44,9 +46,17 @@ export function createRenderer(canvas, S) {
     const key = `${theme.names.background}:${!!img}`;
     if (key === backgroundKey) return;
     backgroundKey = key;
-    if (!look.image) { buildBackground(); return; }
-    b.fillStyle = '#86b4b0'; b.fillRect(0, 0, 1280, 640);
-    if (img) { const k = Math.max(1280 / img.naturalWidth, 640 / img.naturalHeight), w = img.naturalWidth * k, h = img.naturalHeight * k; b.drawImage(img, (1280 - w) / 2, (640 - h) / 2, w, h); }
+    if (!look.image) buildBackground();
+    else {
+      b.fillStyle = '#86b4b0'; b.fillRect(0, 0, 1280, 640);
+      if (img) { const k = Math.max(1280 / img.naturalWidth, 640 / img.naturalHeight), w = img.naturalWidth * k, h = img.naturalHeight * k; b.drawImage(img, (1280 - w) / 2, (640 - h) / 2, w, h); }
+    }
+    edge = { top: averageRow(0), bottom: averageRow(636) };
+  }
+  function averageRow(y) {
+    const data = b.getImageData(0, y, 1280, 4).data; let r = 0, g = 0, bl = 0;
+    for (let i = 0; i < data.length; i += 4) { r += data[i]; g += data[i + 1]; bl += data[i + 2]; }
+    const n = data.length / 4; return `rgb(${Math.round(r / n)},${Math.round(g / n)},${Math.round(bl / n)})`;
   }
   function buildBackground() {
     const sky = b.createLinearGradient(0, 0, 0, 640); sky.addColorStop(0, '#86b4b0'); sky.addColorStop(.6, '#a5c9b5'); sky.addColorStop(1, '#609d91'); b.fillStyle = sky; b.fillRect(0, 0, 1280, 640);
@@ -100,31 +110,37 @@ export function createRenderer(canvas, S) {
     };
     const openLeft = p.x <= 0, openRight = p.x + p.w >= 1280;
     const L = openLeft ? 0 : width(GROUND.left), R = openRight ? 0 : width(GROUND.right);
-    const x0 = p.x + L, x1 = p.x + p.w - R, E = width(GROUND.emblem);
-    if (x1 - x0 >= E + width(GROUND.fillR)) {
+    const x0 = p.x + L, x1 = p.x + p.w - R, E = GROUND.emblem ? width(GROUND.emblem) : 0;
+    if (GROUND.emblem && x1 - x0 >= E + width(GROUND.fillR)) {
       const ex = Math.round((x0 + x1 - E) / 2);
       run(GROUND.fillL, x0, ex, true); run(GROUND.fillR, ex + E, x1, false); piece(GROUND.emblem, ex, E);
     } else run(GROUND.fillR, x0, x1, false);
     if (!openLeft) piece(GROUND.left, p.x, L);
     if (!openRight) piece(GROUND.right, x1, R);
   }
-  // Below the ground strip: the theme's fill texture, anchored to the world and darkening with depth from
-  // `shade[0]` to `shade[1]`. One pattern per texture.
+  // Below the ground strip: the theme's fill texture, anchored to the world (one pattern per texture), darkening
+  // with depth below `top` (the platform's fill top) only, so a platform's fill and its continuation below the
+  // world's bottom edge blend into one gradient.
   const fillPatterns = new Map();
-  function groundFill(x, y, w, h, shade = [.12, .72]) {
+  const FILL_SHADE = { from: .12, to: .72, depth: 190 };
+  // The fill starts just under the moss, behind the strip's lower stones (which fade into it).
+  const FILL_TOP = 10;
+  function groundFill(x, y, w, h, top = y) {
     const fill = theme.ground.fill, img = art(fill.src);
     if (w <= 0 || h <= 0 || !img) return;
     if (!fillPatterns.has(fill.src)) { const pattern = ctx.createPattern(img, 'repeat'); pattern.setTransform(new DOMMatrix().scale(fill.scale)); fillPatterns.set(fill.src, pattern); }
     ctx.fillStyle = fillPatterns.get(fill.src); ctx.fillRect(x, y, w, h);
-    const g = ctx.createLinearGradient(0, y, 0, y + h); g.addColorStop(0, `rgba(14,16,24,${shade[0]})`); g.addColorStop(1, `rgba(10,14,18,${shade[1]})`);
+    const g = ctx.createLinearGradient(0, top, 0, top + FILL_SHADE.depth);
+    g.addColorStop(0, `rgba(14,16,24,${FILL_SHADE.from})`); g.addColorStop(1, `rgba(10,14,18,${FILL_SHADE.to})`);
     ctx.fillStyle = g; ctx.fillRect(x, y, w, h);
   }
+
   function platform(p) {
     const surface = art(theme.ground.surface.src);
     if (surface && art(theme.ground.fill.src)) {
       // The fill sits a little inside the ledge's ends, which step inward below the moss.
       const x0 = p.x <= 0 ? p.x : p.x + 12, x1 = p.x + p.w >= 1280 ? p.x + p.w : p.x + p.w - 12;
-      groundFill(x0, p.y + 30, x1 - x0, p.h - 30);
+      groundFill(x0, p.y + FILL_TOP, x1 - x0, p.h - FILL_TOP);
       if (p.x > 0) line(ctx, [[x0 + 1, p.y + 40], [x0 + 1, p.y + p.h]], '#15141c80', 2);
       if (p.x + p.w < 1280) line(ctx, [[x1 - 1, p.y + 40], [x1 - 1, p.y + p.h]], '#15141c80', 2);
       return groundCap(p, surface);
@@ -306,19 +322,23 @@ export function createRenderer(canvas, S) {
     const W = state.width, H = state.height, scale = transform.scale;
     const left = -transform.offsetX / scale, top = -transform.offsetY / scale;
     const right = (frameWidth - transform.offsetX) / scale, bottom = (frameHeight - transform.offsetY) / scale;
-    if (top < 0) ctx.drawImage(background, 0, 0, W, 1, 0, top, W, -top);
-    if (left < 0) ctx.drawImage(background, 0, 0, 1, H, left, Math.min(0, top), -left, H - Math.min(0, top));
-    if (right > W) ctx.drawImage(background, W - 1, 0, 1, H, W, Math.min(0, top), right - W, H - Math.min(0, top));
+    // Above: the backdrop's top colour. Beside: the backdrop mirrored, so it carries on without streaks. Below:
+    // its bottom colour sinking into shadow. Each overlaps the world by a little, so no seam shows at its edges.
+    if (top < 0) { ctx.fillStyle = edge.top; ctx.fillRect(left, top, right - left, 2 - top); }
+    if (left < 0) { ctx.save(); ctx.scale(-1, 1); ctx.drawImage(background, -1, 0); ctx.restore(); }
+    if (right > W) { ctx.save(); ctx.translate(2 * W - 1, 0); ctx.scale(-1, 1); ctx.drawImage(background, 0, 0); ctx.restore(); }
     if (bottom > H) {
-      const deep = ctx.createLinearGradient(0, H, 0, bottom); deep.addColorStop(0, '#558c7f'); deep.addColorStop(1, '#1d4642');
-      ctx.fillStyle = deep; ctx.fillRect(left, H, right - left, bottom - H);
+      const deep = ctx.createLinearGradient(0, H, 0, Math.max(H + 1, bottom)); deep.addColorStop(0, edge.bottom); deep.addColorStop(1, '#16131f');
+      ctx.fillStyle = deep; ctx.fillRect(left, H - 2, right - left, bottom - H + 2);
     }
     for (const p of state.platforms) {
       const x0 = p.x <= 0 && left < 0 ? left : p.x, x1 = p.x + p.w >= W && right > W ? right : p.x + p.w;
       if (x0 !== p.x || x1 !== p.x + p.w) platform({ ...p, x: x0, w: x1 - x0 });
       if (bottom > H && p.y + p.h >= H - 1) {
-        if (art(theme.ground.fill.src)) groundFill(x0, H, x1 - x0, bottom - H, [.72, .8]);
-        else { ctx.fillStyle = '#123239'; ctx.fillRect(x0, H, x1 - x0, bottom - H); }
+        // The fill below the world lines up with the fill above it, inset like it at ends that are not open.
+        const f0 = p.x <= 0 ? x0 : p.x + 12, f1 = p.x + p.w >= W ? x1 : p.x + p.w - 12;
+        if (art(theme.ground.fill.src)) groundFill(f0, H - 2, f1 - f0, bottom - H + 2, p.y + FILL_TOP); // the same gradient, continued
+        else { ctx.fillStyle = '#123239'; ctx.fillRect(f0, H - 2, f1 - f0, bottom - H + 2); }
       }
     }
   }
@@ -345,13 +365,20 @@ export function createRenderer(canvas, S) {
     const x = b.x + b.w / 2 + Math.sin(t * .003 + b.x) * 3, y = b.y - 10;
     ctx.save(); ctx.globalAlpha *= .85; glow(ctx, x, y, 12, '#c8f4f866'); star(ctx, x, y, 4, '#f0fdff'); ctx.restore();
   }
-  // A frost crystal gives Still an extra Freeze charge.
+  // Still's pickup (an extra Freeze charge): a small hourglass that bobs and slowly rocks, its sand trickling.
   function frostCrystal(c, t) {
     const y = c.y + Math.sin(t * .0025 + c.x) * 4;
     glow(ctx, c.x, y, 34, '#bdf0f640');
-    ctx.save(); ctx.translate(c.x, y); ctx.rotate(t * .0006);
-    for (let i = 0; i < 6; i++) { ctx.rotate(Math.PI / 3); line(ctx, [[0, 0], [0, -11]], '#e9fbfd', 2); line(ctx, [[0, -7], [3.5, -10]], '#e9fbfd', 1.2); line(ctx, [[0, -7], [-3.5, -10]], '#e9fbfd', 1.2); }
-    ctx.restore(); circle(ctx, c.x, y, 3, '#ffffff');
+    ctx.save(); ctx.translate(c.x, y); ctx.rotate(Math.sin(t * .0012 + c.x) * .18);
+    ctx.beginPath(); ctx.moveTo(-8, -11); ctx.lineTo(8, -11); ctx.bezierCurveTo(8, -4, 2, -2, 1.5, 0); ctx.bezierCurveTo(2, 2, 8, 4, 8, 11);
+    ctx.lineTo(-8, 11); ctx.bezierCurveTo(-8, 4, -2, 2, -1.5, 0); ctx.bezierCurveTo(-2, -2, -8, -4, -8, -11); ctx.closePath();
+    ctx.fillStyle = '#d9f8fb66'; ctx.fill(); ctx.strokeStyle = '#effcfd'; ctx.lineWidth = 1.4; ctx.stroke();
+    ctx.fillStyle = '#f2c768';
+    ctx.beginPath(); ctx.moveTo(-5.5, -7); ctx.lineTo(5.5, -7); ctx.quadraticCurveTo(3, -3, 0, -1.5); ctx.quadraticCurveTo(-3, -3, -5.5, -7); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(0, 4); ctx.quadraticCurveTo(5, 6, 6.5, 9.5); ctx.lineTo(-6.5, 9.5); ctx.quadraticCurveTo(-5, 6, 0, 4); ctx.fill();
+    if (Math.floor(t / 180) % 2 === 0) { ctx.fillRect(-.5, -1, 1, 5); }
+    ctx.fillStyle = '#e8c27a'; ctx.fillRect(-10, -13, 20, 2.6); ctx.fillRect(-10, 10.4, 20, 2.6);
+    ctx.restore();
   }
   function lightningCrystal(c, t) {
     const y = c.y + Math.sin(t * .0025 + c.x) * 4;
@@ -514,10 +541,15 @@ export function createRenderer(canvas, S) {
     lastReset = options.cameraReset;
     effects.update(state, { dt, reduced: options.reduced, paused: options.paused && state.status !== 'won', sceneKey: options.sceneKey });
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#8cb7a7'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = edge.top; ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.setTransform(currentDpr * transform.scale, 0, 0, currentDpr * transform.scale, currentDpr * transform.offsetX, currentDpr * transform.offsetY);
     surroundings(state);
-    ctx.save(); ctx.beginPath(); ctx.rect(0, 0, state.width, state.height); ctx.clip();
+    // Clip to the world on whole device pixels: a clip edge through the middle of a pixel row lets the sky show
+    // through as a faint line where the world meets what lies beyond it.
+    const k = currentDpr * transform.scale, ox = currentDpr * transform.offsetX, oy = currentDpr * transform.offsetY;
+    const [cx0, cy0, cx1, cy1] = [ox, oy, ox + state.width * k, oy + state.height * k].map(Math.round);
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.beginPath(); ctx.rect(cx0, cy0, cx1 - cx0, cy1 - cy0); ctx.clip();
+    ctx.setTransform(k, 0, 0, k, ox, oy);
     ctx.drawImage(background, 0, 0);
     if (state.level === 0) {
       // Distant bell tower, visible before the ending so the cut has a landmark.

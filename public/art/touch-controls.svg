@@ -1,8 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg">
-  <symbol id="frost" viewBox="0 0 64 64">
+  <symbol id="hourglass" viewBox="0 0 64 64">
     <path d="M32 4 56 18v28L32 60 8 46V18Z" fill="#246a80" stroke="#e2ffff" stroke-width="2"/>
-    <path d="M32 7v50M10 19l44 26m0-26L10 45M22 15l10 9 10-9M22 49l10-9 10 9M11 28l12-3-3-12m33 23-12 3 3 12m-24 0 3-12-12-3m33-23-3 12 12 3" fill="none" stroke="#e4fdff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="m32 24 8 8-8 8-8-8Z" fill="#a9f2ff" stroke="#f3ffff" stroke-width="1.5"/>
+    <path d="M22 15h20c0 8-6 12-10 17 4 5 10 9 10 17H22c0-8 6-12 10-17-4-5-10-9-10-17Z" fill="#cdf6fb" fill-opacity=".35" stroke="#e4fdff" stroke-width="2.5" stroke-linejoin="round"/>
+    <path d="M25 19h14c-1 4-4 7-7 9-3-2-6-5-7-9Zm7 17c3 3 7 6 8 10H24c1-4 5-7 8-10Z" fill="#f2c768"/>
+    <path d="M32 28v9" stroke="#f2c768" stroke-width="2" stroke-linecap="round"/>
+    <path d="M18 12h28M18 52h28" stroke="#f2c768" stroke-width="4" stroke-linecap="round"/>
   </symbol>
   <symbol id="bolt" viewBox="0 0 64 64">
     <path d="M34 3 9 36h20l-5 25 31-37H35l8-21Z" fill="#f2c768" stroke="#633e22" stroke-width="3" stroke-linejoin="round"/>

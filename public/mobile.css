@@ -101,12 +101,12 @@ body.touch-layout .modal .toggle[aria-checked=true]:after{left:calc(22 * var(--c
 .freeze-count{margin-left:10px;padding:2px 8px;border-radius:999px;background:#bfeef42b;color:#e3fbfd;letter-spacing:.5px;white-space:nowrap}.freeze-count.empty{background:#f1a58f33;color:#ffd7cb}body.rewinding .touch-controls,body.rewinding .touch-controls button,body.rewinding .touch-controls .joystick,body.rewinding .touch-pause{pointer-events:none}body.rewinding .touch-controls,body.rewinding .touch-pause{opacity:.35}
 body.touch-layout .hud-label{display:none}
 body.rewinding .toast{opacity:0!important}
-/* Bloom's seed count, on the right of the play area. */
-.seed-counter{position:absolute;right:max(24px,var(--safe-right));top:22px;display:flex;align-items:center;gap:8px;padding:8px 14px 8px 10px;border:1px solid #e2edddad;border-radius:999px;background:#f8f9ed99;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);box-shadow:0 6px 24px #254d3e12;color:#234b47;pointer-events:none;z-index:2}
-.seed-counter[hidden]{display:none}
-.seed-counter img{width:22px;height:22px;object-fit:contain}
-.seed-counter-label{font-size:9px;letter-spacing:1.6px;text-transform:uppercase;color:#8b7238}
-.seed-counter strong{font:600 17px Georgia,serif}
-.seed-counter.empty strong{color:#b0634f}
-body.touch-layout .seed-counter{top:calc(var(--safe-top) + 64px);right:max(14px,var(--safe-right));padding:6px 12px 6px 8px}
-.shell.at-entry .seed-counter{opacity:0}
+/* Bloom's seed count: a small seed and a number, bottom right (status bar on desktop, above the interact button on touch). */
+.seed-chip{display:inline-flex;align-items:center;gap:4px;margin-left:auto;padding:1px 8px 1px 4px;border-radius:999px;background:#f8f2d22b;color:#f6efd3;font:600 12px Georgia,serif;white-space:nowrap}
+.seed-chip[hidden]{display:none}
+.seed-chip img{width:16px;height:16px;object-fit:contain}
+.seed-chip.empty{background:#f1a58f33;color:#ffd7cb}
+.seed-chip:not([hidden]) + #stage-count{margin-left:12px}
+.touch-seeds{display:none}
+body.touch-layout .status-strip .seed-chip{display:none}
+body.touch-layout .touch-seeds:not([hidden]){display:inline-flex;position:absolute;right:calc(var(--jump-size) + var(--control-gap) + (var(--skill-size) - 52px) / 2);bottom:calc((var(--jump-size) - var(--skill-size)) / 2 + 10px + var(--skill-size) + 10px);width:52px;justify-content:center;margin:0;padding:3px 6px;background:#173c37b8;border:1px solid #f4e7b466;font-size:13px}
