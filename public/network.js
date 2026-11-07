@@ -33,11 +33,13 @@ export function attachCarried(game, predicted = null, ownActor = null) {
   return game;
 }
 
-export function createNetwork({ onRoom, onState, onConnection, onError }) {
+export function createNetwork({ onRoom, onState, onConnection, onError, onReplay }) {
   let socket, generation = 0, retryTimer, reconnectAttempt = 0, credentials = null, pendingIntent = null;
   let room = null, playerId = null, actor = 0, connected = false, active = false, seq = 0;
   let latest = null, predicted = null, pending = [], frames = [], accumulator = 0, epoch = null;
   let renderActor = null, lastMove = null;
+  const shownObjects = new Map(), objectOffsets = new Map();
+  let rebased = false;
   let lastMessage = Date.now();
   setInterval(() => {
     if (!active || socket?.readyState !== WebSocket.OPEN) return;
@@ -83,13 +85,19 @@ export function createNetwork({ onRoom, onState, onConnection, onError }) {
         adoptRoom(message.room, message.serverTime);
       } else if (message.type === 'room') {
         adoptRoom(message.room, message.serverTime);
+      } else if (message.type === 'replay') {
+        // The server started the shared rewind; both screens play it from their own recorded history.
+        pending = []; lastMove = null;
+        adoptRoom(message.room, message.serverTime);
+        onReplay?.(message.replay, message.game);
       } else if (message.type === 'snapshot') {
         const changedScene = epoch !== message.room.epoch;
         if (changedScene) { frames = []; pending = []; renderActor = null; lastMove = null; }
         epoch = message.room.epoch; latest = message.game;
         if (latest.status !== 'playing' || message.room.suspended) lastMove = null;
         pending = pending.filter(input => input.seq > (message.ack?.[playerId] ?? 0));
-        predicted = latest;
+        predicted = latest; rebased = true;
+        if (changedScene) { shownObjects.clear(); objectOffsets.clear(); }
         for (const input of pending) predict(input.action);
         frames.push({ game: latest, at: performance.now() });
         if (frames.length > 8) frames.shift();
@@ -115,11 +123,33 @@ export function createNetwork({ onRoom, onState, onConnection, onError }) {
     });
     socket.addEventListener('error', () => {});
   }
+  // Loose objects (thrown crates, platforms, creatures) are drawn from the locally simulated world, which
+  // advances every frame at 60 Hz, instead of stepping between 20 Hz snapshots. When a snapshot rebases
+  // that world, the small jump is turned into an offset that fades out, so nothing lags or teleports.
+  function smoothObjects(game, dt) {
+    const local = new Map(predicted.objects.map(o => [o.id, o])), decay = Math.exp(-dt / .08), seen = new Set();
+    game.objects = game.objects.map(o => {
+      const mine = local.get(o.id);
+      if (!mine || (o.held !== null && o.held !== undefined) || !Number.isFinite(mine.x) || !Number.isFinite(mine.y)) return o;
+      seen.add(o.id);
+      let offset = objectOffsets.get(o.id) || { x: 0, y: 0 };
+      const last = shownObjects.get(o.id);
+      if (rebased && last) offset = { x: last.x - mine.x, y: last.y - mine.y };
+      else offset = { x: offset.x * decay, y: offset.y * decay };
+      if (Math.hypot(offset.x, offset.y) > 80) offset = { x: 0, y: 0 }; // a real reset: snap
+      const shown = { x: mine.x + offset.x, y: mine.y + offset.y };
+      objectOffsets.set(o.id, offset); shownObjects.set(o.id, shown);
+      return { ...o, x: shown.x, y: shown.y };
+    });
+    for (const id of [...shownObjects.keys()]) if (!seen.has(id)) { shownObjects.delete(id); objectOffsets.delete(id); }
+    rebased = false;
+  }
   function action(value) {
     if (!connected || !room || room.suspended) return false;
     if (value.type === 'pause') return send({ type: 'pause', paused: latest?.status !== 'paused' });
     if (['restart', 'next'].includes(value.type)) return send({ type: 'control', action: value.type });
-    if (!['move', 'jump', 'jumpRelease', 'grab', 'ability'].includes(value.type) || room.status !== 'PLAYING' || latest?.status !== 'playing') return false;
+    if (value.type === 'level') return Number.isInteger(value.level) && send({ type: 'control', action: 'level', level: value.level });
+    if (!['move', 'jump', 'jumpRelease', 'grab', 'ability'].includes(value.type) || room.status !== 'PLAYING' || room.rewinding || latest?.status !== 'playing') return false;
     const input = { ...value, actor };
     if (input.type === 'move' && input.dir === lastMove) return true;
     if (input.type === 'move') lastMove = input.dir;
@@ -142,6 +172,8 @@ export function createNetwork({ onRoom, onState, onConnection, onError }) {
     get room() { return room; }, get playerId() { return playerId; }, get actor() { return actor; },
     get active() { return active; }, get connected() { return connected; },
     get host() { return room?.hostId === playerId; }, get latest() { return latest; },
+    // This client's own character as locally predicted (ahead of snapshots): used to gate touch jumps.
+    get ownActor() { return predicted?.actors?.[actor] ?? latest?.actors?.[actor] ?? null; },
     create() { credentials = null; seq = 0; save(); connect({ type: 'create' }); },
     join(code) { credentials = null; seq = 0; save(); connect({ type: 'join', code: code.trim().toUpperCase() }); },
     restore() {
@@ -180,6 +212,7 @@ export function createNetwork({ onRoom, onState, onConnection, onError }) {
           renderActor.x += (desired.x - renderActor.x) * amount; renderActor.y += (desired.y - renderActor.y) * amount;
         }
         Object.assign(game.actors[actor], { x: renderActor.x, y: renderActor.y, facing: desired.facing });
+        smoothObjects(game, dt);
         attachCarried(game, predicted, actor);
       } else { renderActor = null; attachCarried(game); }
       game.active = actor; return game;

@@ -63,3 +63,7 @@ body.touch-layout .modal button,body.touch-layout .modal .toggle{min-height:44px
 .pause-chapters .chapter-button{width:44px;height:44px;border:1px solid #d5dfcb;border-radius:8px;font-size:13px}
 .modal-actions .text-button svg{width:15px;height:15px}
 @media(max-height:560px){.pause-whisper{margin-top:10px;padding:9px 12px}.pause-whisper p{font-size:11px;line-height:1.5}.pause-actions{margin-top:10px}}
+.pause-levels{margin-top:12px}.pause-levels .goal-heading{justify-content:center}.pause-chapters .chapter-button:disabled{opacity:.45}
+.freeze-count{margin-left:10px;padding:2px 8px;border-radius:999px;background:#bfeef42b;color:#e3fbfd;letter-spacing:.5px;white-space:nowrap}.freeze-count.empty{background:#f1a58f33;color:#ffd7cb}body.rewinding .touch-controls,body.rewinding .touch-pause{opacity:.35;pointer-events:none}
+body.touch-layout .hud-label{display:none}
+body.rewinding .toast{opacity:0!important}

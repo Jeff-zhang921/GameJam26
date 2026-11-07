@@ -7,7 +7,7 @@ const inputTypes = new Set(['move', 'jump', 'jumpRelease', 'grab', 'ability']);
 const codePattern = /^[A-Z0-9]{6}$/;
 const clone = value => JSON.parse(JSON.stringify(value));
 
-export function createRoomManager({ now = Date.now, countdownMs = 3000, reconnectMs = 30000, roomTtlMs = 30 * 60 * 1000, maxRooms = 500 } = {}) {
+export function createRoomManager({ now = Date.now, countdownMs = 3000, reconnectMs = 30000, roomTtlMs = 30 * 60 * 1000, maxRooms = 500, rewindMs = 4000 } = {}) {
   const rooms = new Map();
   let lastAdvance = now(), accumulator = 0;
   function send(ws, message) { if (ws) { try { ws.send(JSON.stringify(message)); } catch { } } }
@@ -28,6 +28,7 @@ export function createRoomManager({ now = Date.now, countdownMs = 3000, reconnec
       startAt: room.startAt, suspended: room.suspended,
       reconnectUntil: disconnected.length ? Math.min(...disconnected.map(p => p.disconnectedAt + reconnectMs)) : null,
       canReturnLobby: room.status === 'FINISHED' && room.suspended, epoch: room.epoch,
+      rewinding: room.rewind ? { id: room.rewind.id, until: room.rewind.until, duration: rewindMs } : null,
     };
   }
   function gameView(room) {
@@ -69,6 +70,7 @@ export function createRoomManager({ now = Date.now, countdownMs = 3000, reconnec
     room.game = applyAction(room.game, player.id, { type: 'jumpRelease', actor });
   }
   function lobby(room) {
+    room.rewind = null;
     room.status = 'WAITING'; room.game = null; room.startAt = null; room.suspended = false; room.manualPaused = false; room.epoch++;
     room.createdAt = now();
     for (const player of room.players) player.ready = false;
@@ -101,6 +103,19 @@ export function createRoomManager({ now = Date.now, countdownMs = 3000, reconnec
     room.game = setup({ players: ids }); room.epoch++; updateAnimations(room);
     room.status = 'STARTING'; room.startAt = now() + countdownMs; room.lastBroadcast = now();
     broadcast(room, 'snapshot');
+  }
+  function startRewind(room) {
+    for (const p of room.players) stopInputs(room, p);
+    const end = applyAction(room.game, room.game.playerIds[0], { type: 'restart' });
+    room.rewind = { id: (room.rewindSeq = (room.rewindSeq ?? 0) + 1), until: now() + rewindMs, end };
+    room.manualPaused = false;
+    const message = { type: 'replay', room: publicRoom(room), serverTime: now(), replay: { id: room.rewind.id, duration: rewindMs, end: clone(end) }, game: gameView(room) };
+    for (const p of room.players) if (p.connected) send(p.ws, message);
+  }
+  function finishRewind(room) {
+    room.game = room.rewind.end; room.rewind = null;
+    room.status = 'PLAYING'; room.manualPaused = false; room.epoch++;
+    updateAnimations(room); broadcast(room, 'snapshot');
   }
   function receive(ws, raw) {
     ws.data ??= {};
@@ -171,16 +186,19 @@ export function createRoomManager({ now = Date.now, countdownMs = 3000, reconnec
       initialize(room); return;
     }
     if (message.type === 'pause') {
-      if (room.status !== 'PLAYING' || room.suspended || typeof message.paused !== 'boolean') { error(ws, 'NOT_PLAYING', 'This game cannot be paused now.'); return; }
+      if (room.status !== 'PLAYING' || room.suspended || room.rewind || typeof message.paused !== 'boolean') { error(ws, 'NOT_PLAYING', 'This game cannot be paused now.'); return; }
       room.manualPaused = message.paused;
       if ((room.game.status === 'paused') !== message.paused) room.game = applyAction(room.game, room.game.playerIds[0], { type: 'pause' });
       broadcast(room, 'snapshot'); return;
     }
     if (message.type === 'control') {
       if (player.id !== room.hostId) { error(ws, 'HOST_ONLY', 'Only the host can change the courtyard.'); return; }
-      if (!['restart', 'next'].includes(message.action) || !room.game || room.suspended || room.players.length !== 2 || !room.players.every(p => p.connected) || !['PLAYING', 'FINISHED'].includes(room.status)) { error(ws, 'INVALID_CONTROL', 'That control is unavailable.'); return; }
-      const action = { type: message.action };
+      if (room.rewind) { error(ws, 'REWINDING', 'Time is already flowing back.'); return; }
+      if (!['restart', 'next', 'level'].includes(message.action) || !room.game || room.suspended || room.players.length !== 2 || !room.players.every(p => p.connected) || !['PLAYING', 'FINISHED'].includes(room.status)) { error(ws, 'INVALID_CONTROL', 'That control is unavailable.'); return; }
+      // Level select: the host picks a courtyard and the server moves both players there together.
+      const action = message.action === 'level' ? { type: 'level', level: message.level } : { type: message.action };
       if (!validateAction(room.game, player.id, action).valid) { error(ws, 'INVALID_CONTROL', 'That control is unavailable.'); return; }
+      if (action.type === 'restart') { startRewind(room); return; }
       room.game = applyAction(room.game, player.id, action); room.status = 'PLAYING'; room.manualPaused = false; room.epoch++; updateAnimations(room); broadcast(room, 'snapshot'); return;
     }
     if (message.type !== 'input') { error(ws, 'INVALID_MESSAGE', 'Unknown request.'); return; }
@@ -189,8 +207,8 @@ export function createRoomManager({ now = Date.now, countdownMs = 3000, reconnec
     player.lastSeq = seq;
     const action = message.action;
     if (!action || typeof action !== 'object' || Array.isArray(action) || !inputTypes.has(action.type) || (action.actor !== undefined && action.actor !== actorOf(player))) { error(ws, 'INVALID_ACTION', 'You may control only your own character.', seq); return; }
-    if (room.status !== 'PLAYING' || room.suspended) { error(ws, 'NOT_PLAYING', 'Wait until both players are playing.', seq); return; }
-    const authoritativeAction = { type: action.type, actor: actorOf(player), ...(action.type === 'move' ? { dir: action.dir } : {}), ...(action.type === 'ability' && action.target !== undefined ? { target: action.target } : {}) };
+    if (room.status !== 'PLAYING' || room.suspended || room.rewind) { error(ws, 'NOT_PLAYING', 'Wait until both players are playing.', seq); return; }
+    const authoritativeAction = { type: action.type, actor: actorOf(player), ...(action.type === 'move' ? { dir: action.dir } : {}), ...(action.type === 'ability' && action.target !== undefined ? { target: action.target } : {}), ...(action.type === 'ability' && (action.x !== undefined || action.y !== undefined) ? { x: action.x, y: action.y } : {}) };
     const result = validateAction(room.game, player.id, authoritativeAction);
     if (!result.valid) { error(ws, result.error, 'That action is unavailable.', seq); return; }
     const castTarget = action.type === 'ability' ? targetFor(room.game, actorOf(player), authoritativeAction)?.id : null;
@@ -221,7 +239,8 @@ export function createRoomManager({ now = Date.now, countdownMs = 3000, reconnec
         rooms.delete(room.code); continue;
       }
       if (room.status === 'STARTING' && time >= room.startAt) { room.status = 'PLAYING'; broadcast(room, 'snapshot'); }
-      if (room.status === 'PLAYING' && !room.suspended && !room.manualPaused) {
+      if (room.rewind) { if (time >= room.rewind.until) finishRewind(room); }
+      else if (room.status === 'PLAYING' && !room.suspended && !room.manualPaused) {
         for (let i = 0; i < ticks && room.game.status === 'playing'; i++) { room.game = applyAction(room.game, room.game.playerIds[0], { type: 'tick' }); updateAnimations(room); }
         if (room.game.status === 'won') { room.status = 'FINISHED'; broadcast(room, 'snapshot'); }
       }

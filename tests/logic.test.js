@@ -163,26 +163,27 @@ describe('still', () => {
     const rate = meta.time.frozenRate;
     expect(get(s, 'crate-0').x).toBeCloseTo(before.x + before.vx * rate * 30, 5);
     expect(get(s, 'crate-0').vx).toBe(before.vx);
-    expect(Math.abs(get(s, 'crate-0').y - before.y)).toBeLessThan(5);
+    // Local time runs at `rate`, so the arc's drop is about rate^2 of a free fall over the same time.
+    expect(Math.abs(get(s, 'crate-0').y - before.y)).toBeLessThan(Math.abs(before.vy) * rate * 30 + 0.3 * (rate * 30) ** 2 + 1);
     const slowX = get(s, 'crate-0').x;
-    s = action(s, { type: 'ability', actor: 0, target: 'crate-0' });
+    s.freezeAreas[0].ticksLeft = 1; // the area fades: its tick already runs at full speed
     s = step(s);
     expect(get(s, 'crate-0').x).toBeCloseTo(slowX + before.vx, 5);
   });
 
-  test('bloom releases a crate frozen in midair and it flies on', () => {
+  test('a crate flies on at full speed once its Freeze Area fades (Bloom cannot hasten crates)', () => {
     let s = setup();
     s.actors[0].x = 350;
     s = action(s, { type: 'grab', actor: 0 });
     s = action(s, { type: 'grab', actor: 0 });
     s = step(s, 12);
     s = action(s, { type: 'ability', actor: 0, target: 'crate-0' });
-    const before = { ...get(s, 'crate-0') };
     s.actors[1].x = 350;
-    expect(validateAction(s, 'local', { type: 'ability', actor: 1 }).valid).toBe(true);
-    s = action(s, { type: 'ability', actor: 1 });
-    expect(get(s, 'crate-0').frozen).toBe(false);
+    expect(validateAction(s, 'local', { type: 'ability', actor: 1, target: 'crate-0' }).valid).toBe(false);
+    s.freezeAreas[0].ticksLeft = 1;
+    const before = { ...get(s, 'crate-0') };
     s = step(s);
+    expect(get(s, 'crate-0').frozen).toBe(false);
     expect(get(s, 'crate-0').x).toBeCloseTo(before.x + before.vx, 5);
   });
 
@@ -201,13 +202,13 @@ describe('still', () => {
     const frozen = { ...s.objects.find(o => o.kind === 'plant') };
     s = step(s, G / 10);
     expect(plantOf(s).age).toBeCloseTo(frozen.age + 3 * meta.time.frozenRate * G / 10, 5);
-    expect(plantOf(s).height).toBeGreaterThan(frozen.height);
-    expect(plantOf(s).height - frozen.height).toBeLessThan(H * 3 * G / 10 / G * 0.1);
+    expect(plantOf(s).height).toBeCloseTo(frozen.height + H * 3 * meta.time.frozenRate * (G / 10) / G, 5);
     const slowHeight = plantOf(s).height;
-    s = action(s, { type: 'ability', actor: 1 });
+    s.freezeAreas[0].ticksLeft = 1; // the area fades: full speed again
+    s = step(s);
     expect(plantOf(s)).toMatchObject({ frozen: false, speed: 3 });
     s = step(s, 10);
-    expect(plantOf(s).height).toBeCloseTo(slowHeight + H * 3 * 10 / G, 5);
+    expect(plantOf(s).height).toBeCloseTo(slowHeight + H * 3 * 11 / G, 5);
   });
 });
 
@@ -413,13 +414,16 @@ describe('review fixes', () => {
     expect(get(s, 'plant-1').speed).toBe(meta.time.maxSpeed);
   });
 
-  test('bloom releases a frozen plant, waking it if it had never started', () => {
+  test('bloom still wakes and hastens a mushroom inside a Freeze Area; it then grows at the slowed rate', () => {
     let s = planted();
     s.actors[0].x = 560;
     s = action(s, { type: 'ability', actor: 0 });
     expect(plantOf(s)).toMatchObject({ frozen: true, speed: 0 });
     s = action(s, { type: 'ability', actor: 1 });
-    expect(plantOf(s)).toMatchObject({ frozen: false, speed: 1 });
+    expect(plantOf(s)).toMatchObject({ frozen: true, speed: 1 });
+    const age = plantOf(s).age;
+    s = step(s, 10);
+    expect(plantOf(s).age).toBeCloseTo(age + 10 * meta.time.frozenRate, 5);
   });
 
   test('a seed dropped on a crate rests on it', () => {
@@ -484,7 +488,8 @@ describe('carried riders', () => {
 
   test('a frozen crate keeps sliding at the slowed friction', () => {
     let s = setup({ level: 0 });
-    Object.assign(get(s, 'crate-0'), { vx: 4, frozen: true });
+    Object.assign(get(s, 'crate-0'), { vx: 4 });
+    s.freezeAreas.push({ id: 'test', x: 350, y: 493, radius: 130, ticksLeft: 1e6, duration: 1e6 });
     s = step(s, 20);
     expect(get(s, 'crate-0').vx).toBeCloseTo(4 * 0.88 ** (meta.time.frozenRate * 20), 3);
   });

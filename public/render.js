@@ -1,4 +1,4 @@
-import { canopyWidth, meta, atExit, anchor } from '../src/logic.js';
+import { canopyWidth, meta, atExit, anchor, exitStatus } from '../src/logic.js';
 import { GROW, DIE, growFrame, dieFrame } from '../src/mushroom.js';
 import { enemyBox, lifeFraction, miteStage, isEnemy, attackCharge } from '../src/enemies.js';
 import { createCamera, createParticles, worldPoint } from './presentation.js';
@@ -236,13 +236,89 @@ export function createRenderer(canvas, S) {
     ctx.restore();
     if (targeted) { const a = Math.max(b.w, b.h) / 2 + 8; ctx.strokeStyle = cyan; ctx.lineWidth = 1.5; for (const [x, y] of [[-a, -a], [a, -a], [-a, a], [a, a]]) line(ctx, [[cx + x, cy + y - Math.sign(y) * 8], [cx + x, cy + y], [cx + x - Math.sign(x) * 8, cy + y]], gold); }
   }
+  // Outside the 1280x640 world (letterbox areas on iPad-shaped or very wide screens): stretch the sky and
+  // side edges of the backdrop outward and carry the ground and its stone columns down to the screen edge.
+  // Purely visual; the world, its coordinates and collisions are unchanged.
+  function surroundings(state) {
+    const W = state.width, H = state.height, scale = transform.scale;
+    const left = -transform.offsetX / scale, top = -transform.offsetY / scale;
+    const right = (frameWidth - transform.offsetX) / scale, bottom = (frameHeight - transform.offsetY) / scale;
+    if (top < 0) ctx.drawImage(background, 0, 0, W, 1, 0, top, W, -top);
+    if (left < 0) ctx.drawImage(background, 0, 0, 1, H, left, Math.min(0, top), -left, H - Math.min(0, top));
+    if (right > W) ctx.drawImage(background, W - 1, 0, 1, H, W, Math.min(0, top), right - W, H - Math.min(0, top));
+    if (bottom > H) {
+      const deep = ctx.createLinearGradient(0, H, 0, bottom); deep.addColorStop(0, '#558c7f'); deep.addColorStop(1, '#1d4642');
+      ctx.fillStyle = deep; ctx.fillRect(left, H, right - left, bottom - H);
+    }
+    for (const p of state.platforms) {
+      const x0 = p.x <= 0 && left < 0 ? left : p.x, x1 = p.x + p.w >= W && right > W ? right : p.x + p.w;
+      if (x0 !== p.x || x1 !== p.x + p.w) platform({ ...p, x: x0, w: x1 - x0 });
+      if (bottom > H && p.y + p.h >= H - 1) { ctx.fillStyle = '#123239'; ctx.fillRect(x0, H, x1 - x0, bottom - H); }
+    }
+  }
+  // Still's Freeze Area: an icy disc with a slow inner ring, drifting specks and an arc counting down its time.
+  // It fades in when cast and blinks gently in its last two seconds.
+  function freezeArea(a, t) {
+    const life = Math.max(0, a.ticksLeft / a.duration), age = a.duration - a.ticksLeft;
+    const alpha = Math.min(1, age / 12, a.ticksLeft / 30) * (a.ticksLeft < 120 ? .55 + .45 * Math.abs(Math.cos(t * .006)) : 1);
+    ctx.save(); ctx.globalAlpha *= alpha;
+    const fill = ctx.createRadialGradient(a.x, a.y, a.radius * .15, a.x, a.y, a.radius);
+    fill.addColorStop(0, '#e4f8fa1c'); fill.addColorStop(.75, '#b6e8ee30'); fill.addColorStop(1, '#a1e3e566');
+    circle(ctx, a.x, a.y, a.radius, fill, '#d4f4f6c0', 2);
+    ctx.setLineDash([5, 11]); ctx.lineDashOffset = -t * .012; circle(ctx, a.x, a.y, a.radius - 9, null, '#effcfd80', 1.2); ctx.setLineDash([]);
+    ctx.beginPath(); ctx.arc(a.x, a.y, a.radius + 5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * life); ctx.strokeStyle = '#f1fcfdb0'; ctx.lineWidth = 2.5; ctx.stroke();
+    for (let i = 0; i < 12; i++) {
+      const turn = i * 2.39996 + t * .00035 * (i % 2 ? 1 : -1), r = a.radius * (.2 + ((i * 37) % 70) / 100);
+      star(ctx, a.x + Math.cos(turn) * r, a.y + Math.sin(turn) * r, 2 + (i % 3), '#f4fdfecc');
+    }
+    ctx.restore();
+  }
+  // Slowed objects carry a small frost mark so it is clear what the area is holding.
+  function frostMark(o, t) {
+    const b = isEnemy(o) ? enemyBox(o) : o.kind === 'plant' ? { x: o.x - 10, y: o.base - o.height - 4, w: 20, h: 0 } : o.kind === 'mover' ? { x: o.x, y: o.y, w: o.w, h: 0 } : { x: o.x - 10, y: o.y - (o.kind === 'crate' ? 30 : 14), w: 20, h: 0 };
+    const x = b.x + b.w / 2 + Math.sin(t * .003 + b.x) * 3, y = b.y - 10;
+    ctx.save(); ctx.globalAlpha *= .85; glow(ctx, x, y, 12, '#c8f4f866'); star(ctx, x, y, 4, '#f0fdff'); ctx.restore();
+  }
+  // A frost crystal: an extra Freeze charge for whoever touches it.
+  function frostCrystal(c, t) {
+    const y = c.y + Math.sin(t * .0025 + c.x) * 4;
+    glow(ctx, c.x, y, 34, '#bdf0f640');
+    ctx.save(); ctx.translate(c.x, y); ctx.rotate(t * .0006);
+    for (let i = 0; i < 6; i++) { ctx.rotate(Math.PI / 3); line(ctx, [[0, 0], [0, -11]], '#e9fbfd', 2); line(ctx, [[0, -7], [3.5, -10]], '#e9fbfd', 1.2); line(ctx, [[0, -7], [-3.5, -10]], '#e9fbfd', 1.2); }
+    ctx.restore(); circle(ctx, c.x, y, 3, '#ffffff');
+  }
+  function freezePreview(p) {
+    ctx.save(); ctx.setLineDash([8, 8]);
+    circle(ctx, p.x, p.y, p.radius, p.valid ? '#bfeef414' : '#f1a58f10', p.valid ? '#d4f4f6aa' : '#f1a58faa', 1.5);
+    ctx.setLineDash([]); star(ctx, p.x, p.y, 5, p.valid ? '#effcfd' : '#f6c3b5'); ctx.restore();
+  }
+  // Rewind: a cool wash with a vignette, a clock hand sweeping backwards and streaks of time running right to left.
+  function rewindOverlay(u, t) {
+    const W = canvas.width, H = canvas.height, swell = Math.sin(Math.min(1, u) * Math.PI);
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = .16 + .1 * swell; ctx.fillStyle = '#b4d4e6'; ctx.fillRect(0, 0, W, H);
+    const v = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * .25, W / 2, H / 2, Math.max(W, H) * .72);
+    v.addColorStop(0, '#9fc3d800'); v.addColorStop(1, '#173a48d0');
+    ctx.globalAlpha = .3 + .45 * swell; ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = .2;
+    for (let i = 0; i < 22; i++) { const y = ((i * 61) % 100) / 100 * H, x = W - ((t * .9 + i * 211) % (W + 240)); ctx.fillStyle = '#eef8f2'; ctx.fillRect(x, y, 50 + (i % 5) * 26, Math.max(1, currentDpr)); }
+    const r = Math.min(W, H) * .08, cx = W / 2, cy = H * .4, hand = -Math.PI / 2 - u * Math.PI * 6;
+    ctx.globalAlpha = .85; ctx.lineCap = 'round';
+    circle(ctx, cx, cy, r, '#163a4466', '#e8f3eecc', Math.max(2, r * .05));
+    ctx.beginPath(); ctx.arc(cx, cy, r * 1.2, -Math.PI / 2, -Math.PI / 2 - u * Math.PI * 2, true); ctx.strokeStyle = '#f2dd9a'; ctx.lineWidth = Math.max(2, r * .06); ctx.stroke();
+    line(ctx, [[cx, cy], [cx + Math.cos(hand) * r * .78, cy + Math.sin(hand) * r * .78]], '#f6f1d8', Math.max(2, r * .07));
+    ctx.font = `${Math.round(Math.max(11, r * .28))}px Georgia, serif`; ctx.textAlign = 'center'; ctx.fillStyle = '#eef6ec';
+    ctx.fillText(S.rewinding, cx, cy + r * 1.75);
+    ctx.restore();
+  }
   function door(state, t) {
     const x = state.exit.x, y = state.exit.y; const ready = state.actors.some(p => atExit(state, p));
     glow(ctx, x, y - 60, 110, ready ? '#dce2b73c' : '#a7c4ba11'); arch(ctx, x - 38, y - 107, 76, 107, '#d2c89c', 7); arch(ctx, x - 30, y - 99, 60, 99, '#a8b6a281', 1); line(ctx, [[x - 43, y], [x + 43, y]], '#e7d8a8', 3);
     ctx.save(); ctx.beginPath(); ctx.moveTo(x - 30, y); ctx.lineTo(x - 30, y - 69); ctx.arc(x, y - 69, 30, Math.PI, 0); ctx.lineTo(x + 30, y); ctx.clip(); const g = ctx.createLinearGradient(x, y - 100, x, y); g.addColorStop(0, ready ? '#d5dfbd99' : '#497c7d33'); g.addColorStop(1, '#9ccac511'); ctx.fillStyle = g; ctx.fillRect(x - 30, y - 110, 60, 115);
     for (let i = 0; i < 9; i++) { const yy = y - ((t * .015 + i * 13) % 110); star(ctx, x + Math.sin(i * 2.2) * 19, yy, ready ? 2 : 1, ready ? '#f1e5b3bb' : '#b7d4ba44'); }
     ctx.restore(); circle(ctx, x, y - 67, 19, null, ready ? '#e4dbaf' : '#8aa89b88'); circle(ctx, x + 8, y - 73, 16, '#2c5b5c');
-    ctx.font = '9px "Segoe UI",sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = ready ? gold : '#9fb8a6'; ctx.fillText(ready ? S.gateOpen : S.gateClosed, x, y - 126);
+    ctx.font = '9px "Segoe UI",sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = ready ? gold : '#9fb8a6'; const waiting = ready ? exitStatus(state).waiting : null;
+    ctx.fillText(waiting !== null ? S.gateWaiting[waiting] : ready ? S.gateOpen : S.gateClosed, x, y - 126);
   }
   // An orb flies from the caster's hand to what they targeted (following it if it moves), then bursts on arrival.
   const FLIGHT = 12, BURST = 14;
@@ -276,7 +352,7 @@ export function createRenderer(canvas, S) {
     lastTime = time;
     if (!options.paused && !options.reduced) visualTime += dt * 1000;
     const t = options.reduced ? 0 : visualTime;
-    transform = camera.update(state, { width: frameWidth, height: frameHeight, dt, mode: options.mode, reduced: options.reduced, paused: options.paused, sceneKey: options.sceneKey, resetCamera: lastReset !== options.cameraReset });
+    transform = camera.update(state, { width: frameWidth, height: frameHeight, dt, mode: options.mode, reduced: options.reduced, paused: options.paused, sceneKey: options.sceneKey, resetCamera: lastReset !== options.cameraReset, bottomInset: options.bottomInset || 0 });
     if (options.paused && entryProgress < 1) {
       const fit = Math.min(frameWidth / state.width, frameHeight / state.height);
       const progress = entryProgress * entryProgress * (3 - 2 * entryProgress);
@@ -289,10 +365,12 @@ export function createRenderer(canvas, S) {
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = '#8cb7a7'; ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.setTransform(currentDpr * transform.scale, 0, 0, currentDpr * transform.scale, currentDpr * transform.offsetX, currentDpr * transform.offsetY);
+    surroundings(state);
     ctx.save(); ctx.beginPath(); ctx.rect(0, 0, state.width, state.height); ctx.clip();
     ctx.drawImage(background, 0, 0);
     ctx.save(); ctx.translate(780, 158); ctx.rotate(t * .00003); line(ctx, [[0, 9], [0, -62]], '#d8c99777', 2); line(ctx, [[-28, 0], [8, 0]], '#d8c99777', 2); circle(ctx, 0, 0, 3, '#cfc7a1'); ctx.restore();
     for (const p of state.platforms) platform(p);
+    for (const a of state.freezeAreas ?? []) freezeArea(a, t);
     const target = options.target;
     // Touch: bracket every object the active character can reach (what a tap would act on).
     const marked = o => options.tappable ? options.tappable.has(o.id) : o.id === target;
@@ -302,6 +380,7 @@ export function createRenderer(canvas, S) {
     for (const o of state.objects) if (o.kind === 'plant') plant(o, marked(o), t, options.reduced);
     door(state, t);
     for (const shard of state.shards) if (!shard.taken) { const yy = shard.y + Math.sin(t * .002 + shard.id) * 5; glow(ctx, shard.x, yy, 40, '#e7d2a51b'); ctx.save(); ctx.translate(shard.x, yy); ctx.rotate(Math.PI / 4); ctx.fillStyle = '#e2d194'; ctx.fillRect(-5, -5, 10, 10); ctx.strokeStyle = '#f4e7b477'; ctx.strokeRect(-10, -10, 20, 20); ctx.restore(); }
+    for (const c of state.pickups ?? []) if (!c.taken) frostCrystal(c, t);
     for (const o of state.objects) if (o.kind === 'crate' && o.held === null) crate(o, options.tappable ? marked(o) : o.id === target && state.active === 0, t);
     for (const o of state.objects) if (o.kind === 'seed' && o.held === null) seed(o, t);
     const flying = o => !o.frozen && ['dart', 'orb', 'lantern'].includes(o.kind);
@@ -314,6 +393,9 @@ export function createRenderer(canvas, S) {
     }
     for (const o of state.objects) if (o.held !== undefined && o.held !== null) o.kind === 'crate' ? crate(o, false, t) : seed(o, t);
     for (const o of state.objects) if (isEnemy(o) && flying(o)) enemy(o, marked(o), t, options.reduced);
+    for (const o of state.objects) if (o.frozen && (o.held === null || o.held === undefined)) frostMark(o, t);
+    // While time rewinds, faint afterimages trail the travellers.
+    if (options.rewind) for (const ghost of options.rewind.ghosts) if (ghost) for (const a of ghost.actors) actor(a, a.id, false, t, true);
     for (const e of state.events) if (e.caster !== undefined) spell(state, e, options.reduced);
     for (const kind of ['ambient', 'dust', 'crystal', 'leaf', 'spark']) {
       ctx.beginPath();
@@ -336,22 +418,23 @@ export function createRenderer(canvas, S) {
     if (options.tap && options.tap.age < 1) {
       const { x, y, ok, ring, age } = options.tap;
       ctx.save(); ctx.globalAlpha = 1 - age;
-      circle(ctx, x, y, 18 + age * 28, null, ok ? (state.active ? gold : cyan) : '#f1a58f', 2.5);
+      circle(ctx, x, y, options.tap.area && ok ? 20 + age * (meta.freeze.radius - 20) : 18 + age * 28, null, ok ? (options.tap.area || !state.active ? cyan : gold) : '#f1a58f', 2.5);
       const carrier = ring !== null && state.actors[ring];
-      if (carrier) { ctx.setLineDash([12, 9]); circle(ctx, carrier.x, carrier.y, meta.controls.range, '#f4e7b40c', '#f4e7b4c0', 2); ctx.setLineDash([]); }
+      if (carrier) { ctx.setLineDash([12, 9]); circle(ctx, carrier.x, carrier.y - (options.tap.area ? 30 : 0), options.tap.ringRadius ?? meta.controls.range, '#f4e7b40c', '#f4e7b4c0', 2); ctx.setLineDash([]); }
       ctx.restore();
     }
+    if (options.preview) freezePreview(options.preview);
     const selected = state.objects.find(o => o.id === target);
     if (state.status === 'playing' && selected) {
       const top = isEnemy(selected) ? enemyBox(selected).y - 26 : selected.kind === 'plant' ? selected.base - selected.height - 53 : selected.kind === 'mover' ? selected.y - 30 : selected.y - 62;
       const x = selected.kind === 'mover' ? selected.x + selected.w / 2 : selected.x;
       const words = options.touch ? S.tapLabels : { freeze: S.targetFreeze, release: S.targetRelease, wake: S.targetWake, hasten: S.targetHasten, max: S.targetMax };
-      if (state.active === 0) label(x, top, selected.frozen ? words.release : words.freeze);
-      else if (selected.frozen) label(x, top, words.release, gold);
+      if (state.active === 0) label(x, top, words.freeze);
       else if (selected.speed >= meta.time.maxSpeed) label(x, top, words.max, muted);
       else label(x, top, selected.speed ? words.hasten : words.wake, gold);
     }
     ctx.restore();
+    if (options.rewind) rewindOverlay(options.rewind.progress, t);
   }
   return { setEntryProgress(value) { entryProgress = value; },
     portrait(which) {

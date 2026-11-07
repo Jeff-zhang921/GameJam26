@@ -11,5 +11,7 @@ export default {
     { kind: 'launcher', x: 1000, y: 260, dir: [-1, 0], every: 240, shot: 'orb' },
     { kind: 'nest', x: 1040, y: 520 },
   ],
+  // Freeze is optional for the exit (the rift is jumpable) but handy for guards, mites and orbs.
+  freezeCharges: 2, freezePickups: [{ x: 130, y: 430 }, { x: 1110, y: 430 }],
   exit: { x: 1170, y: 520 }, shards: [{ x: 680, y: 400 }], need: ['dartRide', 'miteGone'],
 };

@@ -7,6 +7,10 @@ export const meta = {
   controls: { speed: 4.2, airSpeed: 4.8, jump: -12.5, springJump: -15.3, gravity: 0.48, fallGravity: 0.8, maxFall: 16, jumpCut: 0.45, coyote: 7, jumpBuffer: 7, range: 300, reach: 95, pitReach: 50 },
   time: { moverSpeed: 1, maxSpeed: 3, hintTicks: 90 * 60, invulnTicks: 60, frozenRate: FROZEN_RATE },
   plant: { maxHeight: 235, springHeight: 45, growTicks: 960, matureTicks: 480, witherTicks: 480 },
+  // Still's Freeze Area: a circle cast at a chosen point. `range` is how far from Still the centre may be,
+  // `duration` is in ticks (60 per second), `rate` is local time inside it. `pickupReach` is how close a
+  // traveller must come to collect a frost crystal (extra charge).
+  freeze: { rate: FROZEN_RATE, radius: 130, range: 380, duration: 600, pickupReach: 36 },
 };
 const STILL = 0, BLOOM = 1;
 
@@ -60,7 +64,7 @@ function makeLevel(index, players, unlocked, totalShards, collected = LEVELS.map
   const pits = level.pits.map((p, i) => ({ id: `pit-${i}`, x: p.x, y: p.y, plant: null }));
   const objects = [
     ...level.crates.map((p, i) => ({ kind: 'crate', id: `crate-${i}`, x: p.x, y: p.y, vx: 0, vy: 0, frozen: false, held: null, spawnX: p.x, spawnY: p.y })),
-    ...level.seeds.map((p, i) => ({ kind: 'seed', id: `seed-${i}`, x: p.x, y: p.y, vx: 0, vy: 0, held: null, spawnX: p.x, spawnY: p.y })),
+    ...level.seeds.map((p, i) => ({ kind: 'seed', id: `seed-${i}`, x: p.x, y: p.y, vx: 0, vy: 0, frozen: false, held: null, spawnX: p.x, spawnY: p.y })),
     ...level.movers.map((p, i) => ({ kind: 'mover', id: `mover-${i}`, x: p.x1, y: p.y, w: p.w, x1: p.x1, x2: p.x2, dir: 1, speed: 0, frozen: false })),
     ...level.plants.map((p, i) => makePlant(`plant-${i}`, pits[p.pit], p.grown, p.barrier)),
     ...(level.enemies ?? []).map((e, i) => makeEnemy(e.kind, e, `${e.kind}-${i}`)),
@@ -75,6 +79,11 @@ function makeLevel(index, players, unlocked, totalShards, collected = LEVELS.map
     flags: { frozenTouched: false, treeLifted: false, withered: false, sproutJump: false, moverRide: false, dartRide: false, miteGone: false },
     needs: clone(level.need), needsDone: 0, events: [], eventSeq: 0,
     started: false, elapsed: 0, lastProgressTick: 0, falls: 0,
+    // Freeze Areas, Still's charges for this courtyard and the frost crystals that add more.
+    freezeAreas: [], nextArea: 0, freezeCharges: level.freezeCharges ?? 1,
+    pickups: (level.freezePickups ?? []).map((p, i) => ({ id: `frost-${i}`, x: p.x, y: p.y, taken: false })),
+    // A possible dead end: the reason, and a counter that only moves when a new warning appears.
+    failure: null, failureSeq: 0,
   };
 }
 
@@ -91,8 +100,8 @@ function actorAllowed(state, playerId, actor) {
 
 // Objects a time ability can ever act on (crates, plants, moving platforms, creatures).
 const timeObject = o => o.kind === 'plant' || o.kind === 'mover' || o.kind === 'crate' || isEnemy(o);
-// Still holds anything; Bloom can only release a crate Still has frozen.
-const canAffect = (actor, o) => timeObject(o) && (o.kind !== 'crate' || actor === STILL || o.frozen);
+// Still's area slows anything; Bloom hastens things that have a clock of their own (not crates).
+const canAffect = (actor, o) => timeObject(o) && (actor === STILL || o.kind !== 'crate');
 
 // Everything this actor's ability can reach right now.
 export function abilityTargets(state, actor) {
@@ -108,7 +117,43 @@ export function abilityCheck(state, actor, id) {
   if (!free(o)) return 'held';
   if (!canAffect(actor, o)) return 'unsupported';
   if (dist(p, anchor(o)) > meta.controls.range) return 'range';
-  if (actor === BLOOM && !o.frozen && o.speed >= meta.time.maxSpeed) return 'maxSpeed';
+  if (actor === BLOOM && o.speed >= meta.time.maxSpeed) return 'maxSpeed';
+  return 'ok';
+}
+
+// Collision-ish box of an object, used for tapping and for Freeze Area coverage.
+export function objectBox(o) {
+  if (o.kind === 'crate') return { x: o.x - 27, y: o.y - 27, w: 54, h: 54 };
+  if (o.kind === 'seed') return { x: o.x - 10, y: o.y - 10, w: 20, h: 20 };
+  if (o.kind === 'mover') return { x: o.x, y: o.y - 6, w: o.w, h: 26 };
+  if (o.kind === 'plant') { const w = Math.max(44, canopyWidth(o)); return { x: o.x - w / 2, y: o.base - o.height - 24, w, h: o.height + 30 }; }
+  return enemyBox(o);
+}
+const circleTouches = (c, b) => Math.hypot(Math.max(b.x - c.x, 0, c.x - (b.x + b.w)), Math.max(b.y - c.y, 0, c.y - (b.y + b.h))) <= c.radius;
+
+// Every object (never a traveller) touching an active Freeze Area runs on slowed local time; leaving the
+// area, or the area fading, restores normal time. Recomputed every tick, so it is never left behind.
+export function applyFreezeAreas(state) {
+  for (const o of state.objects) o.frozen = free(o) && state.freezeAreas.some(a => circleTouches(a, objectBox(o)));
+  return state;
+}
+
+// Where a Freeze Area would be centred: an explicit point (tap / click), a named object, or by default the
+// object Still would target, else just ahead of Still.
+export function freezePoint(state, action = {}) {
+  if (action.x !== undefined || action.y !== undefined) return Number.isFinite(action.x) && Number.isFinite(action.y) ? { x: action.x, y: action.y } : null;
+  if (action.target !== undefined) { const o = typeof action.target === 'string' && find(state, action.target); return o && free(o) ? anchor(o) : null; }
+  const p = state.actors[STILL], aim = targetFor(state, STILL);
+  return aim ? anchor(aim) : { x: p.x + p.facing * 150, y: p.y - 70 };
+}
+
+// Can Still cast a Freeze Area here? 'ok', 'noCharges', 'range' (too far from Still) or 'outside' (off the world).
+export function freezeCheck(state, point) {
+  const p = state.actors[STILL];
+  if (!p || !point) return 'outside';
+  if (state.freezeCharges <= 0) return 'noCharges';
+  if (point.x < 0 || point.x > state.width || point.y < 0 || point.y > state.height) return 'outside';
+  if (Math.hypot(point.x - p.x, point.y - (p.y - 30)) > meta.freeze.range) return 'range';
   return 'ok';
 }
 
@@ -117,11 +162,7 @@ export function timeObjectAt(state, point, slop = 0) {
   let best = null, bestDistance = Infinity, bestArea = Infinity;
   for (const o of state.objects) {
     if (!timeObject(o) || !free(o)) continue;
-    let box;
-    if (o.kind === 'crate') box = { x: o.x - 27, y: o.y - 27, w: 54, h: 54 };
-    else if (o.kind === 'mover') box = { x: o.x, y: o.y - 6, w: o.w, h: 26 };
-    else if (o.kind === 'plant') { const w = Math.max(44, canopyWidth(o)); box = { x: o.x - w / 2, y: o.base - o.height - 24, w, h: o.height + 30 }; }
-    else box = enemyBox(o);
+    const box = objectBox(o);
     const dx = Math.max(box.x - point.x, 0, point.x - (box.x + box.w)), dy = Math.max(box.y - point.y, 0, point.y - (box.y + box.h));
     const distance = Math.hypot(dx, dy), area = box.w * box.h;
     if (distance > slop) continue;
@@ -140,7 +181,7 @@ export function targetFor(state, actor, action = {}) {
     return dist(p, a) + (o.id === p.on ? 1000 : 0) + ((a.x - p.x) * p.facing < -10 ? 120 : 0) - (actor === STILL && moving(o) ? 150 : 0);
   };
   const sorted = candidates.sort((a, b) => score(a) - score(b));
-  return actor === STILL ? sorted[0] : sorted.find(o => o.frozen || o.speed < meta.time.maxSpeed) || sorted[0];
+  return actor === STILL ? sorted[0] : sorted.find(o => o.speed < meta.time.maxSpeed) || sorted[0];
 }
 
 function pickable(state, p) {
@@ -185,9 +226,13 @@ export function validateAction(state, playerId, action) {
   }
   if (action.type === 'ability') {
     if (action.target !== undefined && typeof action.target !== 'string') return no('invalid');
+    if (action.actor === STILL) {
+      const check = freezeCheck(state, freezePoint(state, action));
+      return check === 'ok' ? { valid: true } : no(check === 'noCharges' ? 'noCharges' : 'freezeRange');
+    }
     const target = targetFor(state, action.actor, action);
-    if (!target) return no(action.actor === STILL ? 'freezeRange' : 'bloomRange');
-    if (action.actor === BLOOM && !target.frozen && target.speed >= meta.time.maxSpeed) return no('maxSpeed');
+    if (!target) return no('bloomRange');
+    if (target.speed >= meta.time.maxSpeed) return no('maxSpeed');
     return { valid: true };
   }
   return no('invalid');
@@ -250,9 +295,23 @@ function moveItems(state) {
       if (o.vy > 1) event(state, crate ? 'crateLand' : 'seedLand', o.x, f.y);
       o.y = f.y - half; o.vy = 0; o.vx *= 0.88 ** k;
     }
-    if (o.y > 720 || o.x < 20 || o.x > 1260) { o.x = o.spawnX; o.y = o.spawnY; o.vx = 0; o.vy = 0; reset.add(o.id); event(state, 'return', o.x, o.y); }
+    if (o.y > 720 || o.x < 20 || o.x > 1260) { o.x = respawnX(state, o, half); o.y = o.spawnY; o.vx = 0; o.vy = 0; reset.add(o.id); event(state, 'return', o.x, o.y); }
   }
   return reset;
+}
+
+// A lost item returns to its spawn, but never inside a character standing there: it takes the nearest
+// clear spot on the same ledge instead (or its spawn if none is clear).
+function respawnX(state, o, half) {
+  const bottom = o.spawnY + half;
+  const body = p => ({ x: p.x - 15, y: p.y - 52, w: 30, h: 51 });
+  const clear = x => !state.actors.some(p => rectOverlap({ x: x - half, y: o.spawnY - half, w: half * 2, h: half * 2 }, body(p)));
+  const supported = x => state.platforms.some(f => Math.abs(f.y - bottom) <= 2 && x - half >= f.x && x + half <= f.x + f.w);
+  for (const step of [0, 1, -1, 2, -2, 3, -3]) {
+    const x = o.spawnX + step * 40;
+    if (x > 40 && x < 1240 && clear(x) && (step === 0 || supported(x))) return x;
+  }
+  return o.spawnX;
 }
 
 function moveActors(state) {
@@ -294,8 +353,11 @@ function moveActors(state) {
       // A surface rising into a ceiling cannot lift you through it.
       if (p.vy >= 0 && f.y < p.y && [...state.platforms, ...crates].some(c => c.id !== f.id && p.x + 15 > c.x && p.x - 15 < c.x + c.w && previousY - 52 >= c.y + c.h - 0.01 && f.y - 52 < c.y + c.h)) continue;
       if (p.vy >= 0 && previousY <= f.y + 5 && p.y >= f.y && p.x + 15 > f.x && p.x - 15 < f.x + f.w) {
-        p.y = f.y; p.vy = 0; p.grounded = true; p.on = f.id;
         const o = find(state, f.id);
+        // A loose crate that is itself falling is not ground: you fall together (no jumping off it, no
+        // being dragged along), and if it resets or is taken away you simply keep falling.
+        if (o?.kind === 'crate' && !o.frozen && o.held === null && o.vy > 0) { p.y = f.y; p.vy = Math.max(0, o.vy); continue; }
+        p.y = f.y; p.vy = 0; p.grounded = true; p.on = f.id;
         if (o?.kind === 'crate' && o.frozen) state.flags.frozenTouched = true;
         if ((o?.kind === 'dart' || o?.kind === 'orb') && o.frozen) state.flags.dartRide = true;
       }
@@ -362,6 +424,11 @@ function resolveStrikes(state, strikes) {
 function tick(state) {
   state.tick++;
   if (state.started) state.elapsed++;
+  // Freeze Areas fade on their own clock (they are not slowed by themselves).
+  for (const a of state.freezeAreas) a.ticksLeft--;
+  for (const a of state.freezeAreas) if (a.ticksLeft <= 0) event(state, 'thaw', a.x, a.y, { area: a.id });
+  state.freezeAreas = state.freezeAreas.filter(a => a.ticksLeft > 0);
+  applyFreezeAreas(state);
   const before = new Map(state.objects.filter(o => o.kind === 'crate' || o.kind === 'mover' || isEnemy(o)).map(o => [o.id, [o.x, o.y]]));
   ageObjects(state);
   const strikes = updateEnemies(state, { event, nextId: kind => `${kind}-${state.nextEnemy++}` });
@@ -370,6 +437,7 @@ function tick(state) {
   resolveStrikes(state, strikes);
   // Carriers have finished moving for this tick, so carried items land exactly on them (no one-tick trail).
   attachHeld(state);
+  collectPickups(state);
   const done = state.needs.filter(key => state.flags[key]).length;
   if (done > state.needsDone) { state.needsDone = done; state.lastProgressTick = state.elapsed; }
   // Needs are only suggestions; the courtyard is cleared once both travelers stand in the moon gate.
@@ -379,8 +447,54 @@ function tick(state) {
     state.totalShards = state.collected.filter(Boolean).length;
     for (const p of state.actors) p.move = 0;
     event(state, 'win', state.exit.x, state.exit.y - 45);
+    return;
+  }
+  // A possible dead end only raises a warning (the game goes on). The counter moves only when a new
+  // reason appears, so a client shows each warning once; it clears if the situation recovers.
+  const { known, reason } = assessFailure(state);
+  if (known && reason !== state.failure) { state.failure = reason; if (reason) { state.failureSeq++; event(state, 'warning', state.exit.x, state.exit.y - 45, { reason }); } }
+}
+
+function collectPickups(state) {
+  for (const c of state.pickups) if (!c.taken && state.actors.some(p => Math.hypot(p.x - c.x, p.y - 26 - c.y) < meta.freeze.pickupReach)) {
+    c.taken = true; state.freezeCharges++; event(state, 'frost', c.x, c.y);
   }
 }
+
+// Who is at the moon gate, and whether it is open: drives the "waiting for your partner" feedback.
+export function exitStatus(state) {
+  const open = true; // the checklist is only a suggestion: the gate opens for whoever arrives
+  const at = state.actors.map(p => atExit(state, p));
+  return { open, at, waiting: open && at.some(Boolean) && !at.every(Boolean) ? at.indexOf(false) : null };
+}
+
+// A courtyard is lost only when it is provably unwinnable. Crates and loose seeds always return to their
+// spawn, so the only resource that can run out is seeds: a planted seed becomes a flower that withers and
+// vanishes for good. Anything that could still help (a seed anywhere, a flower that can still grow or
+// spring, any flower at all for a ledge that needs one) keeps the courtyard alive.
+// Who is still on the low side of a gate that sits on a raised ledge (by position, not by what they stand on).
+function belowExit(state) {
+  const ledge = state.platforms.find(f => state.exit.x >= f.x && state.exit.x <= f.x + f.w && Math.abs(f.y - state.exit.y) <= 2);
+  return state.actors.filter(p => !atExit(state, p) && !(ledge && p.x >= ledge.x - 10 && p.x <= ledge.x + ledge.w + 10 && p.y <= ledge.y + 2));
+}
+
+// Conservative dead-end check. Winning only needs both travellers at the moon gate (the checklist is a
+// suggestion), so a courtyard is only judged lost when someone provably can no longer reach the gate's ledge,
+// using each level's own rule (`exitNeedsPlant`, `crossingNeedsFreeze`) rather than guessing from time or
+// position. Crates and dropped seeds always return, so the only resources that run out are seeds (a planted
+// seed becomes a mushroom that wilts away) and Freeze charges. Every rule counts everything that could still
+// help: any seed anywhere, any mushroom at all, any charge, any uncollected crystal, any Freeze Area still up.
+// While anyone is airborne the answer is "unknown" (they might be landing on the ledge right now).
+export function assessFailure(state) {
+  if (state.status !== 'playing') return { known: true, reason: null };
+  if (state.actors.some(p => !p.grounded)) return { known: false, reason: null };
+  const level = LEVELS[state.level], stuck = belowExit(state);
+  if (!level || !stuck.length) return { known: true, reason: null };
+  if (level.exitNeedsPlant && !state.objects.some(o => o.kind === 'seed' || o.kind === 'plant')) return { known: true, reason: 'stranded' };
+  if (level.crossingNeedsFreeze && state.freezeCharges <= 0 && !state.freezeAreas.length && !state.pickups.some(c => !c.taken)) return { known: true, reason: 'freeze' };
+  return { known: true, reason: null };
+}
+export function failureReason(state) { return assessFailure(state).reason; }
 
 export function applyAction(state, playerId, action) {
   if (!validateAction(state, playerId, action).valid) return state;
@@ -389,7 +503,7 @@ export function applyAction(state, playerId, action) {
   if (action.type === 'next') return makeLevel((state.level + 1) % LEVELS.length, state.playerIds, state.unlocked, state.totalShards, state.collected);
   const s = clone(state);
   if (action.type === 'tick') { if (s.status === 'playing') tick(s); return s; }
-  if (action.type === 'pause') { if (s.status !== 'won') s.status = s.status === 'paused' ? 'playing' : 'paused'; for (const p of s.actors) { p.move = 0; p.jumpHeld = false; p.jumpCut = true; p.jumpBuffer = 0; } return s; }
+  if (action.type === 'pause') { if (s.status === 'playing' || s.status === 'paused') s.status = s.status === 'paused' ? 'playing' : 'paused'; for (const p of s.actors) { p.move = 0; p.jumpHeld = false; p.jumpCut = true; p.jumpBuffer = 0; } return s; }
   if (action.type === 'switch') { for (const p of s.actors) { p.move = 0; p.jumpHeld = false; p.jumpCut = true; p.jumpBuffer = 0; } s.active = 1 - s.active; return s; }
   const p = s.actors[action.actor];
   if (action.type === 'jump' || action.type === 'grab' || action.type === 'ability' || (action.type === 'move' && action.dir !== 0)) s.started = true;
@@ -422,13 +536,18 @@ export function applyAction(state, playerId, action) {
     }
   }
   if (action.type === 'ability') {
-    const o = targetFor(s, action.actor, action);
     if (action.actor === STILL) {
-      if (!o.frozen && isEnemy(o)) for (const other of s.objects) if (other !== o && other.frozen && isEnemy(other)) { other.frozen = false; event(s, 'unfreeze', anchor(other).x, anchor(other).y); }
-      o.frozen = !o.frozen; event(s, o.frozen ? 'freeze' : 'unfreeze', anchor(o).x, anchor(o).y, { caster: action.actor, target: o.id });
+      // Still casts a Freeze Area at the chosen point; it costs one charge and starts slowing at once.
+      const at = freezePoint(s, action), id = `freeze-${s.nextArea++}`;
+      s.freezeAreas.push({ id, x: at.x, y: at.y, radius: meta.freeze.radius, ticksLeft: meta.freeze.duration, duration: meta.freeze.duration });
+      s.freezeCharges--;
+      applyFreezeAreas(s);
+      event(s, 'freeze', at.x, at.y, { caster: action.actor, area: id });
+    } else {
+      // Bloom keeps its acceleration: wake a sleeping clock, or hasten it (up to the maximum).
+      const o = targetFor(s, action.actor, action);
+      const woke = o.speed === 0; o.speed++; event(s, woke ? 'wake' : 'grow', anchor(o).x, anchor(o).y, { caster: action.actor, target: o.id });
     }
-    else if (o.frozen) { o.frozen = false; if (o.speed === 0) o.speed = 1; event(s, 'unfreeze', anchor(o).x, anchor(o).y, { caster: action.actor, target: o.id }); }
-    else { const woke = o.speed === 0; o.speed++; event(s, woke ? 'wake' : 'grow', anchor(o).x, anchor(o).y, { caster: action.actor, target: o.id }); }
   }
   return s;
 }
