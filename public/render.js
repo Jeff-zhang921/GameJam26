@@ -1,5 +1,5 @@
 import { canopyWidth, meta } from '../src/logic.js';
-import { enemyBox, lifeFraction, miteStage, isEnemy } from '../src/enemies.js';
+import { enemyBox, lifeFraction, miteStage, isEnemy, attackCharge } from '../src/enemies.js';
 import { createCamera, createParticles, worldPoint } from './presentation.js';
 
 export function createRenderer(canvas, S) {
@@ -146,10 +146,12 @@ export function createRenderer(canvas, S) {
     circle(ctx, cp.x, cp.y - 38, 7, cp.lit ? '#f4e2a6' : '#2c5050', cp.lit ? gold : '#8aa89b', 1.5);
     circle(ctx, cp.x + 3, cp.y - 40, 5, cp.lit ? '#e9cf86' : '#3d6563');
   }
-  function enemy(o, targeted, t) {
+  function enemy(o, targeted, t, reduced) {
     const b = enemyBox(o), cx = b.x + b.w / 2, cy = b.y + b.h / 2, f = lifeFraction(o);
     ctx.save(); ctx.globalAlpha = f > .9 ? 1 - (f - .9) / .1 * .6 : 1;
     timeRing(cx, cy, Math.max(b.w, b.h) / 2 + 12, o, t);
+    const charge = attackCharge(o);
+    if (charge > 0) { glow(ctx, cx, cy, Math.max(b.w, b.h) * (.8 + charge * .6), `rgba(255, 110, 80, ${.15 + .35 * charge})`); if (!reduced) ctx.translate(Math.sin(t * .08) * 2.5 * charge, 0); }
     const ice = o.frozen ? '#bceef0' : null;
     if (o.kind === 'guard') {
       ctx.fillStyle = '#3d4f58'; ctx.beginPath(); ctx.roundRect(b.x, b.y + 6, b.w, b.h - 6, 8); ctx.fill();
@@ -231,7 +233,7 @@ export function createRenderer(canvas, S) {
     for (const o of state.objects) if (o.kind === 'crate' && o.held === null) crate(o, o.id === target && state.active === 0, t);
     for (const o of state.objects) if (o.kind === 'seed' && o.held === null) seed(o, t);
     const flying = o => !o.frozen && ['dart', 'orb', 'lantern'].includes(o.kind);
-    for (const o of state.objects) if (isEnemy(o) && !flying(o)) enemy(o, o.id === target, t);
+    for (const o of state.objects) if (isEnemy(o) && !flying(o)) enemy(o, o.id === target, t, options.reduced);
     for (const actorState of state.actors) {
       const inv = actorState.invuln > 0;
       if (inv && !options.reduced && !options.paused && Math.floor(state.tick / 4) % 2) continue;
@@ -239,7 +241,7 @@ export function createRenderer(canvas, S) {
       actor(actorState, actorState.id, actorState.id === state.active, actorState.animation && !options.reduced ? state.tick * 1000 / 60 : t); ctx.globalAlpha = 1;
     }
     for (const o of state.objects) if (o.held !== undefined && o.held !== null) o.kind === 'crate' ? crate(o, false, t) : seed(o, t);
-    for (const o of state.objects) if (isEnemy(o) && flying(o)) enemy(o, o.id === target, t);
+    for (const o of state.objects) if (isEnemy(o) && flying(o)) enemy(o, o.id === target, t, options.reduced);
     for (const kind of ['ambient', 'dust', 'crystal', 'leaf', 'spark']) {
       ctx.beginPath();
       for (const p of effects.particles) {
@@ -255,7 +257,7 @@ export function createRenderer(canvas, S) {
       ctx.fill();
     }
     if (options.reduced) for (const e of state.events) {
-      if (state.tick - e.tick < 12 && ['freeze', 'unfreeze', 'wake', 'grow', 'plant', 'shard', 'win', 'hit', 'checkpoint'].includes(e.kind)) circle(ctx, e.x, e.y, 22, null, e.kind === 'hit' ? '#ffb3a1' : ['freeze', 'unfreeze'].includes(e.kind) ? cyan : gold, 2);
+      if (state.tick - e.tick < 12 && ['freeze', 'unfreeze', 'wake', 'grow', 'plant', 'shard', 'win', 'hit', 'checkpoint', 'strike'].includes(e.kind)) circle(ctx, e.x, e.y, 22, null, e.kind === 'hit' ? '#ffb3a1' : e.kind === 'strike' ? '#ff8a6a' : ['freeze', 'unfreeze'].includes(e.kind) ? cyan : gold, 2);
     }
     const selected = state.objects.find(o => o.id === target);
     if (state.status === 'playing' && selected) {

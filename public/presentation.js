@@ -69,6 +69,7 @@ const effects = {
   shard: { kind: 'spark', color: '#fff2a9', count: 22, speed: 100, life: .8 },
   win: { kind: 'spark', color: '#fff2b8', count: 24, speed: 130, life: 1.25 },
   hit: { kind: 'spark', color: '#ffb3a1', count: 20, speed: 110, life: .7 },
+  strike: { kind: 'spark', color: '#ff9b7a', count: 16, speed: 120, life: .4 },
   checkpoint: { kind: 'spark', color: '#f4e2a6', count: 16, speed: 70, life: .9 },
   pop: { kind: 'dust', color: '#e8deb6', count: 8, speed: 40, life: .35 },
   spawn: { kind: 'dust', color: '#c9b58a', count: 10, speed: 45, life: .5 },
