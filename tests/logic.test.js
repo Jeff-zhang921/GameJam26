@@ -307,6 +307,17 @@ describe('movers', () => {
     expect(s.actors[0].x).toBeCloseTo(630 + 30 * meta.time.frozenRate, 5);
   });
 
+  test('a mover never carries its rider into a wall', () => {
+    let s = moverLevel();
+    s.platforms.push({ x: 690, y: 200, w: 40, h: 200 });
+    Object.assign(s.actors[0], { x: 650, y: 290, on: 'mover-0', grounded: true });
+    s = action(s, { type: 'ability', actor: 1, target: 'mover-0' });
+    s = step(s, 60);
+    expect(get(s, 'mover-0').x).toBeGreaterThanOrEqual(590);
+    expect(s.actors[0].x + 15).toBeLessThanOrEqual(690);
+    expect(s.flags.moverRide).toBe(true);
+  });
+
   test('blooming a moving mover speeds it up to a cap', () => {
     let s = moverLevel();
     for (let i = 0; i < meta.time.maxSpeed; i++) s = action(s, { type: 'ability', actor: 1, target: 'mover-0' });

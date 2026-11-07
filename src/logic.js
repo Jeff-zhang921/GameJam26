@@ -161,11 +161,8 @@ function ageObjects(state) {
       }
     }
     if (o.kind === 'mover' && o.speed > 0) {
-      const before = o.x;
       o.x += o.dir * o.speed * meta.time.moverSpeed * slow;
       if (o.x >= o.x2) { o.x = o.x2; o.dir = -1; } else if (o.x <= o.x1) { o.x = o.x1; o.dir = 1; }
-      const dx = o.x - before;
-      for (const p of state.actors) if (p.on === o.id && p.grounded && dx) { p.x += dx; state.flags.moverRide = true; }
     }
   }
 }
@@ -275,6 +272,7 @@ function carryRiders(state, before) {
     if (!from) continue;
     const dx = o.x - from[0], dy = o.y - from[1];
     p.y += dy;
+    if (o.kind === 'mover' && dx) state.flags.moverRide = true;
     const x = Math.max(22, Math.min(1258, p.x + dx));
     if (!state.platforms.some(f => rectOverlap({ x: x - 15, y: p.y - 52, w: 30, h: 51 }, f) && p.y > f.y + 9)) p.x = x;
   }
@@ -292,7 +290,7 @@ function tick(state) {
   remember(state);
   state.tick++;
   if (state.started) state.elapsed++;
-  const before = new Map(state.objects.filter(o => o.kind === 'crate' || isEnemy(o)).map(o => [o.id, [o.x, o.y]]));
+  const before = new Map(state.objects.filter(o => o.kind === 'crate' || o.kind === 'mover' || isEnemy(o)).map(o => [o.id, [o.x, o.y]]));
   ageObjects(state);
   const strikes = updateEnemies(state, { event, nextId: kind => `${kind}-${state.nextEnemy++}` });
   moveItems(state);
