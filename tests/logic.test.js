@@ -149,7 +149,7 @@ describe('time flow', () => {
 });
 
 describe('still', () => {
-  test('freezing a thrown crate holds it in midair with its momentum stored', () => {
+  test('freezing a thrown crate slows it to a crawl along its arc, keeping its momentum', () => {
     let s = setup();
     s.actors[0].x = 350;
     s = action(s, { type: 'grab', actor: 0 });
@@ -158,10 +158,14 @@ describe('still', () => {
     s = action(s, { type: 'ability', actor: 0, target: 'crate-0' });
     const before = { ...get(s, 'crate-0') };
     s = step(s, 30);
-    expect(get(s, 'crate-0')).toMatchObject({ x: before.x, y: before.y, vx: before.vx, vy: before.vy });
+    const rate = meta.time.frozenRate;
+    expect(get(s, 'crate-0').x).toBeCloseTo(before.x + before.vx * rate * 30, 5);
+    expect(get(s, 'crate-0').vx).toBe(before.vx);
+    expect(Math.abs(get(s, 'crate-0').y - before.y)).toBeLessThan(5);
+    const slowX = get(s, 'crate-0').x;
     s = action(s, { type: 'ability', actor: 0, target: 'crate-0' });
     s = step(s);
-    expect(get(s, 'crate-0').x).not.toBe(before.x);
+    expect(get(s, 'crate-0').x).toBeCloseTo(slowX + before.vx, 5);
   });
 
   test('bloom releases a crate frozen in midair and it flies on', () => {
@@ -186,18 +190,21 @@ describe('still', () => {
     expect(validateAction(s, 'local', { type: 'ability', actor: 1, target: 'crate-0' }).error).toBe('bloomRange');
   });
 
-  test('freezing a plant mid-growth stops both its clock and its height', () => {
+  test('freezing a plant mid-growth slows its clock and its growth to a crawl', () => {
     let s = action(planted(), { type: 'ability', actor: 1 });
     s = action(s, { type: 'ability', actor: 1 }); s = action(s, { type: 'ability', actor: 1 });
     s = step(s, 10);
     s = action(s, { type: 'ability', actor: 0 });
     const frozen = { ...s.objects.find(o => o.kind === 'plant') };
-    s = step(s, G);
-    expect(plantOf(s)).toMatchObject({ age: frozen.age, height: frozen.height });
+    s = step(s, G / 10);
+    expect(plantOf(s).age).toBeCloseTo(frozen.age + 3 * meta.time.frozenRate * G / 10, 5);
+    expect(plantOf(s).height).toBeGreaterThan(frozen.height);
+    expect(plantOf(s).height - frozen.height).toBeLessThan(H * 3 * G / 10 / G * 0.1);
+    const slowHeight = plantOf(s).height;
     s = action(s, { type: 'ability', actor: 1 });
     expect(plantOf(s)).toMatchObject({ frozen: false, speed: 3 });
     s = step(s, 10);
-    expect(plantOf(s).height).toBeGreaterThan(frozen.height);
+    expect(plantOf(s).height).toBeCloseTo(slowHeight + H * 3 * 10 / G, 5);
   });
 });
 
@@ -286,7 +293,7 @@ describe('crate collision', () => {
 describe('movers', () => {
   const moverLevel = () => { const s = setup({ level: 3 }); s.actors[0].x = 600; s.actors[0].y = 290; s.actors[0].on = 'mover-0'; s.actors[1].x = 450; return s; };
 
-  test('a mover rests until bloomed, carries its rider, and halts when frozen', () => {
+  test('a mover rests until bloomed, carries its rider, and crawls when frozen', () => {
     let s = step(moverLevel(), 30);
     expect(get(s, 'mover-0').x).toBe(540);
     s = action(s, { type: 'ability', actor: 1, target: 'mover-0' });
@@ -296,7 +303,8 @@ describe('movers', () => {
     expect(s.flags.moverRide).toBe(true);
     s = action(s, { type: 'ability', actor: 0, target: 'mover-0' });
     s = step(s, 30);
-    expect(get(s, 'mover-0').x).toBe(570);
+    expect(get(s, 'mover-0').x).toBeCloseTo(570 + 30 * meta.time.frozenRate, 5);
+    expect(s.actors[0].x).toBeCloseTo(630 + 30 * meta.time.frozenRate, 5);
   });
 
   test('blooming a moving mover speeds it up to a cap', () => {

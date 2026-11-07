@@ -1,10 +1,10 @@
-import { makeEnemy, updateEnemies, enemyBox, isEnemy, isHazard, isMoving, isSolidEnemy } from './enemies.js';
+import { makeEnemy, updateEnemies, enemyBox, isEnemy, isHazard, isMoving, isSolidEnemy, FROZEN_RATE } from './enemies.js';
 import { LEVELS } from './levels/index.js';
 
 export const meta = {
   name: 'CLOCKBLOOM', minPlayers: 1, maxPlayers: 2, tickRate: 60,
   controls: { speed: 4.2, airSpeed: 4.8, jump: -12.5, springJump: -15.3, gravity: 0.48, fallGravity: 0.8, maxFall: 16, jumpCut: 0.45, coyote: 7, jumpBuffer: 7, range: 420, reach: 95, pitReach: 50 },
-  time: { moverSpeed: 1, maxSpeed: 3, rewinds: 3, hintTicks: 90 * 60, invulnTicks: 60 },
+  time: { moverSpeed: 1, maxSpeed: 3, rewinds: 3, hintTicks: 90 * 60, invulnTicks: 60, frozenRate: FROZEN_RATE },
   plant: { maxHeight: 235, springHeight: 45, growTicks: 960, matureTicks: 480, witherTicks: 480 },
 };
 const STILL = 0, BLOOM = 1;
@@ -141,9 +141,10 @@ function remember(state) {
 
 function ageObjects(state) {
   for (const o of [...state.objects]) {
-    if (o.kind === 'plant' && !o.frozen && o.speed > 0) {
+    const slow = o.frozen ? meta.time.frozenRate : 1;
+    if (o.kind === 'plant' && o.speed > 0) {
       const { growTicks, matureTicks, witherTicks } = meta.plant;
-      o.age += o.speed;
+      o.age += o.speed * slow;
       if (o.age >= growTicks + matureTicks + witherTicks) {
         state.objects = state.objects.filter(x => x !== o);
         state.pits.find(p => p.id === o.pit).plant = null;
@@ -159,9 +160,9 @@ function ageObjects(state) {
         if (o.height > meta.plant.springHeight) state.flags.treeLifted = true;
       }
     }
-    if (o.kind === 'mover' && !o.frozen && o.speed > 0) {
+    if (o.kind === 'mover' && o.speed > 0) {
       const before = o.x;
-      o.x += o.dir * o.speed * meta.time.moverSpeed;
+      o.x += o.dir * o.speed * meta.time.moverSpeed * slow;
       if (o.x >= o.x2) { o.x = o.x2; o.dir = -1; } else if (o.x <= o.x1) { o.x = o.x1; o.dir = 1; }
       const dx = o.x - before;
       for (const p of state.actors) if (p.on === o.id && p.grounded && dx) { p.x += dx; state.flags.moverRide = true; }
@@ -179,9 +180,8 @@ function moveItems(state) {
       o.x = p.x + p.facing * (crate ? 37 : 22); o.y = p.y - (crate ? 53 : 40); o.vx = 0; o.vy = 0;
       continue;
     }
-    if (o.frozen) continue;
-    const previous = o.y + half;
-    o.vy += 0.3; o.x += o.vx; o.y += o.vy;
+    const k = o.frozen ? meta.time.frozenRate : 1, previous = o.y + half;
+    o.vy += 0.3 * k; o.x += o.vx * k; o.y += o.vy * k;
     for (const f of all) if (f.id !== o.id) if (o.vy >= 0 && previous <= f.y + 3 && o.y + half >= f.y && o.x + half > f.x && o.x - half < f.x + f.w) {
       if (o.vy > 1) event(state, crate ? 'crateLand' : 'seedLand', o.x, f.y);
       o.y = f.y - half; o.vy = 0; o.vx *= 0.88;
@@ -268,14 +268,37 @@ function respawn(state, p, kind) {
   event(state, 'return', p.x, p.y, { actor: p.id });
 }
 
+// Actors standing on a crate or enemy move with it, but are never pushed into a wall.
+function carryRiders(state, before) {
+  for (const p of state.actors) {
+    const o = p.grounded && find(state, p.on), from = o && before.get(o.id);
+    if (!from) continue;
+    const dx = o.x - from[0], dy = o.y - from[1];
+    p.y += dy;
+    const x = Math.max(22, Math.min(1258, p.x + dx));
+    if (!state.platforms.some(f => rectOverlap({ x: x - 15, y: p.y - 52, w: 30, h: 51 }, f) && p.y > f.y + 9)) p.x = x;
+  }
+}
+
+function resolveStrikes(state, strikes) {
+  for (const id of strikes) {
+    const o = find(state, id); if (!o) continue;
+    const b = enemyBox(o), reach = { x: b.x - 2, y: b.y - 2, w: b.w + 4, h: b.h + 4 };
+    for (const p of state.actors) if (p.invuln <= 0 && rectOverlap({ x: p.x - 15, y: p.y - 52, w: 30, h: 51 }, reach)) respawn(state, p, 'hit');
+  }
+}
+
 function tick(state) {
   remember(state);
   state.tick++;
   if (state.started) state.elapsed++;
+  const before = new Map(state.objects.filter(o => o.kind === 'crate' || isEnemy(o)).map(o => [o.id, [o.x, o.y]]));
   ageObjects(state);
-  updateEnemies(state, { event, nextId: kind => `${kind}-${state.nextEnemy++}` });
+  const strikes = updateEnemies(state, { event, nextId: kind => `${kind}-${state.nextEnemy++}` });
   moveItems(state);
+  carryRiders(state, before);
   moveActors(state);
+  resolveStrikes(state, strikes);
   const done = state.needs.filter(key => state.flags[key]).length;
   if (done > state.needsDone) { state.needsDone = done; state.lastProgressTick = state.elapsed; }
   if (done === state.needs.length && state.actors.some(p => Math.abs(p.x - state.exit.x) < 46 && Math.abs(p.y - state.exit.y) < 55)) {
@@ -339,7 +362,10 @@ export function applyAction(state, playerId, action) {
   }
   if (action.type === 'ability') {
     const o = targetFor(s, action.actor, action);
-    if (action.actor === STILL) { o.frozen = !o.frozen; event(s, o.frozen ? 'freeze' : 'unfreeze', anchor(o).x, anchor(o).y); }
+    if (action.actor === STILL) {
+      if (!o.frozen && isEnemy(o)) for (const other of s.objects) if (other !== o && other.frozen && isEnemy(other)) { other.frozen = false; event(s, 'unfreeze', anchor(other).x, anchor(other).y); }
+      o.frozen = !o.frozen; event(s, o.frozen ? 'freeze' : 'unfreeze', anchor(o).x, anchor(o).y);
+    }
     else if (o.frozen) { o.frozen = false; if (o.speed === 0) o.speed = 1; event(s, 'unfreeze', anchor(o).x, anchor(o).y); }
     else { const woke = o.speed === 0; o.speed++; event(s, woke ? 'wake' : 'grow', anchor(o).x, anchor(o).y); }
   }

@@ -1,23 +1,33 @@
 // Enemy-type world objects: guards, lanterns, launchers with their darts and orbs, nests with their mites.
-// They are always active, but only age once Bloom has hastened them; Still freezes them into harmless solid blocks.
+// They are always active, but only age once Bloom has hastened them. Still slows them to FROZEN_RATE.
+// Guards, lanterns and adult mites are solid and strike whoever touches them on a fixed rhythm.
+export const FROZEN_RATE = 0.05;
 export const ENEMY = {
-  guard: { w: 40, h: 50, life: 1200, patrol: 1.2, chase: 2.6, see: 260, seeHeight: 80 },
-  lantern: { w: 44, h: 44, life: 1200, fly: 1, notice: 320, giveUp: 480, bob: 6 },
+  guard: { w: 40, h: 50, life: 1200, patrol: 1.2, chase: 2.6, see: 260, seeHeight: 80, attackEvery: 90, windup: 24 },
+  lantern: { w: 44, h: 44, life: 1200, fly: 1, notice: 320, giveUp: 480, bob: 6, attackEvery: 72, windup: 24 },
   launcher: { w: 40, h: 40, every: 180 },
   dart: { w: 36, h: 10, fly: 5 },
   orb: { w: 20, h: 20, fly: 2, turn: Math.PI / 60, life: 360 },
   nest: { w: 60, h: 30, every: 300, max: 3 },
-  mite: { life: 900, roam: 120, walk: [0.6, 1.4, 0], see: 80 },
+  mite: { life: 900, roam: 120, walk: [0.6, 1.4, 0], see: 80, attackEvery: 54, windup: 24 },
 };
 const MITE_SIZE = [[0, 36, 30], [0.35, 36, 30], [0.45, 44, 40], [0.75, 44, 40], [0.85, 40, 34], [1, 40, 34]];
 
 export const isEnemy = o => Object.hasOwn(ENEMY, o.kind);
-export const pace = o => 1 + 0.5 * o.speed;
+export const pace = o => (1 + 0.5 * o.speed) * (o.frozen ? FROZEN_RATE : 1);
 export const lifeFraction = o => ENEMY[o.kind].life ? Math.min(1, o.age / ENEMY[o.kind].life) : 0;
 export const miteStage = o => { const f = lifeFraction(o); return f < 0.4 ? 0 : f < 0.8 ? 1 : 2; };
-export const isHazard = o => isEnemy(o) && !o.frozen && (['guard', 'lantern', 'dart', 'orb'].includes(o.kind) || (o.kind === 'mite' && miteStage(o) === 1));
+const isProjectile = o => o.kind === 'dart' || o.kind === 'orb';
+export const isHazard = o => isProjectile(o) && !o.frozen;
 export const isMoving = o => isEnemy(o) && !o.frozen && ['guard', 'lantern', 'dart', 'orb', 'mite'].includes(o.kind);
 export const isSolidEnemy = o => isEnemy(o) && !isHazard(o);
+export const canStrike = o => o.kind === 'guard' || o.kind === 'lantern' || (o.kind === 'mite' && miteStage(o) === 1);
+// 0 when idle, rising to 1 over the wind-up before a strike.
+export const attackCharge = o => {
+  if (!canStrike(o)) return 0;
+  const { attackEvery, windup } = ENEMY[o.kind];
+  return Math.max(0, (o.attack - (attackEvery - windup)) / windup);
+};
 
 function miteSize(o) {
   const f = lifeFraction(o);
@@ -36,7 +46,7 @@ export function enemyBox(o) {
 }
 
 export function makeEnemy(kind, data, id) {
-  const base = { kind, id, x: data.x, y: data.y, speed: 0, age: 0, frozen: false, timer: 0 };
+  const base = { kind, id, x: data.x, y: data.y, speed: 0, age: 0, frozen: false, timer: 0, attack: 0 };
   if (kind === 'guard') return { ...base, minX: data.minX, maxX: data.maxX, dir: 1, chasing: false };
   if (kind === 'lantern') return { ...base, homeX: data.x, homeY: data.y, chasing: false, bob: 0 };
   if (kind === 'launcher') return { ...base, dx: data.dir[0], dy: data.dir[1], every: data.every ?? ENEMY.launcher.every, shot: data.shot ?? 'dart' };
@@ -50,6 +60,7 @@ const overlap = (a, b) => a.x + a.w > b.x && a.x < b.x + b.w && a.y + a.h > b.y 
 const center = o => { const b = enemyBox(o); return { x: b.x + b.w / 2, y: b.y + b.h / 2 }; };
 
 export function updateEnemies(state, { event, nextId }) {
+  const strikes = [];
   const remove = o => { state.objects = state.objects.filter(x => x !== o); };
   const spawn = (kind, data) => { const o = makeEnemy(kind, data, nextId(kind)); state.objects.push(o); return o; };
   const nearest = (o, ok = () => true) => {
@@ -76,9 +87,9 @@ export function updateEnemies(state, { event, nextId }) {
     }
   };
   for (const o of [...state.objects]) {
-    if (!isEnemy(o) || o.frozen || !state.objects.includes(o)) continue;
-    const spec = ENEMY[o.kind], k = pace(o);
-    const rate = o.kind === 'orb' ? Math.max(1, o.speed) : o.speed;
+    if (!isEnemy(o) || !state.objects.includes(o)) continue;
+    const spec = ENEMY[o.kind], k = pace(o), slow = o.frozen ? FROZEN_RATE : 1;
+    const rate = (o.kind === 'orb' ? Math.max(1, o.speed) : o.speed) * slow;
     if (spec.life && rate) {
       o.age += rate;
       if (o.age >= spec.life) {
@@ -87,6 +98,13 @@ export function updateEnemies(state, { event, nextId }) {
         continue;
       }
     }
+    if (canStrike(o)) {
+      o.attack += k;
+      if (o.attack >= spec.attackEvery) {
+        o.attack -= spec.attackEvery; strikes.push(o.id);
+        const b = enemyBox(o); event(state, 'strike', b.x + b.w / 2, b.y + b.h / 2);
+      }
+    } else o.attack = 0;
     if (o.kind === 'guard') {
       const p = state.actors.filter(a => Math.abs(a.y - o.y) <= spec.seeHeight && Math.abs(a.x - o.x) <= spec.see && (o.chasing || Math.sign(a.x - o.x) === o.dir)).sort((a, b) => Math.abs(a.x - o.x) - Math.abs(b.x - o.x))[0];
       o.chasing = !!p;
@@ -118,7 +136,7 @@ export function updateEnemies(state, { event, nextId }) {
       const near = nearest(o);
       if (near) {
         const c = center(o), cur = Math.atan2(o.dy, o.dx), want = Math.atan2(near.p.y - 26 - c.y, near.p.x - c.x);
-        const diff = Math.atan2(Math.sin(want - cur), Math.cos(want - cur)), a = cur + Math.max(-spec.turn, Math.min(spec.turn, diff));
+        const diff = Math.atan2(Math.sin(want - cur), Math.cos(want - cur)), a = cur + Math.max(-spec.turn * slow, Math.min(spec.turn * slow, diff));
         o.dx = Math.cos(a); o.dy = Math.sin(a);
       }
       fly(o, spec);
@@ -143,4 +161,5 @@ export function updateEnemies(state, { event, nextId }) {
       else if (!walk(o, o.dir * spec.walk[stage] * k, inRoam)) o.dir = -o.dir;
     }
   }
+  return strikes;
 }

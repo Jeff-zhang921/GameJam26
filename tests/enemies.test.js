@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import { setup, validateAction, applyAction, meta } from '../src/logic.js';
-import { ENEMY, makeEnemy, enemyBox, isHazard, miteStage } from '../src/enemies.js';
+import { ENEMY, makeEnemy, enemyBox, isHazard, miteStage, canStrike, attackCharge } from '../src/enemies.js';
 
 function step(state, n = 1) { for (let i = 0; i < n; i++) state = applyAction(state, 'local', { type: 'tick' }); return state; }
 function action(state, value) { expect(validateAction(state, 'local', value).valid).toBe(true); return applyAction(state, 'local', value); }
@@ -36,16 +36,21 @@ describe('guards', () => {
     expect(get(s, 'g').x).toBeLessThanOrEqual(680 - ENEMY.guard.w / 2);
   });
 
-  test('a frozen guard stops and can be stood on', () => {
+  test('a frozen guard crawls on and carries whoever stands on it', () => {
     let s = arena([{ kind: 'guard', id: 'g', x: 500, y: 540, minX: 400, maxX: 600 }], [{ x: 380 }, { x: 60 }]);
     s = action(s, { type: 'ability', actor: 0, target: 'g' });
     const x = get(s, 'g').x;
     s = step(s, 60);
-    expect(get(s, 'g').x).toBe(x);
+    const moved = Math.abs(get(s, 'g').x - x);
+    expect(moved).toBeGreaterThan(0);
+    expect(moved).toBeLessThanOrEqual(60 * ENEMY.guard.chase * meta.time.frozenRate + 1e-9);
     expect(isHazard(get(s, 'g'))).toBe(false);
-    Object.assign(s.actors[0], { x, y: 540 - ENEMY.guard.h - 1, vy: 0, grounded: false, on: null });
+    Object.assign(s.actors[0], { x: get(s, 'g').x, y: 540 - ENEMY.guard.h - 1, vy: 0, grounded: false, on: null });
     s = step(s, 3);
     expect(s.actors[0]).toMatchObject({ on: 'g', y: 540 - ENEMY.guard.h });
+    const offset = s.actors[0].x - get(s, 'g').x;
+    s = step(s, 40);
+    expect(s.actors[0].x - get(s, 'g').x).toBeCloseTo(offset, 5);
   });
 
   test('never ages on its own, and vanishes once Bloom has hastened it long enough', () => {
@@ -76,7 +81,8 @@ describe('lanterns', () => {
     const top = enemyBox(get(s, 'l')).y;
     Object.assign(s.actors[0], { x: 600, y: top - 1, vy: 0, grounded: false, on: null });
     s = step(s, 30);
-    expect(s.actors[0]).toMatchObject({ on: 'l', y: top });
+    expect(s.actors[0].on).toBe('l');
+    expect(s.actors[0].y).toBeCloseTo(enemyBox(get(s, 'l')).y, 5);
   });
 });
 
@@ -184,31 +190,29 @@ describe('nests and mites', () => {
     const id = ofKind(s, 'mite')[0].id;
     s = step(s, 600);
     expect(get(s, id).age).toBe(0);
-    expect(isHazard(get(s, id))).toBe(false);
+    expect(canStrike(get(s, id))).toBe(false);
     s.actors[1].x = get(s, id).x - 150;
     s = action(s, { type: 'ability', actor: 1, target: id });
     s.actors[1].x = 120;
     s = step(s, ENEMY.mite.life * 0.5);
     expect(miteStage(get(s, id))).toBe(1);
-    expect(isHazard(get(s, id))).toBe(true);
+    expect(canStrike(get(s, id))).toBe(true);
     s = step(s, ENEMY.mite.life * 0.35);
     expect(miteStage(get(s, id))).toBe(2);
-    expect(isHazard(get(s, id))).toBe(false);
+    expect(canStrike(get(s, id))).toBe(false);
     s = step(s, ENEMY.mite.life * 0.2);
     expect(get(s, id)).toBeUndefined();
     expect(s.flags.miteGone).toBe(true);
   });
 
-  test('a frozen adult mite is a harmless block', () => {
+  test('a frozen adult mite winds up its strike twenty times slower', () => {
     let s = step(nestAt(), 60);
     const mite = get(s, ofKind(s, 'mite')[0].id);
-    mite.age = ENEMY.mite.life * 0.5; mite.speed = 1;
+    mite.age = ENEMY.mite.life * 0.5; mite.speed = 1; mite.attack = 0;
     s.actors[0].x = mite.x - 100;
     s = action(s, { type: 'ability', actor: 0, target: mite.id });
-    expect(isHazard(get(s, mite.id))).toBe(false);
-    s.actors[0].x = mite.x - 30;
-    s = step(s, 5);
-    expect(s.actors[0].x).toBe(mite.x - 30);
+    s = step(s, 100);
+    expect(get(s, mite.id).attack).toBeCloseTo(100 * 1.5 * meta.time.frozenRate, 5);
   });
 });
 
@@ -225,11 +229,11 @@ describe('checkpoints and hits', () => {
   };
 
   test('an actor touching a checkpoint lights it for both, and hits and falls return there', () => {
-    let s = withCheckpoint([{ kind: 'guard', id: 'g', x: 300, y: 540, minX: 250, maxX: 350 }], [{ x: 520 }, { x: 60 }]);
+    let s = withCheckpoint([{ kind: 'dart', id: 'd', x: 300, y: 540, dx: 1, dy: 0 }], [{ x: 520 }, { x: 60 }]);
     s = step(s);
     expect(s.checkpoint).toBe('cp-0');
     expect(s.checkpoints[0].lit).toBe(true);
-    Object.assign(s.actors[1], { x: 300, y: 540 });
+    Object.assign(s.actors[1], { x: get(s, 'd').x, y: 540 });
     s = step(s);
     expect(s.actors[1]).toMatchObject({ x: 538, y: 540 });
     Object.assign(s.actors[0], { x: 680, y: 720 });
@@ -241,23 +245,24 @@ describe('checkpoints and hits', () => {
     let s = setup({ level: 0 });
     s.actors[0].x = 330;
     s = action(s, { type: 'grab', actor: 0 });
-    s.objects.push(makeEnemy('guard', { x: 330, y: 520, minX: 300, maxX: 360 }, 'g'));
+    s.objects.push(makeEnemy('dart', { x: 330, y: 520, dx: 1, dy: 0 }, 'd'));
     s = step(s);
     expect(s.actors[0].carrying).toBe(null);
     expect(get(s, 'crate-0')).toMatchObject({ held: null, x: 330 });
     expect(s.actors[0].x).toBe(s.actors[0].spawnX);
     expect(s.actors[0].invuln).toBe(meta.time.invulnTicks);
     expect(s.actors[1].x).toBe(250);
-    Object.assign(get(s, 'g'), { x: s.actors[0].x, minX: 0, maxX: 1280 });
+    s.objects.push(makeEnemy('dart', { x: s.actors[0].x, y: 520, dx: -1, dy: 0 }, 'd2'));
     s = step(s, 10);
     expect(s.events.filter(e => e.kind === 'hit')).toHaveLength(1);
   });
 
   test('once invulnerability runs out, a hazard hits again', () => {
     const s = arena([{ kind: 'guard', id: 'g', x: 300, y: 540, minX: 0, maxX: 1280 }], [{ x: 300 }, { x: 1220 }]);
+    get(s, 'g').attack = ENEMY.guard.attackEvery - 1;
     const stay = st => { Object.assign(get(st, 'g'), { x: st.actors[0].x }); return st; };
     expect(hitsOver(s, 59, stay).hits).toBe(1);
-    expect(hitsOver(s, 70, stay).hits).toBe(2);
+    expect(hitsOver(s, ENEMY.guard.attackEvery + 5, stay).hits).toBe(2);
   });
 
   test('two actors on one dart in the same tick cost one hit event and the dart', () => {
@@ -268,7 +273,7 @@ describe('checkpoints and hits', () => {
   });
 
   test('a fall keeps the invulnerability a hit just gave', () => {
-    let s = arena([{ kind: 'guard', id: 'g', x: 300, y: 540, minX: 250, maxX: 350 }], [{ x: 300 }, { x: 1220 }]);
+    let s = arena([{ kind: 'dart', id: 'd', x: 300, y: 540, dx: 1, dy: 0 }], [{ x: 300 }, { x: 1220 }]);
     s = step(s);
     expect(s.actors[0].invuln).toBeGreaterThan(0);
     s.actors[0].y = 720;
@@ -294,5 +299,82 @@ describe('checkpoints and hits', () => {
     s = action(s, { type: 'restart' });
     expect(s.checkpoint).toBe(null);
     expect(s.checkpoints.every(c => !c.lit)).toBe(true);
+  });
+});
+
+describe('strikes and slow freezing', () => {
+  const onGuard = (extra = {}) => {
+    const s = arena([{ kind: 'guard', id: 'g', x: 500, y: 540, minX: 499, maxX: 501, ...extra }], [{ x: 500, y: 540 - ENEMY.guard.h, on: 'g' }, { x: 60 }]);
+    return s;
+  };
+  const hitCount = s => s.events.filter(e => e.kind === 'hit').length;
+
+  test('standing on a guard is safe until it strikes, then you are hit', () => {
+    let s = step(onGuard(), ENEMY.guard.attackEvery - 2);
+    expect(hitCount(s)).toBe(0);
+    expect(s.actors[0].on).toBe('g');
+    s = step(s, 3);
+    expect(hitCount(s)).toBe(1);
+    expect(s.actors[0].x).toBe(s.actors[0].spawnX);
+  });
+
+  test('stepping off before the strike avoids it', () => {
+    let s = step(onGuard(), ENEMY.guard.attackEvery - 10);
+    Object.assign(s.actors[0], { x: 200, y: 540, on: 'platform-0' });
+    s = step(s, 20);
+    expect(hitCount(s)).toBe(0);
+    expect(s.events.some(e => e.kind === 'strike')).toBe(true);
+  });
+
+  test('a frozen guard takes twenty times longer to strike', () => {
+    let s = action(onGuard(), { type: 'ability', actor: 0, target: 'g' });
+    expect(get(s, 'g').frozen).toBe(true);
+    s = step(s, ENEMY.guard.attackEvery * 5);
+    expect(hitCount(s)).toBe(0);
+    expect(s.actors[0].on).toBe('g');
+    expect(get(s, 'g').attack).toBeCloseTo(ENEMY.guard.attackEvery * 5 * meta.time.frozenRate, 5);
+    s = step(s, ENEMY.guard.attackEvery * 16);
+    expect(hitCount(s)).toBe(1);
+  });
+
+  test('the wind-up charge only rises in the last moments before a strike', () => {
+    const g = makeEnemy('guard', { x: 0, y: 0, minX: 0, maxX: 0 }, 'g');
+    const { attackEvery, windup } = ENEMY.guard;
+    g.attack = attackEvery - windup - 1; expect(attackCharge(g)).toBe(0);
+    g.attack = attackEvery - windup / 2; expect(attackCharge(g)).toBeCloseTo(0.5, 5);
+    g.attack = attackEvery - 0.001; expect(attackCharge(g)).toBeCloseTo(1, 2);
+  });
+
+  test('young and old mites never wind up or strike', () => {
+    const m = makeEnemy('mite', { x: 0, y: 0, nest: 'n', homeX: 0 }, 'm');
+    expect(canStrike(m)).toBe(false);
+    m.age = ENEMY.mite.life * 0.9;
+    expect(canStrike(m)).toBe(false);
+    m.attack = 50;
+    expect(attackCharge(m)).toBe(0);
+  });
+
+  test('freezing a second enemy releases the first, while crates stay frozen', () => {
+    let s = arena([{ kind: 'guard', id: 'a', x: 400, y: 540, minX: 399, maxX: 401 }, { kind: 'guard', id: 'b', x: 600, y: 540, minX: 599, maxX: 601 }], [{ x: 500 }, { x: 60 }]);
+    s.objects.push({ kind: 'crate', id: 'c', x: 500, y: 300, vx: 0, vy: 0, frozen: false, held: null, spawnX: 500, spawnY: 300 });
+    s = action(s, { type: 'ability', actor: 0, target: 'a' });
+    s = action(s, { type: 'ability', actor: 0, target: 'c' });
+    s = action(s, { type: 'ability', actor: 0, target: 'b' });
+    expect(get(s, 'a').frozen).toBe(false);
+    expect(get(s, 'b').frozen).toBe(true);
+    expect(get(s, 'c').frozen).toBe(true);
+  });
+
+  test('an actor standing on a frozen dart drifts along with it', () => {
+    let s = arena([{ kind: 'dart', id: 'd', x: 500, y: 400, dx: -1, dy: 0 }], [{ x: 450 }, { x: 1220 }]);
+    s = action(s, { type: 'ability', actor: 0, target: 'd' });
+    const top = enemyBox(get(s, 'd')).y;
+    Object.assign(s.actors[0], { x: 500, y: top - 1, vy: 0, grounded: false, on: null });
+    s = step(s, 3);
+    expect(s.actors[0].on).toBe('d');
+    const offset = s.actors[0].x - get(s, 'd').x;
+    s = step(s, 60);
+    expect(get(s, 'd').x).toBeLessThan(500 - 60 * ENEMY.dart.fly * meta.time.frozenRate + 1);
+    expect(s.actors[0].x - get(s, 'd').x).toBeCloseTo(offset, 5);
   });
 });
