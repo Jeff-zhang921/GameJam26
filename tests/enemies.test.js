@@ -9,11 +9,11 @@ const ofKind = (state, kind) => state.objects.filter(o => o.kind === kind);
 
 // A flat test courtyard: one floor at y=540, the given enemies, and actors parked far away.
 function arena(enemies, actors = [{ x: 60 }, { x: 1220 }]) {
-  const s = setup({ level: 0 }); // a courtyard without seeds, so the arena can never run out of them
+  const s = setup({ level: 0 });
   s.platforms = [{ x: 0, y: 540, w: 1280, h: 120 }];
   s.objects = enemies.map((e, i) => makeEnemy(e.kind, e, e.id ?? `${e.kind}-${i}`));
   s.nextEnemy = 100;
-  actors.forEach((a, i) => Object.assign(s.actors[i], { y: 540, ...a, grounded: true, on: 'platform-0' }));
+  actors.forEach((a, i) => Object.assign(s.actors[i], { y: 540, carrying: null, ...a, grounded: true, on: 'platform-0' }));
   return s;
 }
 

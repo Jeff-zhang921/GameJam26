@@ -13,6 +13,7 @@ export function compactFrame(state) {
   return clone({
     tick: state.tick, level: state.level,
     actors: state.actors, objects: state.objects, freezeAreas: state.freezeAreas ?? [], pickups: state.pickups ?? [],
+    freezeCharges: state.freezeCharges, bloomCharges: state.bloomCharges,
     pits: state.pits, shards: state.shards, checkpoints: state.checkpoints ?? [], checkpoint: state.checkpoint ?? null,
   });
 }

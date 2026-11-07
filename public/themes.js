@@ -22,9 +22,18 @@ export const BACKGROUNDS = {
 
 // Music: `length` is how many seconds of the file are used (default: all of it); the last `fade` seconds are
 // blended into the first `fade`, and the loop then runs from `fade` to `length`. `volume` is the gain.
+// Tracks credited in public/audio/CREDITS.md.
 export const MUSIC = {
   gymnopedie: { src: '/audio/gymnopedie-no-1.mp3', length: 50, fade: 2, volume: 1.5 },
+  symbiosis: { src: '/audio/symbiosis.mp3', volume: .5 },
+  whatSheHasntSeen: { src: '/audio/what-she-hasnt-seen.mp3', volume: .5 },
+  doubledPawns: { src: '/audio/doubled-pawns.mp3', volume: .5 },
+  deathKnell: { src: '/audio/death-knell-at-mount-rainier.mp3', volume: .5 },
+  lordOfDream: { src: '/audio/lord-of-dream.mp3', volume: .5 },
+  behemoth: { src: '/audio/behemoth.mp3', volume: .5 },
 };
+// The title screen and the pause / settings / help menus play this instead of the courtyard's track.
+export const MENU_MUSIC = MUSIC.symbiosis;
 
 export const DEFAULT_THEME = { ground: 'mossy', background: 'greenhouse', music: 'gymnopedie' };
 

@@ -1,16 +1,19 @@
-import { playEffect } from './sfx.js';
+import { playEffect, createGrowthAudio, createRewindAudio } from './sfx.js';
 import { createMusic } from './music.js';
-import { themeFor } from './themes.js';
-import { setup, applyAction, validateAction, viewFor, targetFor, hintLevel, levelCount, interactionFor, abilityCheck, abilityTargets, timeObjectAt, anchor, exitStatus, freezeAreaAt, freezeCheck, meta } from '../src/logic.js';
+import { themeFor, MENU_MUSIC } from './themes.js';
+import { setup, applyAction, validateAction, viewFor, targetFor, hintLevel, levelCount, interactionFor, abilityCheck, abilityTargets, timeObjectAt, anchor, exitStatus, freezeAreaAt, freezePoint, freezeCheck, meta } from '../src/logic.js';
 import { createHistory, compactFrame, rewindFrame, REWIND } from './rewind.js';
 import { S } from './strings.js';
 import { createRenderer } from './render.js';
 import { createNetwork } from './network.js';
-import { readJoystick } from './joystick.js';
+import { readJoystick, skillAimOffset } from './joystick.js';
 import { createLobby } from './lobby.js';
 import { createPWA } from './pwa.js';
 
+// One music player: menus play MENU_MUSIC, a courtyard plays the track its theme names (themes.js).
 const music = createMusic();
+const growthAudio = createGrowthAudio();
+const rewindAudio = createRewindAudio();
 const icons = {
   moon: '<path d="M19 15.5A8 8 0 0 1 8.5 5a8.5 8.5 0 1 0 10.5 10.5Z"/><path d="m17 3 .5 2.5L20 6l-2.5.5L17 9l-.5-2.5L14 6l2.5-.5Z"/>',
   leaf: '<path d="M19 4C7 3 3 10 7 16c6 4 13 0 12-12Z"/><path d="M5 21 17 7M10 15l-1-5m5 1 4 1"/>',
@@ -32,6 +35,8 @@ const icons = {
 };
 const icon = name => `<svg viewBox="0 0 24 24" aria-hidden="true">${icons[name] || icons.moon}</svg>`;
 const key = text => `<kbd class="key">${text}</kbd>`;
+const skillArt = name => `<svg class="skill-art" viewBox="0 0 64 64" aria-hidden="true"><use href="/art/touch-controls.svg#${name}"/></svg>`;
+const itemArt = name => `<img class="skill-art" src="/sprites/${name}.png" alt="" draggable="false">`;
 let saved = {};
 try { saved = JSON.parse(localStorage.getItem('moonclock-v1') || '{}'); } catch { }
 let state = setup({ level: Number.isInteger(saved.level) ? saved.level : 0 });
@@ -53,6 +58,7 @@ let onlineMode = false, networkEpoch = null, networkStatus = 'offline';
 const held = new Set();
 const touchPointers = new Map();
 let touchJumpActor = null, uiChapter = '', uiProgress = '', uiMode = '', touchKey = '';
+let skillAim = null;
 // Touch: the last drawn world (for tap hit-testing) and the short-lived feedback of the last tap.
 let lastView = null, tapEffect = null, tapIntroShown = false;
 // Height (px) the bottom touch controls take up; the camera lowers the world only as far as keeps the
@@ -85,13 +91,14 @@ app.innerHTML = `
       <div class="touch-controls" data-testid="touch-controls">
         <div class="touch-movement">
           <div class="joystick" data-testid="joystick" role="group" aria-label="${S.joystick}"><div class="joystick-base" aria-hidden="true"></div><div class="joystick-thumb" aria-hidden="true"></div></div>
-          <button type="button" class="touch-skill touch-jump" data-touch="jump" data-testid="touch-jump" aria-label="${S.jump}">${icon('up')}<span>${S.jump}</span></button>
+          <button type="button" class="touch-switch" data-touch="switch" data-testid="touch-switch" aria-label="${S.switchRole}">${icon('swap')}</button>
         </div>
         <div class="touch-actions">
-          <button type="button" class="touch-switch" data-touch="switch" data-testid="touch-switch" aria-label="${S.switchRole}">${icon('swap')}</button>
-          <button type="button" class="touch-skill touch-interact" data-touch="grab" data-testid="touch-interact" aria-label="${S.interact.pickup}">${icon('pickup')}<span>${S.interact.pickup}</span></button>
-          <button type="button" class="touch-skill touch-ability" data-touch="ability" data-testid="touch-ability" aria-label="${S.ability[0]}">${icon('snow')}<span>${S.ability[0]}</span></button>
+          <button type="button" class="touch-skill touch-jump" data-touch="jump" data-testid="touch-jump" aria-label="${S.jump}">${icon('up')}<span>${S.jump}</span></button>
+          <button type="button" class="touch-skill touch-interact" data-touch="grab" data-testid="touch-interact" aria-label="${S.interact.pickup}">${itemArt('crate')}<span>${S.interact.pickup}</span></button>
+          <button type="button" class="touch-skill touch-ability" data-touch="ability" data-testid="touch-ability" aria-label="${S.ability[0]}">${skillArt('frost')}<span class="skill-charges" data-testid="skill-charges"></span></button>
         </div>
+        <button type="button" class="touch-cancel" data-testid="cancel-aim" aria-label="${S.cancelAim}" hidden>${icon('close')}</button>
       </div>
       <button type="button" class="touch-pause" data-action="pause" data-testid="touch-pause" aria-label="${S.pause}" title="${S.pause}">${icon('pause')}<span class="hint-dot" aria-hidden="true"></span></button>
       <div class="toast" role="status" id="toast"></div><div class="debug" id="debug" hidden></div>
@@ -164,9 +171,9 @@ const network = createNetwork({
     }
     resetTouchState();
   },
-  onError(message) {
+  onError(message, code) {
     if (nextPending) { nextPending = false; renderModal(); }
-    lobby.setError(message); toast(message);
+    lobby.setError(message); toast(S.errors[code] ?? message);
   },
 });
 const lobby = createLobby({
@@ -216,6 +223,7 @@ function initAudio() {
   music.unlock();
  if (!audioContext && sound) { try { audioContext = new (window.AudioContext || window.webkitAudioContext)(); } catch { } } if (audioContext?.state === 'suspended' && sound) audioContext.resume(); }
 function chime(event) {
+  if (event.kind === 'growth' || (['wake', 'grow'].includes(event.kind) && state.objects.some(o => o.id === event.target && o.kind === 'plant'))) return;
   if (sound && audioContext) playEffect(audioContext, event);
 }
 function dispatch(action, quiet = false) {
@@ -290,6 +298,7 @@ function updateUI() {
 }
 // Forget every held key, finger and joystick state without sending anything.
 function resetTouchState() {
+  clearSkillAim();
   held.clear(); touchPointers.clear(); touchJumpActor = null;
   Object.assign(joy, { pointer: null, actor: null, dx: 0, dy: 0, dir: 0 });
   const stick = document.querySelector('.joystick');
@@ -413,7 +422,7 @@ function renderModal() {
   let contents = '';
   const close = `<button class="iconbutton close" data-action="close" aria-label="${S.close}">${icon('close')}</button>`;
   if (modal === 'help') contents = `${close}<div class="intro-icon">${icon('help')}</div><h2>${S.helpTitle}</h2><p>${S.helpBody}</p><div class="help-grid">${(touchLayout() ? S.touchKeys : S.keys).map(([k, v]) => `${key(k)}<span>${v}</span>`).join('')}</div>${touchLayout() ? '' : `<p>${S.coopKeys}</p>`}<button class="primary" data-action="close">${S.continue}${icon('arrow')}</button>`;
-  if (modal === 'settings') contents = `${close}<div class="intro-icon">${icon('settings')}</div><h2>${S.settings}</h2><p class="music-credit">Gymnopédie No. 1 · Erik Satie<br>Performed by <a href="https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100787" target="_blank" rel="noopener">Kevin MacLeod</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a><br>Excerpt 0:00–0:50; fades applied.</p><div class="settings-row"><span>${S.sound}</span><button class="toggle" role="switch" aria-checked="${sound}" data-action="sound" aria-label="${S.sound}" data-testid="setting-sound"></button></div><div class="settings-row"><span>${S.motion}</span><button class="toggle" role="switch" aria-checked="${reduced}" data-action="motion" aria-label="${S.motion}" data-testid="setting-motion"></button></div><div class="settings-row"><span>${S.touchControls}</span><button class="toggle" role="switch" aria-checked="${touchControls}" data-action="touch-controls" aria-label="${S.touchControls}" data-testid="setting-touch"></button></div><div class="mode-selector"><button data-mode="solo" class="${mode === 'solo' ? 'selected' : ''}">${S.solo}</button><button data-mode="coop" class="${mode === 'coop' ? 'selected' : ''}">${S.coop}</button></div><button class="primary" data-action="close">${S.continue}${icon('arrow')}</button>`;
+  if (modal === 'settings') contents = `${close}<div class="intro-icon">${icon('settings')}</div><h2>${S.settings}</h2><p class="music-credit">Menu / Pause · 共生 (Symbiosis) · The 1999<br>Full track · looped<br><br>Chamber 01 · 她未曾见过的 (What She Hasn’t Seen) · The 1999<br>Full track · looped<br><br>Chamber 02 · 叠子对望 (Doubled Pawns) · The 1999<br>Full track · looped<br><br>Chamber 03 · 瑞尼尔雪山的丧钟 · The 1999<br>Full track · looped<br><br>Chamber 04 · 梦境之主 (Lord of Dream) · The 1999<br>Full track · looped<br><br>Chamber 05 · 贝希摩斯 (Behemoth) · The 1999<br>Full track · looped<br><br>Other chambers · Gymnopédie No. 1 · Erik Satie<br>Performed by <a href="https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100787" target="_blank" rel="noopener">Kevin MacLeod</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a><br>Excerpt 0:00–0:50; fades applied.</p><div class="settings-row"><span>${S.sound}</span><button class="toggle" role="switch" aria-checked="${sound}" data-action="sound" aria-label="${S.sound}" data-testid="setting-sound"></button></div><div class="settings-row"><span>${S.motion}</span><button class="toggle" role="switch" aria-checked="${reduced}" data-action="motion" aria-label="${S.motion}" data-testid="setting-motion"></button></div><div class="settings-row"><span>${S.touchControls}</span><button class="toggle" role="switch" aria-checked="${touchControls}" data-action="touch-controls" aria-label="${S.touchControls}" data-testid="setting-touch"></button></div><div class="mode-selector"><button data-mode="solo" class="${mode === 'solo' ? 'selected' : ''}">${S.solo}</button><button data-mode="coop" class="${mode === 'coop' ? 'selected' : ''}">${S.coop}</button></div><button class="primary" data-action="close">${S.continue}${icon('arrow')}</button>`;
   if (modal === 'pause') {
     const lockLevels = onlineMode && !network.host;
     const chapters = `<div class="pause-levels"><div class="goal-heading">${icon('arrow')}<span>${S.chooseLevel}</span></div><nav class="pause-chapters" aria-label="${S.chapters}">${Array.from({ length: levelCount }, (_, i) => `<button class="chapter-button ${i < state.unlocked ? 'done' : ''}" data-level="${i}" data-testid="level-${i}" aria-label="${S.levels[i].name}" title="${S.levels[i].name}" ${i === state.level ? 'aria-current="step"' : ''} ${lockLevels ? 'disabled' : ''}><span>${String(i + 1).padStart(2, '0')}</span></button>`).join('')}</nav></div>`;
@@ -458,7 +467,7 @@ function renderModal() {
 // Unlock entry music on the first gesture, including clicks on the backdrop.
 function unlockEntryMusic() {
   if (modal === 'intro' && sound) {
-    music.sync(!document.hidden);
+    music.select(currentTrack()); music.sync(!document.hidden);
     music.unlock();
   }
 }
@@ -526,6 +535,7 @@ document.addEventListener('keydown', event => {
   const code = event.code;
   if (rewind) return;
   if (stageBusy()) { event.preventDefault(); return; }
+  if (code === 'Escape' && skillAim) { event.preventDefault(); clearSkillAim(); return; }
   if (code === 'Escape') { event.preventDefault(); if (modal && !['intro', 'win'].includes(modal)) resume(); else if (!modal) setModal('pause'); return; }
   if (modal) {
     if (code === 'Tab') {
@@ -617,19 +627,92 @@ function touchAction(type) {
     if (!keyboardJumpHeld(actor) && canJumpNow(actor)) dispatch({ type, actor }, true);
   } else dispatch({ type, actor });
 }
+const interactButton = document.querySelector('.touch-interact');
+const abilityButton = document.querySelector('.touch-ability');
+const cancelAimButton = document.querySelector('.touch-cancel');
+const skillCharges = (view, actor) => actor === 0 ? view.freezeCharges : view.bloomCharges;
+
+function clearSkillAim() {
+  if (!skillAim) return;
+  const { pointer } = skillAim;
+  skillAim = null;
+  touchPointers.delete(abilityButton); abilityButton.classList.remove('pressed');
+  cancelAimButton.hidden = true; cancelAimButton.classList.remove('over');
+  document.body.classList.remove('skill-aiming');
+  if (abilityButton.hasPointerCapture(pointer)) abilityButton.releasePointerCapture(pointer);
+}
+
+function updateSkillAim(event) {
+  if (!skillAim || (event && skillAim.pointer !== event.pointerId)) return;
+  if (event) { skillAim.x = event.clientX; skillAim.y = event.clientY; }
+  const distance = Math.hypot(skillAim.x - skillAim.startX, skillAim.y - skillAim.startY);
+  if (!skillAim.active && (distance >= 8 || performance.now() - skillAim.started >= 160)) {
+    skillAim.active = true;
+    cancelAimButton.hidden = false;
+    document.body.classList.add('skill-aiming');
+  }
+  if (skillAim.active) {
+    const { left, top, width, height } = cancelAimButton.getBoundingClientRect();
+    skillAim.overCancel = Math.hypot(skillAim.x - left - width / 2, skillAim.y - top - height / 2) <= width / 2;
+    cancelAimButton.classList.toggle('over', skillAim.overCancel);
+  }
+}
+
+function aimPreview(view) {
+  if (!skillAim?.active || skillAim.overCancel || view?.status !== 'playing') return null;
+  const { actor, x, y, startX, startY, travel } = skillAim;
+  const still = actor === 0, player = view.actors[actor];
+  const range = still ? meta.freeze.range : meta.controls.range;
+  const origin = { x: player.x, y: player.y - (still ? 30 : 0) };
+  const offset = skillAimOffset(x - startX, y - startY, travel, range);
+  const point = offset && { x: Math.max(0, Math.min(view.width, origin.x + offset.x)), y: Math.max(0, Math.min(view.height, origin.y + offset.y)) };
+  if (still) {
+    const center = point ?? freezePoint(view);
+    const check = freezeCheck(view, center);
+    const reason = check !== 'ok' ? check : freezeAreaAt(view, center) ? 'freezeCovered' : 'ok';
+    return { actor, origin, range, point: center, radius: meta.freeze.radius, reason };
+  }
+  const candidates = abilityTargets(view, actor).filter(o => o.speed < meta.time.maxSpeed);
+  const target = point ? timeObjectAt(view, point, 30, candidates) : targetFor(view, actor);
+  const reason = skillCharges(view, actor) <= 0 ? 'noBloomCharges' : target ? abilityCheck(view, actor, target.id) : 'bloomRange';
+  return { actor, origin, range, point: target ? anchor(target) : point ?? origin, target: target?.id, reason };
+}
+
+function finishSkillAim(event, released) {
+  if (skillAim?.pointer !== event.pointerId) return;
+  updateSkillAim(event);
+  const { actor, active, overCancel } = skillAim;
+  const preview = aimPreview(lastView);
+  clearSkillAim();
+  if (!released || overCancel || modal || stageBusy() || rewind || actor !== touchActor()) return;
+  if (!active) { touchAction('ability'); return; }
+  if (!preview) return;
+  if (preview.reason !== 'ok') {
+    toast(preview.reason === 'range' || preview.reason === 'outside' ? S.errors.freezeRange : S.errors[preview.reason]);
+    return;
+  }
+  dispatch(actor === 0 ? { type: 'ability', actor, ...preview.point } : { type: 'ability', actor, target: preview.target });
+}
+
+cancelAimButton.addEventListener('pointerdown', event => { event.preventDefault(); clearSkillAim(); });
+cancelAimButton.addEventListener('click', clearSkillAim);
 // Each circle captures only its own pointer, so presses coexist with held movement and with each other.
 for (const button of document.querySelectorAll('[data-touch]')) {
   button.addEventListener('pointerdown', event => {
     if (modal || stageBusy() || rewind || event.button !== 0 || touchPointers.has(button)) return;
     event.preventDefault(); initAudio();
     try { button.setPointerCapture(event.pointerId); } catch { }
-    touchAction(button.dataset.touch);
+    if (button === abilityButton) {
+      const { clientX: x, clientY: y, pointerId: pointer } = event;
+      skillAim = { pointer, actor: touchActor(), x, y, startX: x, startY: y, started: performance.now(), travel: Math.max(76, button.clientWidth * 1.15), active: false, overCancel: false };
+    } else touchAction(button.dataset.touch);
     touchPointers.set(button, event.pointerId); button.classList.add('pressed');
   });
   for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) button.addEventListener(name, event => {
     if (touchPointers.get(button) !== event.pointerId) return;
     touchPointers.delete(button); button.classList.remove('pressed');
     if (button.dataset.touch === 'jump') releaseTouchJump();
+    if (button === abilityButton) finishSkillAim(event, name === 'pointerup');
   });
   // Keyboard / switch-access activation (pointer taps were already handled on pointerdown).
   button.addEventListener('keydown', event => { if (event.repeat && ['Enter', ' '].includes(event.key)) event.preventDefault(); });
@@ -639,22 +722,25 @@ for (const button of document.querySelectorAll('[data-touch]')) {
     if (button.dataset.touch === 'jump') releaseTouchJump();
   });
 }
-const interactButton = document.querySelector('.touch-interact');
-const abilityButton = document.querySelector('.touch-ability');
+abilityButton.addEventListener('pointermove', updateSkillAim);
+const chargeBadge = abilityButton.querySelector('.skill-charges');
 function updateTouchControls(view) {
   if (!document.body.classList.contains('touch-layout') || !view?.actors) return;
   const actor = onlineMode ? network.actor : view.active;
+  const charges = skillCharges(view, actor);
   const interaction = interactionFor(view, actor);
-  const next = `${actor}:${interaction.kind}:${interaction.available}`;
+  const next = `${actor}:${charges}:${interaction.kind}:${interaction.available}`;
   if (next === touchKey) return;
   touchKey = next;
+  chargeBadge.textContent = charges;
+  abilityButton.classList.toggle('empty', charges <= 0);
+  abilityButton.setAttribute('aria-label', S.skillCount(S.ability[actor], charges));
   abilityButton.classList.toggle('bloom', actor === 1);
-  abilityButton.innerHTML = `${icon(actor === 1 ? 'leaf' : 'snow')}<span>${S.ability[actor]}</span>`;
-  abilityButton.setAttribute('aria-label', S.ability[actor]);
+  abilityButton.querySelector('use').setAttribute('href', `/art/touch-controls.svg#${actor === 1 ? 'bolt' : 'frost'}`);
   interactButton.classList.toggle('bloom', actor === 1);
   interactButton.classList.toggle('unavailable', !interaction.available);
   interactButton.dataset.kind = interaction.kind;
-  interactButton.innerHTML = `${icon(interaction.kind)}<span>${S.interact[interaction.kind]}</span>`;
+  interactButton.innerHTML = `${itemArt(['drop', 'plant'].includes(interaction.kind) ? 'seed' : 'crate')}<span>${S.interact[interaction.kind]}</span>`;
   interactButton.setAttribute('aria-label', S.interact[interaction.kind]);
 }
 
@@ -694,7 +780,7 @@ function tapWorld(clientX, clientY) {
   const result = abilityCheck(view, actor, hit.id), at = anchor(hit);
   tapEffect = { x: at.x, y: at.y, at: performance.now(), ok: result === 'ok', ring: result === 'range' ? actor : null };
   if (result === 'ok') { document.querySelector('#toast').classList.remove('show'); dispatch({ type: 'ability', actor, target: hit.id }); }
-  else toast(result === 'range' ? S.tapTooFar : result === 'unsupported' ? S.tapUnsupported[actor] : result === 'maxSpeed' ? S.errors.maxSpeed : S.errors.invalid);
+  else toast(result === 'range' ? S.tapTooFar : result === 'unsupported' ? S.tapUnsupported[actor] : S.errors[result] ?? S.errors.invalid);
   return { result, target: hit.id };
 }
 // With a mouse (no touch layout), clicking the world places Still's Freeze Area; Bloom keeps F / L.
@@ -702,7 +788,7 @@ function tapWorld(clientX, clientY) {
 const mouseCasts = () => !document.body.classList.contains('touch-layout') && (!onlineMode || network.actor === 0);
 canvas.addEventListener('pointerdown', event => {
   canvas.focus({ preventScroll: true });
-  if (modal || stageBusy() || rewind || event.button !== 0) return;
+  if (modal || stageBusy() || rewind || skillAim || event.button !== 0) return;
   if (document.body.classList.contains('touch-layout')) { event.preventDefault(); initAudio(); tapWorld(event.clientX, event.clientY); return; }
   if (event.pointerType !== 'mouse' || !mouseCasts()) return;
   const point = renderer.worldPoint(event.clientX, event.clientY);
@@ -743,9 +829,14 @@ function blendTicks(a, b, t) {
     objects: b.objects.map(q => { const p = before.get(q.id); return p && Number.isFinite(p.y) && Number.isFinite(q.y) ? mix(p, q) : q; }),
   };
 }
+// The title screen and the pause / settings / help menus have their own music.
+const menuScreen = () => ['intro', 'pause', 'settings', 'help', 'confirm-restart', 'confirm-level'].includes(modal);
+const currentTrack = () => menuScreen() ? MENU_MUSIC : themeFor(state.level).music;
 function frame(time) {
-  music.select(themeFor(state.level).music); // each courtyard's own track (its theme)
-  music.sync(sound && !document.hidden && (modal === 'intro' || stageBusy() || !modal || modal === 'win'));
+  const musicEnabled = sound && !document.hidden && (menuScreen() || stageBusy() || !modal || modal === 'win');
+  music.select(currentTrack()); music.sync(musicEnabled);
+  const growthEnabled = sound && !document.hidden && document.hasFocus() && !rewind && state.status === 'playing' && !modal && (!onlineMode || (network.connected && !network.room?.suspended));
+  growthAudio.sync(audioContext, growthEnabled ? state.objects.filter(o => o.kind === 'plant' && o.speed > 0 && o.age < meta.plant.growTicks && !o.withered).map(o => ({ id: o.id, rate: o.speed * (o.frozen ? meta.time.frozenRate : 1) })) : []);
   pwa.refresh();
   if (lastTime === 0) lastTime = time;
   accumulator += Math.min(100, time - lastTime); lastTime = time;
@@ -763,6 +854,7 @@ function frame(time) {
     // Online, the final picture holds until the server's fresh start arrives (with a safety timeout).
     if (u >= 1 && (!rewind.online || rewind.arrived || now - rewind.start > rewind.duration + 3000)) finishRewind();
   }
+  rewindAudio.sync(audioContext, sound && !document.hidden && document.hasFocus() && rewind ? rewind.u : null);
   // Local play: the simulation runs at 60 ticks/s but the screen may refresh faster (120 Hz iPads) or out
   // of step, so draw positions blended between the last two ticks instead of holding/jumping frames.
   const smooth = !onlineMode && !modal && state.status === 'playing' && previousTick?.level === state.level && previousTick.tick === state.tick - 1;
@@ -774,6 +866,8 @@ function frame(time) {
   const localMenu = ['pause', 'help', 'settings', 'confirm-restart', 'confirm-level'].includes(modal);
   const worldPaused = stageBusy() || (onlineMode ? modal !== null && !localMenu : !!modal) || state.status !== 'playing' || (onlineMode && (!network.connected || network.room?.suspended));
   const touch = touchLayout(), viewActor = onlineMode ? network.actor : state.active;
+  updateSkillAim();
+  const aim = aimPreview(displayState);
   const cancelPreview = freezePreview && freezeAreaAt(displayState, freezePreview);
   lastView = displayState;
   const tapAge = tapEffect ? (performance.now() - tapEffect.at) / 1400 : 1;
@@ -782,9 +876,10 @@ function frame(time) {
     reduced, mode: touch ? 'coop' : onlineMode ? 'solo' : mode, paused: worldPaused && !rewindInfo,
     sceneKey: outgoing?.sceneKey ?? sceneKey, cameraReset: outgoing?.cameraReset ?? cameraReset,
     celebration: celebration && { progress: Math.max(0, Math.min(1, (time - celebration.start) / celebration.duration)), finale: celebration.finale },
-    target: touch && viewActor === 0 ? null : targetFor(state, state.active)?.id,
-    touch, tappable: touch && viewActor === 1 && displayState.status === 'playing' ? new Set(abilityTargets(displayState, viewActor).map(o => o.id)) : null,
+    target: aim ? aim.target : touch && viewActor === 0 ? null : targetFor(state, state.active)?.id,
+    touch, tappable: !aim && touch && viewActor === 1 && displayState.status === 'playing' ? new Set(abilityTargets(displayState, viewActor).map(o => o.id)) : null,
     rewind: rewindInfo,
+    aim,
     preview: freezePreview && displayState.status === 'playing' ? cancelPreview ? { ...cancelPreview, cancel: true } : { ...freezePreview, radius: meta.freeze.radius, valid: freezeCheck(displayState, freezePreview) === 'ok' } : null,
     tap: tapEffect && { ...tapEffect, age: tapAge },
     bottomInset: touch ? controlsReserve : 0,
@@ -801,7 +896,7 @@ function frame(time) {
 updateUI(); renderModal();
 // Try immediately; trusted gestures remain a fallback for autoplay restrictions.
 if (sound) {
-  music.sync(!document.hidden);
+  music.select(currentTrack()); music.sync(!document.hidden);
   music.unlock();
 }
 requestAnimationFrame(frame);

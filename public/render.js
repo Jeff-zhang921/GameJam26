@@ -345,13 +345,32 @@ export function createRenderer(canvas, S) {
     const x = b.x + b.w / 2 + Math.sin(t * .003 + b.x) * 3, y = b.y - 10;
     ctx.save(); ctx.globalAlpha *= .85; glow(ctx, x, y, 12, '#c8f4f866'); star(ctx, x, y, 4, '#f0fdff'); ctx.restore();
   }
-  // A frost crystal: an extra Freeze charge for whoever touches it.
+  // A frost crystal gives Still an extra Freeze charge.
   function frostCrystal(c, t) {
     const y = c.y + Math.sin(t * .0025 + c.x) * 4;
     glow(ctx, c.x, y, 34, '#bdf0f640');
     ctx.save(); ctx.translate(c.x, y); ctx.rotate(t * .0006);
     for (let i = 0; i < 6; i++) { ctx.rotate(Math.PI / 3); line(ctx, [[0, 0], [0, -11]], '#e9fbfd', 2); line(ctx, [[0, -7], [3.5, -10]], '#e9fbfd', 1.2); line(ctx, [[0, -7], [-3.5, -10]], '#e9fbfd', 1.2); }
     ctx.restore(); circle(ctx, c.x, y, 3, '#ffffff');
+  }
+  function lightningCrystal(c, t) {
+    const y = c.y + Math.sin(t * .0025 + c.x) * 4;
+    glow(ctx, c.x, y, 28, '#fbe09e71');
+    ctx.save(); ctx.translate(c.x, y);
+    ctx.beginPath(); ctx.moveTo(2, -15); ctx.lineTo(-9, 1); ctx.lineTo(-2, 1);
+    ctx.lineTo(-5, 14); ctx.lineTo(10, -4); ctx.lineTo(2, -4); ctx.closePath();
+    ctx.fillStyle = '#f8d17d'; ctx.fill(); ctx.strokeStyle = '#fff2c6'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.restore();
+  }
+  function aimedCast({ actor, origin, point, range, radius, target, reason }) {
+    const color = reason === 'ok' ? actor === 0 ? '#bff8ff' : '#ffe293' : '#f4a58a';
+    ctx.save(); ctx.setLineDash([8, 9]);
+    circle(ctx, origin.x, origin.y, range, null, `${color}64`, 1.5);
+    line(ctx, [[origin.x, origin.y - (actor === 1 ? 25 : 0)], [point.x, point.y]], `${color}ae`, 1.5);
+    ctx.setLineDash([]);
+    circle(ctx, point.x, point.y, radius ?? (target ? 23 : 12), `${color}18`, color, 2.5);
+    star(ctx, point.x, point.y, 5, color);
+    ctx.restore();
   }
   function freezePreview(p) {
     if (p.cancel) {
@@ -485,7 +504,7 @@ export function createRenderer(canvas, S) {
     for (const o of state.objects) if (o.kind === 'plant') plant(o, marked(o), t, options.reduced);
     door(state, t);
     for (const shard of state.shards) if (!shard.taken) { const yy = shard.y + Math.sin(t * .002 + shard.id) * 5; glow(ctx, shard.x, yy, 40, '#e7d2a51b'); ctx.save(); ctx.translate(shard.x, yy); ctx.rotate(Math.PI / 4); ctx.fillStyle = '#e2d194'; ctx.fillRect(-5, -5, 10, 10); ctx.strokeStyle = '#f4e7b477'; ctx.strokeRect(-10, -10, 20, 20); ctx.restore(); }
-    for (const c of state.pickups ?? []) if (!c.taken) frostCrystal(c, t);
+    for (const c of state.pickups ?? []) if (!c.taken) (c.kind === 'bolt' ? lightningCrystal : frostCrystal)(c, t);
     for (const o of state.objects) if (o.kind === 'crate' && o.held === null) crate(o, options.tappable ? marked(o) : o.id === target && state.active === 0, t);
     for (const o of state.objects) if (o.kind === 'seed' && o.held === null) seed(o, t);
     const flying = o => !o.frozen && ['dart', 'orb', 'lantern'].includes(o.kind);
@@ -530,6 +549,7 @@ export function createRenderer(canvas, S) {
     }
     if (options.celebration) celebrateGate(state, options.celebration, options.reduced);
     if (options.preview) freezePreview(options.preview);
+    if (options.aim) aimedCast(options.aim);
     const selected = state.objects.find(o => o.id === target);
     if (state.status === 'playing' && selected) {
       const top = isEnemy(selected) ? enemyBox(selected).y - 26 : selected.kind === 'plant' ? selected.base - selected.height - 53 : selected.kind === 'mover' ? selected.y - 30 : selected.y - 62;

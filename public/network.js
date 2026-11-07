@@ -110,7 +110,7 @@ export function createNetwork({ onRoom, onState, onConnection, onError, onReplay
         if (['INVALID_SESSION', 'ROOM_EXPIRED', 'ROOM_NOT_FOUND'].includes(message.code) && intent.type === 'resume') {
           credentials = null; save(); generation++; socket.close(); connected = false; onConnection('offline');
         } else if (!credentials) onConnection('connected');
-        onError(message.message || 'The room request could not be completed.');
+        onError(message.message || 'The room request could not be completed.', message.code);
       }
     });
     socket.addEventListener('close', () => {
@@ -208,6 +208,7 @@ export function createNetwork({ onRoom, onState, onConnection, onError, onReplay
         // Keep positions smoothed, but show casts and cancellations as soon as the server confirms them.
         if (game.freezeAreas !== latest.freezeAreas) {
           game.freezeAreas = latest.freezeAreas; game.freezeCharges = latest.freezeCharges;
+          game.bloomCharges = latest.bloomCharges; game.pickups = latest.pickups;
           const slowed = new Set(latest.objects.filter(o => o.frozen).map(o => o.id));
           game.objects = game.objects.map(o => {
             const frozen = slowed.has(o.id);
