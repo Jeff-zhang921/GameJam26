@@ -11,6 +11,27 @@ export function createRenderer(canvas, S) {
   let transform;
   let entryProgress = 0;
   const cyan = '#a1e3e5', gold = '#e1c68a', muted = '#8aa89b';
+  const sprites = Object.fromEntries(['crate', 'seed', 'sprout', 'bud', 'bloom', 'bloom-wind', 'wilted', 'petals'].map(name => { const img = new Image(); img.src = `/sprites/${name}.png`; return [name, img]; }));
+  const loaded = (...names) => names.every(name => sprites[name].complete && sprites[name].naturalWidth > 0);
+  // Sprites are cropped to their art. baseX is where the stem meets the ground (fraction of width);
+  // walk is how far below the top the standable line sits (fraction of height), so `height` matches the collision surface.
+  const FLOWER = { seed: [.45, 0], sprout: [.511, .12], bud: [.494, .02], bloom: [.458, .15], 'bloom-wind': [.429, .13], wilted: [.494, .03], petals: [.5, 0] };
+  const shapeOf = name => { const img = sprites[name], [baseX, walk] = FLOWER[name] ?? [.5, 0]; return { aspect: img.naturalWidth / img.naturalHeight, baseX, walk }; };
+  function sprite(name, x, bottom, height, alpha, form = shapeOf(name)) {
+    if (alpha <= .01 || height <= 0) return;
+    const h = height / (1 - form.walk), w = h * form.aspect;
+    ctx.save(); ctx.globalAlpha *= Math.min(1, alpha); ctx.drawImage(sprites[name], x - w * form.baseX, bottom - h, w, h); ctx.restore();
+  }
+  const smooth = p => p * p * (3 - 2 * p), lerp = (a, b, p) => a + (b - a) * p;
+  // Two images drawn as one silhouette whose proportions morph from a to b while b dissolves in over a.
+  function morph(a, b, p, x, bottom, height) {
+    const s = smooth(Math.max(0, Math.min(1, p))), A = shapeOf(a), B = shapeOf(b);
+    const form = { aspect: lerp(A.aspect, B.aspect, s), baseX: lerp(A.baseX, B.baseX, s), walk: lerp(A.walk, B.walk, s) };
+    sprite(a, x, bottom, height, 1 - s * s, form);
+    sprite(b, x, bottom, height, s, form);
+  }
+  // Each image is fully itself at its height; growth between two keyframes morphs one into the next.
+  const GROWTH = [['seed', 0], ['sprout', 25], ['bud', 95], ['bloom', 200]];
   function line(c, points, color, width = 1) { c.beginPath(); c.moveTo(points[0][0], points[0][1]); for (let i = 1; i < points.length; i++) c.lineTo(points[i][0], points[i][1]); c.strokeStyle = color; c.lineWidth = width; c.stroke(); }
   function circle(c, x, y, r, fill, stroke, width = 1) { c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); if (fill) { c.fillStyle = fill; c.fill(); } if (stroke) { c.strokeStyle = stroke; c.lineWidth = width; c.stroke(); } }
   function ellipse(c, x, y, rx, ry, angle, color) { c.beginPath(); c.ellipse(x, y, Math.max(.1, rx), Math.max(.1, ry), angle, 0, Math.PI * 2); c.fillStyle = color; c.fill(); }
@@ -88,9 +109,12 @@ export function createRenderer(canvas, S) {
   function crate(c, targeted, t) {
     ctx.save(); ctx.translate(c.x, c.y); const size = 24;
     if (c.frozen) { glow(ctx, 0, 0, 70, '#9de3e527'); circle(ctx, 0, 0, 41 + Math.sin(t * .002) * 2, null, '#a1e3e570'); circle(ctx, 0, 0, 34, null, '#a1e3e52e'); }
-    ctx.fillStyle = '#61736a'; ctx.fillRect(-size, -size, 48, 48); ctx.strokeStyle = '#d4c99e'; ctx.lineWidth = 3; ctx.strokeRect(-size, -size, 48, 48); ctx.strokeStyle = '#243f3d'; ctx.lineWidth = 2; ctx.strokeRect(-18, -18, 36, 36); line(ctx, [[-20, -20], [20, 20]], '#c7b887', 3); line(ctx, [[20, -20], [-20, 20]], '#c7b887', 3);
-    circle(ctx, 0, 0, 11, '#183e42', c.frozen ? cyan : '#d6bc82', 2); circle(ctx, 0, 0, 7, null, '#b6d7cd7a'); line(ctx, [[0, -5], [0, 0], [4, 2]], cyan);
-    for (const x of [-21, 21]) for (const y of [-21, 21]) circle(ctx, x, y, 2, '#ede3b7');
+    if (loaded('crate')) { const w = 62, h = w * sprites.crate.naturalHeight / sprites.crate.naturalWidth; ctx.drawImage(sprites.crate, -w / 2, 27 - h, w, h); }
+    else {
+      ctx.fillStyle = '#61736a'; ctx.fillRect(-size, -size, 48, 48); ctx.strokeStyle = '#d4c99e'; ctx.lineWidth = 3; ctx.strokeRect(-size, -size, 48, 48); ctx.strokeStyle = '#243f3d'; ctx.lineWidth = 2; ctx.strokeRect(-18, -18, 36, 36); line(ctx, [[-20, -20], [20, 20]], '#c7b887', 3); line(ctx, [[20, -20], [-20, 20]], '#c7b887', 3);
+      circle(ctx, 0, 0, 11, '#183e42', c.frozen ? cyan : '#d6bc82', 2); circle(ctx, 0, 0, 7, null, '#b6d7cd7a'); line(ctx, [[0, -5], [0, 0], [4, 2]], cyan);
+      for (const x of [-21, 21]) for (const y of [-21, 21]) circle(ctx, x, y, 2, '#ede3b7');
+    }
     if (c.frozen) { line(ctx, [[-34, -7], [-31, -28], [-9, -35]], '#bceef0'); line(ctx, [[34, 9], [30, 29], [10, 35]], '#bceef0'); for (let i = 0; i < 5; i++) star(ctx, Math.sin(i * 5.2) * 40, Math.cos(i * 4.6) * 40, 2, '#c9f3ef'); }
     if (targeted) { const a = 32; ctx.strokeStyle = cyan; ctx.lineWidth = 1.5; for (const [x, y] of [[-a, -a], [a, -a], [-a, a], [a, a]]) line(ctx, [[x, y - Math.sign(y) * 8], [x, y], [x - Math.sign(x) * 8, y]], cyan); }
     ctx.restore();
@@ -109,7 +133,18 @@ export function createRenderer(canvas, S) {
     ellipse(ctx, 0, 0, 7, 10, .5, '#b39a5c'); ellipse(ctx, -1.5, -2, 3, 5, .5, '#e6d39a'); line(ctx, [[3, -7], [6, -12 + Math.sin(t * .004)]], '#9fbf7f', 1.5);
     ctx.restore();
   }
-  function plant(o, targeted, t) {
+  function flower(o, targeted, t, reduced) {
+    const h = o.height, x = o.x, y = o.base, { growTicks, matureTicks, witherTicks } = meta.plant;
+    timeRing(x, y - h / 2, Math.max(22, h / 2 + 12), o, t);
+    let i = 0; while (i < GROWTH.length - 2 && h >= GROWTH[i + 1][1]) i++;
+    const [a, from] = GROWTH[i], [b, to] = GROWTH[i + 1], p = Math.min(1, (h - from) / (to - from));
+    if (p < 1) morph(a, b, p, x, y, a === 'seed' ? lerp(14, to, smooth(p)) : h);
+    else if (o.withered) morph('bloom', 'wilted', (o.age - growTicks - matureTicks) / (witherTicks * .3), x, y, h);
+    else morph('bloom', 'bloom-wind', o.age > growTicks && !reduced ? (Math.sin(t * .0015 + o.x) + 1) / 2 : 0, x, y, h);
+    if (targeted) { circle(ctx, x, y - h - 16, 13, '#d7bd7d10', '#e1c68a70'); star(ctx, x, y - h - 16, 5, gold); }
+  }
+  function plant(o, targeted, t, reduced) {
+    if (loaded('seed', 'sprout', 'bud', 'bloom', 'bloom-wind', 'wilted')) return flower(o, targeted, t, reduced);
     const h = o.height, x = o.x, y = o.base, dead = o.withered, g = Math.min(1, h / meta.plant.maxHeight), top = y - h;
     timeRing(x, y - h / 2, Math.max(22, h / 2 + 12), o, t);
     if (h < 12 && !dead) { ctx.globalAlpha = 1 - h / 12; ellipse(ctx, x, y - 5, 6, 8, .4, '#b39a5c'); ellipse(ctx, x - 1, y - 7, 2.5, 4, .4, '#e6d39a'); ctx.globalAlpha = 1; }
@@ -227,7 +262,7 @@ export function createRenderer(canvas, S) {
     for (const p of state.pits) pit(p);
     for (const cp of state.checkpoints ?? []) checkpoint(cp, cp.id === state.checkpoint, t);
     for (const o of state.objects) if (o.kind === 'mover') mover(o, o.id === target, t);
-    for (const o of state.objects) if (o.kind === 'plant') plant(o, o.id === target, t);
+    for (const o of state.objects) if (o.kind === 'plant') plant(o, o.id === target, t, options.reduced);
     door(state, t);
     for (const shard of state.shards) if (!shard.taken) { const yy = shard.y + Math.sin(t * .002 + shard.id) * 5; glow(ctx, shard.x, yy, 40, '#e7d2a51b'); ctx.save(); ctx.translate(shard.x, yy); ctx.rotate(Math.PI / 4); ctx.fillStyle = '#e2d194'; ctx.fillRect(-5, -5, 10, 10); ctx.strokeStyle = '#f4e7b477'; ctx.strokeRect(-10, -10, 20, 20); ctx.restore(); }
     for (const o of state.objects) if (o.kind === 'crate' && o.held === null) crate(o, o.id === target && state.active === 0, t);
@@ -242,6 +277,10 @@ export function createRenderer(canvas, S) {
     }
     for (const o of state.objects) if (o.held !== undefined && o.held !== null) o.kind === 'crate' ? crate(o, false, t) : seed(o, t);
     for (const o of state.objects) if (isEnemy(o) && flying(o)) enemy(o, o.id === target, t, options.reduced);
+    if (loaded('petals')) for (const e of state.events) if (e.kind === 'vanish' && e.plant) {
+      const age = state.tick - e.tick; if (age < 0 || age > 60) continue;
+      sprite('petals', e.x, Math.min(e.base, e.y + age * 4), 18, 1 - age / 60);
+    }
     for (const kind of ['ambient', 'dust', 'crystal', 'leaf', 'spark']) {
       ctx.beginPath();
       for (const p of effects.particles) {

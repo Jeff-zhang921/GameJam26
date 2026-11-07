@@ -148,7 +148,7 @@ function ageObjects(state) {
       if (o.age >= growTicks + matureTicks + witherTicks) {
         state.objects = state.objects.filter(x => x !== o);
         state.pits.find(p => p.id === o.pit).plant = null;
-        event(state, 'vanish', o.x, o.base - o.height);
+        event(state, 'vanish', o.x, o.base - o.height, { plant: true, base: o.base });
         continue;
       }
       if (!o.withered && o.age > growTicks + matureTicks) { event(state, 'wither', o.x, o.base); o.withered = true; if (o.barrier) state.flags.withered = true; }

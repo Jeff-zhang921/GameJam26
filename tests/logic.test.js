@@ -105,6 +105,7 @@ describe('time flow', () => {
     expect(s.actors[1].on).toBe(plantOf(s).id);
     s = step(s, W / 3 - 1);
     expect(plantOf(s)).toBeUndefined();
+    expect(s.events.find(e => e.kind === 'vanish')).toMatchObject({ plant: true, base: 540 });
     expect(s.pits[0].plant).toBe(null);
     s = step(s, 5);
     expect(s.actors[1].grounded).toBe(false);

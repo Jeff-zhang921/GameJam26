@@ -345,6 +345,18 @@ describe('strikes and slow freezing', () => {
     g.attack = attackEvery - 0.001; expect(attackCharge(g)).toBeCloseTo(1, 2);
   });
 
+  test('a strike far from everyone still keeps its rhythm but makes no sound or sparks', () => {
+    let s = arena([{ kind: 'guard', id: 'g', x: 1100, y: 540, minX: 1099, maxX: 1101 }], [{ x: 60 }, { x: 120 }]);
+    get(s, 'g').attack = ENEMY.guard.attackEvery - 1;
+    s = step(s);
+    expect(get(s, 'g').attack).toBeLessThan(1);
+    expect(s.events.some(e => e.kind === 'strike')).toBe(false);
+    s = arena([{ kind: 'guard', id: 'g', x: 400, y: 540, minX: 399, maxX: 401 }], [{ x: 60 }, { x: 120 }]);
+    get(s, 'g').attack = ENEMY.guard.attackEvery - 1;
+    s = step(s);
+    expect(s.events.some(e => e.kind === 'strike')).toBe(true);
+  });
+
   test('young and old mites never wind up or strike', () => {
     const m = makeEnemy('mite', { x: 0, y: 0, nest: 'n', homeX: 0 }, 'm');
     expect(canStrike(m)).toBe(false);

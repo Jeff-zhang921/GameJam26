@@ -2,6 +2,7 @@
 // They are always active, but only age once Bloom has hastened them. Still slows them to FROZEN_RATE.
 // Guards, lanterns and adult mites are solid and strike whoever touches them on a fixed rhythm.
 export const FROZEN_RATE = 0.05;
+const STRIKE_CUE_RANGE = 520;
 export const ENEMY = {
   guard: { w: 40, h: 50, life: 1200, patrol: 1.2, chase: 2.6, see: 260, seeHeight: 80, attackEvery: 90, windup: 24 },
   lantern: { w: 44, h: 44, life: 1200, fly: 1, notice: 320, giveUp: 480, bob: 6, attackEvery: 72, windup: 24 },
@@ -102,7 +103,8 @@ export function updateEnemies(state, { event, nextId }) {
       o.attack += k;
       if (o.attack >= spec.attackEvery) {
         o.attack -= spec.attackEvery; strikes.push(o.id);
-        const b = enemyBox(o); event(state, 'strike', b.x + b.w / 2, b.y + b.h / 2);
+        const b = enemyBox(o), cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+        if (state.actors.some(p => Math.hypot(p.x - cx, p.y - 26 - cy) <= STRIKE_CUE_RANGE)) event(state, 'strike', cx, cy);
       }
     } else o.attack = 0;
     if (o.kind === 'guard') {
