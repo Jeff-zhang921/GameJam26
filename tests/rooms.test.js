@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import { createRoomManager } from '../src/rooms.js';
+import { aimedThrowVelocity } from '../src/logic.js';
 
 function fixture(options = {}) {
   let time = 1000;
@@ -98,8 +99,9 @@ describe('rooms and shared lobby', () => {
     expect(f.room.game.actors[0].carrying).toBe('crate-0');
     input(f.guest, 2, { type: 'grab', aim: { vx: 50, vy: -50 } });
     expect(f.last(f.guest, 'error').code).toBe('invalid');
-    input(f.guest, 3, { type: 'grab', aim: { vx: -3, vy: -7 } });
-    expect(f.room.game.objects.find(o => o.id === 'crate-0')).toMatchObject({ held: null, vx: -3, vy: -7 });
+    const aim = aimedThrowVelocity(-360, -360, 360);
+    input(f.guest, 3, { type: 'grab', aim });
+    expect(f.room.game.objects.find(o => o.id === 'crate-0')).toMatchObject({ held: null, ...aim });
   });
   test('different room codes isolate input and state', () => {
     const f = fixture(); f.start();

@@ -216,6 +216,12 @@ export function interactionFor(state, actor) {
   return { kind: 'pickup', available: pickable(state, p).length > 0 };
 }
 
+export function aimedThrowVelocity(dx, dy, fullPowerDistance) {
+  const scale = meta.throw.maxSpeed / Math.max(fullPowerDistance, Math.hypot(dx, dy));
+  // Rounding the components independently can push the combined speed above the cap.
+  return { vx: dx * scale, vy: dy * scale };
+}
+
 // Where a thrown crate starts and how fast it goes. `aim` ({ vx, vy }, up to meta.throw.maxSpeed) comes from the
 // thrower's aiming; without one the crate goes the default way the thrower faces.
 export function throwLaunch(state, actor, aim) {

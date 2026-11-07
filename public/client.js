@@ -1,7 +1,7 @@
 import { playEffect, createGrowthAudio, createRewindAudio } from './sfx.js';
 import { createMusic } from './music.js';
 import { themeFor, MENU_MUSIC } from './themes.js';
-import { setup, applyAction, validateAction, viewFor, hintLevel, levelCount, interactionFor, throwPath, abilityCheck, abilityTargets, timeObjectAt, anchor, exitStatus, freezeAreaAt, freezeCheck, meta } from '../src/logic.js';
+import { setup, applyAction, validateAction, viewFor, hintLevel, levelCount, interactionFor, aimedThrowVelocity, throwPath, abilityCheck, abilityTargets, timeObjectAt, anchor, exitStatus, freezeAreaAt, freezeCheck, meta } from '../src/logic.js';
 import { createHistory, compactFrame, rewindFrame, REWIND } from './rewind.js';
 import { S } from './strings.js';
 import { createRenderer } from './render.js';
@@ -803,16 +803,14 @@ function updateThrowAim(event) {
 }
 // The throw velocity the current drag asks for (screen and world y both point down).
 function throwVelocity() {
-  const dx = throwAim.x - throwAim.startX, dy = throwAim.y - throwAim.startY, scale = meta.throw.maxSpeed / Math.max(throwAim.travel, Math.hypot(dx, dy));
-  return { vx: Math.round(dx * scale * 100) / 100, vy: Math.round(dy * scale * 100) / 100 };
+  return aimedThrowVelocity(throwAim.x - throwAim.startX, throwAim.y - throwAim.startY, throwAim.travel);
 }
 // A mouse throw goes toward the pointer; the farther the pointer (up to THROW_REACH world units), the harder.
 const THROW_REACH = 360;
 function throwToward(view, actor, point) {
-  const p = view.actors[actor], dx = point.x - p.x, dy = point.y - (p.y + meta.throw.offset.y), distance = Math.hypot(dx, dy);
-  if (distance < 1) return null;
-  const speed = meta.throw.maxSpeed * Math.min(1, distance / THROW_REACH);
-  return { vx: Math.round(dx / distance * speed * 100) / 100, vy: Math.round(dy / distance * speed * 100) / 100 };
+  const p = view.actors[actor], dx = point.x - p.x, dy = point.y - (p.y + meta.throw.offset.y);
+  if (Math.hypot(dx, dy) < 1) return null;
+  return aimedThrowVelocity(dx, dy, THROW_REACH);
 }
 function throwPreview(view) {
   if (mouseAim?.kind === 'throw' && view?.status === 'playing') {
