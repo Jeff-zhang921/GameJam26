@@ -80,14 +80,12 @@ describe('real WebSocket multiplayer', () => {
   test('shared existing time abilities and animation identities agree on both clients', async () => {
     const server = serve(), p = await pair(server); await start(p);
     p.room.game = setup({ level: 1, players: p.room.game.playerIds }); p.room.epoch++;
-    p.host.send({ type: 'input', seq: 1, action: { type: 'grab' } });
-    await p.host.next('snapshot', m => m.ack[p.h.playerId] === 1 && m.game.actors[1].carrying === null);
-    Object.assign(p.room.game.actors[1], { x: 380 });
-    p.host.send({ type: 'input', seq: 2, action: { type: 'grab' } });
-    await p.host.next('snapshot', m => m.game.actors[1].carrying === 'seed-1');
+    Object.assign(p.room.game.actors[1], { x: 380 }); // Bloom touches a seed: both clients see the count go up
+    const picked = await p.host.next('snapshot', m => m.game.seeds === 2 && !m.game.objects.some(o => o.id === 'seed-1'));
+    expect((await p.guest.next('snapshot', m => m.game.tick === picked.game.tick)).game.seeds).toBe(2);
     p.room.game.actors[1].x = 600;
-    p.host.send({ type: 'input', seq: 3, action: { type: 'grab' } });
-    await p.host.next('snapshot', m => m.game.objects.some(o => o.kind === 'plant'));
+    p.host.send({ type: 'input', seq: 1, action: { type: 'grab' } });
+    await p.host.next('snapshot', m => m.game.objects.some(o => o.kind === 'plant') && m.game.seeds === 1);
     p.host.send({ type: 'input', seq: 4, action: { type: 'ability', target: 'plant-0' } });
     const woke = await p.host.next('snapshot', m => m.game.objects.some(o => o.id === 'plant-0' && o.speed === 1));
     expect((await p.guest.next('snapshot', m => m.game.tick === woke.game.tick)).game).toEqual(woke.game);

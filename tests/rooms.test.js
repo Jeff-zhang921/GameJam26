@@ -90,6 +90,17 @@ describe('rooms and shared lobby', () => {
     expect(f.last(f.host, 'snapshot')).toEqual(f.last(f.guest, 'snapshot'));
     expect(f.last(f.host, 'snapshot').game.history).toBeUndefined();
   });
+  test('an aimed throw reaches the shared game with its aim; a bad aim is refused', () => {
+    const f = fixture(); f.start();
+    const input = (ws, seq, action) => f.send(ws, { type: 'input', seq, action });
+    Object.assign(f.room.game.actors[0], { x: 300 }); // Still (the guest) beside the crate
+    input(f.guest, 1, { type: 'grab' });
+    expect(f.room.game.actors[0].carrying).toBe('crate-0');
+    input(f.guest, 2, { type: 'grab', aim: { vx: 50, vy: -50 } });
+    expect(f.last(f.guest, 'error').code).toBe('invalid');
+    input(f.guest, 3, { type: 'grab', aim: { vx: -3, vy: -7 } });
+    expect(f.room.game.objects.find(o => o.id === 'crate-0')).toMatchObject({ held: null, vx: -3, vy: -7 });
+  });
   test('different room codes isolate input and state', () => {
     const f = fixture(); f.start();
     const other = f.socket(); f.send(other, { type: 'create' });
@@ -171,7 +182,7 @@ describe('host level select and shared failure', () => {
   test('a possible dead end warns both players while play goes on; only the host restarts, as one shared 4 s rewind', () => {
     const f = fixture(); f.start();
     f.send(f.host, { type: 'control', action: 'level', level: 1 });
-    f.room.game.objects = f.room.game.objects.filter(o => o.kind !== 'seed');
+    f.room.game.objects = f.room.game.objects.filter(o => o.kind !== 'seed'); f.room.game.seeds = 0;
     Object.assign(f.room.game.actors[0], { x: f.room.game.exit.x, y: f.room.game.exit.y, on: 'platform-1' });
     f.advance(50);
     for (const ws of [f.host, f.guest]) expect(f.last(ws, 'snapshot').game).toMatchObject({ status: 'playing', failure: 'stranded', failureSeq: 1 });
@@ -185,7 +196,8 @@ describe('host level select and shared failure', () => {
     expect(hostReplay.replay).toEqual(guestReplay.replay);
     expect(hostReplay.replay.duration).toBe(4000);
     expect(hostReplay.replay.end).toMatchObject({ level: 1, tick: 0, status: 'playing', failure: null });
-    expect(hostReplay.replay.end.objects.filter(o => o.kind === 'seed')).toHaveLength(3);
+    expect(hostReplay.replay.end.objects.filter(o => o.kind === 'seed')).toHaveLength(2); // restored: both loose seeds and the starting count
+    expect(hostReplay.replay.end.seeds).toBe(1);
     expect(hostReplay.room.rewinding.id).toBe(hostReplay.replay.id);
     // During the rewind: no inputs, no second restart, and the shared world holds still.
     f.send(f.guest, { type: 'input', seq: 1, action: { type: 'move', dir: 1 } });
@@ -202,7 +214,8 @@ describe('host level select and shared failure', () => {
       expect(snap.room.epoch).toBe(epoch + 1);
       expect(snap.room.rewinding).toBe(null);
       expect(snap.game).toMatchObject({ level: 1, status: 'playing', failure: null });
-      expect(snap.game.objects.filter(o => o.kind === 'seed')).toHaveLength(3);
+      expect(snap.game.objects.filter(o => o.kind === 'seed')).toHaveLength(2);
+      expect(snap.game.seeds).toBe(1);
     }
     expect(f.last(f.host, 'snapshot').game).toEqual(f.last(f.guest, 'snapshot').game);
     expect(f.room.players.map(p => p.character).sort()).toEqual(['bloom', 'still']);

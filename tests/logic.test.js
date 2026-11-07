@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'bun:test';
 import { LEVELS } from '../src/levels/index.js';
 import { ENEMY } from '../src/enemies.js';
-import { setup, validateAction, applyAction, isGameOver, viewFor, hintLevel, meta, targetFor, levelCount } from '../src/logic.js';
+import { setup, validateAction, applyAction, isGameOver, viewFor, hintLevel, meta, abilityTarget, levelCount } from '../src/logic.js';
 
 function step(state, n = 1) { for (let i = 0; i < n; i++) state = applyAction(state, 'local', { type: 'tick' }); return state; }
 function action(state, value) { expect(validateAction(state, 'local', value).valid).toBe(true); return applyAction(state, 'local', value); }
@@ -19,34 +19,38 @@ function planted() {
 }
 
 describe('seeds and pits', () => {
-  test('a carried seed is planted into an empty pit and dropped anywhere else', () => {
+  test('Bloom collects a seed by touch and plants from the count beside an empty pit', () => {
     let s = setup({ level: 1 });
-    s.actors[0].x = 380;
+    expect(s.seeds).toBe(1);
+    Object.assign(s.actors[0], { x: 380 }); // Still walks over a seed: it stays, and Still cannot take it
+    s = step(s);
+    expect(get(s, 'seed-1')).toBeDefined();
     expect(validateAction(s, 'local', { type: 'grab', actor: 0 }).error).toBe('grabRange');
-    s = action(s, { type: 'grab', actor: 1 }); // Drop the starter before picking up a loose seed.
-    s.actors[1].x = 380;
-    s = action(s, { type: 'grab', actor: 1 });
-    expect(s.actors[1].carrying).toBe('seed-1');
-    s = action(s, { type: 'grab', actor: 1 });
-    expect(get(s, 'seed-1').held).toBe(null);
-    expect(s.objects.some(o => o.kind === 'plant')).toBe(false);
-    s = action(s, { type: 'grab', actor: 1 });
+    s.actors[0].x = 200;
+    s.actors[1].x = 380; // Bloom touches it: gone, and the count goes up
+    s = step(s);
+    expect(get(s, 'seed-1')).toBeUndefined();
+    expect(s.seeds).toBe(2);
+    expect(s.events.some(e => e.kind === 'seedPick')).toBe(true);
+    expect(s.actors[1].carrying).toBe(null);
+    s.actors[1].x = 300; // no pit here: nothing to do
+    expect(validateAction(s, 'local', { type: 'grab', actor: 1 }).error).toBe('grabRange');
     s.actors[1].x = 610;
     s = action(s, { type: 'grab', actor: 1 });
-    expect(get(s, 'seed-1')).toBeUndefined();
     const plant = s.objects.find(o => o.kind === 'plant');
     expect(plant).toMatchObject({ age: 0, height: 0, speed: 0, x: 600 });
     expect(s.pits[0].plant).toBe(plant.id);
+    expect(s.seeds).toBe(1);
   });
 
-  test('an occupied pit does not accept a second seed', () => {
+  test('an occupied pit takes no second seed, and an empty one needs a seed in the count', () => {
     let s = planted();
-    s.actors[1].x = 90;
-    s = action(s, { type: 'grab', actor: 1 });
-    s.actors[1].x = 600;
-    s = action(s, { type: 'grab', actor: 1 });
-    expect(s.objects.filter(o => o.kind === 'plant')).toHaveLength(1);
-    expect(get(s, 'seed-0').held).toBe(null);
+    expect(s.seeds).toBe(0);
+    s.seeds = 1;
+    expect(validateAction(s, 'local', { type: 'grab', actor: 1 }).error).toBe('grabRange');
+    s.pits.push({ id: 'pit-9', x: 300, y: 540, plant: null });
+    s.seeds = 0; s.actors[1].x = 300;
+    expect(validateAction(s, 'local', { type: 'grab', actor: 1 }).error).toBe('noSeeds');
   });
 
   test('bloom ignores loose seeds and crates', () => {
@@ -66,7 +70,7 @@ describe('time flow', () => {
   });
 
   test('bloom wakes a plant, which then grows linearly with time', () => {
-    let s = action(planted(), { type: 'ability', actor: 1 });
+    let s = action(planted(), { type: 'ability', actor: 1, target: 'plant-0' });
     expect(plantOf(s).speed).toBe(1);
     s = step(s, G / 4);
     expect(plantOf(s).height).toBeCloseTo(H / 4, 5);
@@ -76,16 +80,16 @@ describe('time flow', () => {
 
   test('blooming an awake plant makes it grow faster, up to a cap', () => {
     let s = planted();
-    for (let i = 0; i < meta.time.maxSpeed; i++) s = action(s, { type: 'ability', actor: 1 });
+    for (let i = 0; i < meta.time.maxSpeed; i++) s = action(s, { type: 'ability', actor: 1, target: 'plant-0' });
     expect(plantOf(s).speed).toBe(meta.time.maxSpeed);
-    expect(validateAction(s, 'local', { type: 'ability', actor: 1 }).error).toBe('maxSpeed');
+    expect(validateAction(s, 'local', { type: 'ability', actor: 1, target: 'plant-0' }).error).toBe('maxSpeed');
     s = step(s, 100);
     expect(plantOf(s).height).toBeCloseTo(H * 100 * meta.time.maxSpeed / G, 5);
   });
 
   test('a plant growing under an actor standing on its pit lifts them', () => {
     let s = planted();
-    for (let i = 0; i < 3; i++) s = action(s, { type: 'ability', actor: 1 });
+    for (let i = 0; i < 3; i++) s = action(s, { type: 'ability', actor: 1, target: 'plant-0' });
     s = step(s, G / 6);
     expect(s.actors[1].on).toBe(plantOf(s).id);
     expect(s.actors[1].y).toBeCloseTo(540 - plantOf(s).height, 5);
@@ -95,7 +99,7 @@ describe('time flow', () => {
 
   test('a fully grown plant stays lush for a while, then withers, then vanishes, freeing its pit and dropping its rider', () => {
     let s = planted();
-    for (let i = 0; i < 3; i++) s = action(s, { type: 'ability', actor: 1 });
+    for (let i = 0; i < 3; i++) s = action(s, { type: 'ability', actor: 1, target: 'plant-0' });
     s = step(s, G / 3);
     expect(plantOf(s)).toMatchObject({ height: H, withered: false });
     expect(M).toBeGreaterThan(0);
@@ -113,7 +117,7 @@ describe('time flow', () => {
   });
 
   test('jumping from a young sprout goes higher than jumping from the ground', () => {
-    let s = action(planted(), { type: 'ability', actor: 1 });
+    let s = action(planted(), { type: 'ability', actor: 1, target: 'plant-0' });
     s = step(s, Math.round(G * 30 / H));
     expect(plantOf(s).height).toBeLessThan(springHeight);
     expect(s.actors[1].on).toBe(plantOf(s).id);
@@ -127,10 +131,10 @@ describe('time flow', () => {
 
   test('jumping from a tall tree is an ordinary jump', () => {
     let s = planted();
-    for (let i = 0; i < 3; i++) s = action(s, { type: 'ability', actor: 1 });
+    for (let i = 0; i < 3; i++) s = action(s, { type: 'ability', actor: 1, target: 'plant-0' });
     s = step(s, G / 6);
     s.actors[0].x = 450; // Still walks within reach of the mushroom
-    s = action(s, { type: 'ability', actor: 0 });
+    s = action(s, { type: 'ability', actor: 0, target: 'plant-0' });
     const rise = s.actors[1].y - apex(action(s, { type: 'jump', actor: 1 }), 1);
     const ground = setup({ level: 1 });
     expect(rise).toBeCloseTo(ground.actors[1].y - apex(action(ground, { type: 'jump', actor: 1 }), 1), 0);
@@ -144,7 +148,7 @@ describe('time flow', () => {
     s = step(s, 30);
     expect(s.actors[0].x).toBeLessThan(tree.x - 42);
     s.actors[1].x = tree.x - 100;
-    s = action(s, { type: 'ability', actor: 1 });
+    s = action(s, { type: 'ability', actor: 1, target: 'plant-0' });
     s = step(s, 40);
     expect(s.flags.withered).toBe(true);
     expect(s.actors[0].x).toBeGreaterThan(tree.x + 42);
@@ -195,11 +199,11 @@ describe('still', () => {
   });
 
   test('freezing a plant mid-growth slows its clock and its growth to a crawl', () => {
-    let s = action(planted(), { type: 'ability', actor: 1 });
-    s = action(s, { type: 'ability', actor: 1 }); s = action(s, { type: 'ability', actor: 1 });
+    let s = action(planted(), { type: 'ability', actor: 1, target: 'plant-0' });
+    s = action(s, { type: 'ability', actor: 1, target: 'plant-0' }); s = action(s, { type: 'ability', actor: 1, target: 'plant-0' });
     s = step(s, 10);
     s.actors[0].x = 450; // Still walks within reach of the mushroom
-    s = action(s, { type: 'ability', actor: 0 });
+    s = action(s, { type: 'ability', actor: 0, target: 'plant-0' });
     const frozen = { ...s.objects.find(o => o.kind === 'plant') };
     s = step(s, G / 10);
     expect(plantOf(s).age).toBeCloseTo(frozen.age + 3 * meta.time.frozenRate * G / 10, 5);
@@ -213,46 +217,23 @@ describe('still', () => {
   });
 });
 
-describe('auto-targeting', () => {
-  const crate = (id, x, y, extra = {}) => ({ kind: 'crate', id, x, y, vx: 0, vy: 0, frozen: false, held: null, spawnX: x, spawnY: y, ...extra });
-  const onMover = () => { const s = setup({ level: 3 }); Object.assign(s.actors[0], { x: 600, y: 290, on: 'mover-0', grounded: true, facing: 1 }); return s; };
-
-  test('the platform you stand on loses to anything else in range', () => {
-    const s = onMover();
-    Object.assign(get(s, 'crate-0'), { x: 760, y: 263 });
-    expect(targetFor(s, 0).id).toBe('crate-0');
+describe('aiming is always the player\'s', () => {
+  test('an ability with no aim is refused: nothing is picked for the player', () => {
+    const s = setup({ level: 3 });
+    Object.assign(s.actors[0], { x: 300 }); Object.assign(s.actors[1], { x: 300 });
+    expect(validateAction(s, 'local', { type: 'ability', actor: 0 }).error).toBe('aim');
+    expect(validateAction(s, 'local', { type: 'ability', actor: 1 }).error).toBe('aim');
+    expect(abilityTarget(s, 1)).toBeUndefined();
   });
 
-  test('the platform you stand on is still chosen when nothing else is in range', () => {
-    const s = onMover();
-    s.objects = s.objects.filter(o => o.id === 'mover-0');
-    expect(targetFor(s, 0).id).toBe('mover-0');
-  });
-
-  test('objects in front of the actor beat slightly closer ones behind', () => {
-    const s = setup();
-    s.objects = [crate('behind', 190, 493), crate('front', 330, 493)];
-    Object.assign(s.actors[0], { x: 250, facing: 1 });
-    expect(targetFor(s, 0).id).toBe('front');
-    s.actors[0].facing = -1;
-    expect(targetFor(s, 0).id).toBe('behind');
-  });
-
-  test('still prefers a crate in flight over a closer resting one', () => {
-    const s = setup();
-    s.objects = [crate('resting', 320, 493), crate('flying', 400, 420, { vx: 6.8, vy: -2 })];
-    Object.assign(s.actors[0], { x: 250, facing: 1 });
-    expect(targetFor(s, 0).id).toBe('flying');
-  });
-
-  test('bloom ignores the motion bonus and still skips the platform underfoot', () => {
-    const s = onMover();
-    Object.assign(s.actors[1], { x: 600, y: 290, on: 'mover-0', grounded: true, facing: 1 });
-    s.objects.find(o => o.id === 'mover-0').speed = 1;
-    s.actors[1].x = 640;
-    const plant = { kind: 'plant', id: 'p', pit: 'pit-0', x: 760, base: 520, age: 0, height: 0, withered: false, speed: 0, frozen: false, barrier: false };
-    s.objects.push(plant);
-    expect(targetFor(s, 1).id).toBe('p');
+  test('an aimed cast works: a point for Still, a named object within reach for Bloom', () => {
+    const s = setup({ level: 3 });
+    Object.assign(s.actors[0], { x: 300 }); Object.assign(s.actors[1], { x: 520 });
+    expect(validateAction(s, 'local', { type: 'ability', actor: 0, x: 360, y: 480 }).valid).toBe(true);
+    const near = s.objects.find(o => o.kind === 'mover');
+    expect(abilityTarget(s, 1, { target: near.id })?.id).toBe(near.id);
+    expect(validateAction(s, 'local', { type: 'ability', actor: 1, target: near.id }).valid).toBe(true);
+    expect(validateAction(s, 'local', { type: 'ability', actor: 1, target: 'nothing-here' }).error).toBe('bloomRange');
   });
 });
 
@@ -408,36 +389,21 @@ describe('room rules', () => {
 });
 
 describe('review fixes', () => {
-  test('bloom auto-target skips full-speed plants and picks the nearest usable one', () => {
-    let s = setup({ level: 3 });
-    s.actors[1].x = 400; s = action(s, { type: 'grab', actor: 1 });
-    s.actors[1].x = 345; s = step(s); // Collect the extra Hasten charge needed to wake the second plant.
-    s.actors[1].x = 110; s = action(s, { type: 'grab', actor: 1 });
-    s.actors[1].x = 60; s = action(s, { type: 'grab', actor: 1 });
-    for (let i = 0; i < meta.time.maxSpeed; i++) s = action(s, { type: 'ability', actor: 1, target: 'plant-1' });
-    s.actors[1].x = 130; // both pits within reach; the full-speed one is nearer
-    s = action(s, { type: 'ability', actor: 1 });
-    expect(get(s, 'plant-0').speed).toBe(1);
-    expect(get(s, 'plant-1').speed).toBe(meta.time.maxSpeed);
-  });
-
   test('bloom still wakes and hastens a mushroom inside a Freeze Area; it then grows at the slowed rate', () => {
     let s = planted();
     s.actors[0].x = 560;
-    s = action(s, { type: 'ability', actor: 0 });
+    s = action(s, { type: 'ability', actor: 0, target: 'plant-0' });
     expect(plantOf(s)).toMatchObject({ frozen: true, speed: 0 });
-    s = action(s, { type: 'ability', actor: 1 });
+    s = action(s, { type: 'ability', actor: 1, target: 'plant-0' });
     expect(plantOf(s)).toMatchObject({ frozen: true, speed: 1 });
     const age = plantOf(s).age;
     s = step(s, 10);
     expect(plantOf(s).age).toBeCloseTo(age + 10 * meta.time.frozenRate, 5);
   });
 
-  test('a seed dropped on a crate rests on it', () => {
+  test('a seed falling onto a crate rests on it', () => {
     let s = setup();
-    s.objects.push({ kind: 'seed', id: 'seed-9', x: 0, y: 0, vx: 0, vy: 0, held: 1, spawnX: 100, spawnY: 100 });
-    Object.assign(s.actors[1], { x: 350, y: 466, on: 'crate-0', carrying: 'seed-9' });
-    s = action(s, { type: 'grab', actor: 1 });
+    s.objects.push({ kind: 'seed', id: 'seed-9', x: 350, y: 380, vx: 0, vy: 0, frozen: false, held: null, spawnX: 100, spawnY: 100 });
     s = step(s, 40);
     const seed = get(s, 'seed-9'), crate = get(s, 'crate-0');
     expect(seed.y).toBeCloseTo(crate.y - 27 - 10, 0);
@@ -454,7 +420,7 @@ describe('review fixes', () => {
   test('an item resting on a growing plant rides it up', () => {
     let s = planted();
     s.actors[1].x = 300;
-    for (let i = 0; i < 3; i++) s = action(s, { type: 'ability', actor: 1 });
+    for (let i = 0; i < 3; i++) s = action(s, { type: 'ability', actor: 1, target: 'plant-0' });
     s = step(s, 40);
     Object.assign(get(s, 'seed-0'), { x: 600, y: 540 - plantOf(s).height - 10, vx: 0, vy: 0, held: null });
     s = step(s, 120);

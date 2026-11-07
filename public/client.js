@@ -1,7 +1,7 @@
 import { playEffect, createGrowthAudio, createRewindAudio } from './sfx.js';
 import { createMusic } from './music.js';
 import { themeFor, MENU_MUSIC } from './themes.js';
-import { setup, applyAction, validateAction, viewFor, targetFor, hintLevel, levelCount, interactionFor, abilityCheck, abilityTargets, timeObjectAt, anchor, exitStatus, freezeAreaAt, freezePoint, freezeCheck, meta } from '../src/logic.js';
+import { setup, applyAction, validateAction, viewFor, hintLevel, levelCount, interactionFor, throwPath, abilityCheck, abilityTargets, timeObjectAt, anchor, exitStatus, freezeAreaAt, freezeCheck, meta } from '../src/logic.js';
 import { createHistory, compactFrame, rewindFrame, REWIND } from './rewind.js';
 import { S } from './strings.js';
 import { createRenderer } from './render.js';
@@ -59,6 +59,11 @@ const held = new Set();
 const touchPointers = new Map();
 let touchJumpActor = null, uiChapter = '', uiProgress = '', uiMode = '', touchKey = '';
 let skillAim = null;
+// Aiming a throw: drag the interact button while carrying a crate (touch). Shares the cancel button with skill aim.
+let throwAim = null;
+// Desktop aiming: hold F (skill) or E while carrying (throw), point with the mouse, let go to act; Esc cancels.
+// `mouseClient` is the last mouse position on screen (turned into a world point each frame, as the camera moves).
+let mouseAim = null, mouseClient = null;
 // Touch: the last drawn world (for tap hit-testing) and the short-lived feedback of the last tap.
 let lastView = null, tapEffect = null, tapIntroShown = false;
 // Height (px) the bottom touch controls take up; the camera lowers the world only as far as keeps the
@@ -85,6 +90,7 @@ app.innerHTML = `
         <div class="goal-heading">${icon('arrow')}<span>${S.objective}</span><span id="goal-count"></span></div>
         <p id="objective"></p><ul class="checklist" id="checklist" aria-live="polite"></ul>
       </section>
+      <div class="seed-counter" id="seed-counter" data-testid="seed-counter" hidden><img src="/sprites/seed.png" alt="" draggable="false"><span class="seed-counter-label">${S.seedsLabel}</span><strong id="seed-count"></strong></div>
       <div class="game-bottom"><div class="status-strip"><span class="live-dot"></span><span id="hud"></span><span class="freeze-count" id="freeze-count" data-testid="freeze-count"></span><span id="stage-count"></span></div>
         <div class="action-strip"><span class="controls-strip" id="controls"></span><button class="ability-chip" data-action="ability" id="ability" data-testid="ability">${icon('snow')}<span id="ability-label"></span>${key('F')}</button><button class="text-button switch-button" data-action="switch" aria-label="${S.switchRole}">${icon('swap')}${key('Tab')}</button></div>
       </div>
@@ -314,13 +320,19 @@ function updateUI() {
   noticeWaiting();
   const charges = state.freezeCharges ?? 0, freezeCount = document.querySelector('#freeze-count');
   freezeCount.textContent = S.freezeCount(charges); freezeCount.classList.toggle('empty', charges <= 0);
+  // Bloom's seeds, shown in courtyards that have somewhere to plant them.
+  const seedCounter = document.querySelector('#seed-counter'), seeds = state.seeds ?? 0;
+  seedCounter.hidden = !state.pits?.length;
+  seedCounter.classList.toggle('empty', seeds <= 0);
+  document.querySelector('#seed-count').textContent = S.seedCount(seeds);
+  seedCounter.setAttribute('aria-label', `${S.seedsLabel} ${seeds}`);
   checkWarning();
   document.body.classList.toggle('in-session', modal !== 'intro');
   pwa.refresh();
 }
 // Forget every held key, finger and joystick state without sending anything.
 function resetTouchState() {
-  clearSkillAim();
+  clearSkillAim(); clearThrowAim(); mouseAim = null;
   held.clear(); touchPointers.clear(); touchJumpActor = null;
   Object.assign(joy, { pointer: null, actor: null, dx: 0, dy: 0, dir: 0 });
   const stick = document.querySelector('.joystick');
@@ -542,6 +554,7 @@ document.addEventListener('click', event => {
   if (modal) return;
   canvas.focus({ preventScroll: true });
   if (action === 'switch') { clearInputs(); dispatch({ type: 'switch' }); return; }
+  if (action === 'ability') { toast(S.aimMouse); return; }
   dispatch({ type: action });
 });
 function movement() {
@@ -553,7 +566,7 @@ document.addEventListener('keydown', event => {
   const code = event.code;
   if (rewind) return;
   if (stageBusy()) { event.preventDefault(); return; }
-  if (code === 'Escape' && skillAim) { event.preventDefault(); clearSkillAim(); return; }
+  if (code === 'Escape' && (skillAim || throwAim || mouseAim)) { event.preventDefault(); clearSkillAim(); clearThrowAim(); mouseAim = null; return; }
   if (code === 'Escape') { event.preventDefault(); if (modal && !['intro', 'win'].includes(modal)) resume(); else if (!modal) setModal('pause'); return; }
   if (modal) {
     if (code === 'Tab') {
@@ -574,14 +587,18 @@ document.addEventListener('keydown', event => {
   initAudio(); held.add(code); movement();
   if (code === 'Tab' && !onlineMode) { clearInputs(); dispatch({ type: 'switch' }); }
   if (['KeyW', 'Space', 'ArrowUp'].includes(code) && !alreadyJumping) dispatch({ type: 'jump', actor });
-  if (['KeyE', 'Enter'].includes(code)) dispatch({ type: 'grab', actor });
-  if (['KeyF', 'KeyL'].includes(code)) dispatch({ type: 'ability', actor });
+  if (['KeyE', 'Enter'].includes(code)) {
+    if (interactionFor(lastView ?? state, actor).kind === 'throw') startMouseAim('throw', code, actor);
+    else dispatch({ type: 'grab', actor });
+  }
+  if (['KeyF', 'KeyL'].includes(code)) startMouseAim('skill', code, actor);
 });
 function keyboardJumpHeld() {
   return ['KeyW', 'Space', 'ArrowUp'].some(code => held.has(code));
 }
 document.addEventListener('keyup', event => {
   held.delete(event.code);
+  if (mouseAim && event.code === mouseAim.key) finishMouseAim();
   if (['KeyW', 'Space', 'ArrowUp'].includes(event.code) && !modal) {
     const actor = onlineMode ? network.actor : state.active;
     if (!keyboardJumpHeld() && touchJumpActor !== actor) dispatch({ type: 'jumpRelease', actor }, true);
@@ -665,7 +682,7 @@ function updateSkillAim(event) {
   const distance = Math.hypot(skillAim.x - skillAim.startX, skillAim.y - skillAim.startY);
   if (!skillAim.active && (distance >= 8 || performance.now() - skillAim.started >= 160)) {
     skillAim.active = true;
-    cancelAimButton.hidden = false;
+    cancelAimButton.hidden = false; cancelAimButton.setAttribute('aria-label', S.cancelAim);
     document.body.classList.add('skill-aiming');
   }
   if (skillAim.active) {
@@ -675,24 +692,49 @@ function updateSkillAim(event) {
   }
 }
 
-function aimPreview(view) {
-  if (!skillAim?.active || skillAim.overCancel || view?.status !== 'playing') return null;
-  const { actor, x, y, startX, startY, travel } = skillAim;
+// What casting at `point` would do (null point: not aimed yet). Nothing is chosen for the player: Still's area
+// goes where they point, Bloom acts on the object under the pointer.
+function skillPreview(view, actor, point) {
   const still = actor === 0, player = view.actors[actor];
+  if (!player) return null;
   const range = still ? meta.freeze.range : meta.controls.range;
   const origin = { x: player.x, y: player.y - (still ? 30 : 0) };
-  const offset = skillAimOffset(x - startX, y - startY, travel, range);
-  const point = offset && { x: Math.max(0, Math.min(view.width, origin.x + offset.x)), y: Math.max(0, Math.min(view.height, origin.y + offset.y)) };
+  if (!point) return { actor, origin, range, point: null, reason: 'aim' };
   if (still) {
-    const center = point ?? freezePoint(view);
-    const check = freezeCheck(view, center);
-    const reason = check !== 'ok' ? check : freezeAreaAt(view, center) ? 'freezeCovered' : 'ok';
-    return { actor, origin, range, point: center, radius: meta.freeze.radius, reason };
+    const check = freezeCheck(view, point);
+    const reason = check !== 'ok' ? check : freezeAreaAt(view, point) ? 'freezeCovered' : 'ok';
+    return { actor, origin, range, point, radius: meta.freeze.radius, reason };
   }
-  const candidates = abilityTargets(view, actor).filter(o => o.speed < meta.time.maxSpeed);
-  const target = point ? timeObjectAt(view, point, 30, candidates) : targetFor(view, actor);
-  const reason = skillCharges(view, actor) <= 0 ? 'noBloomCharges' : target ? abilityCheck(view, actor, target.id) : 'bloomRange';
-  return { actor, origin, range, point: target ? anchor(target) : point ?? origin, target: target?.id, reason };
+  const target = timeObjectAt(view, point, 30, abilityTargets(view, actor)) ?? timeObjectAt(view, point, 30);
+  const reason = !target ? 'bloomRange' : skillCharges(view, actor) <= 0 ? 'noBloomCharges' : abilityCheck(view, actor, target.id);
+  return { actor, origin, range, point: target ? anchor(target) : point, target: target?.id, reason };
+}
+const mouseWorld = () => mouseClient && renderer.worldPoint(mouseClient.x, mouseClient.y);
+
+function aimPreview(view) {
+  if (view?.status !== 'playing') return null;
+  if (mouseAim?.kind === 'skill') return skillPreview(view, mouseAim.actor, mouseWorld());
+  if (!skillAim?.active || skillAim.overCancel) return null;
+  const { actor, x, y, startX, startY, travel } = skillAim, player = view.actors[actor];
+  if (!player) return null;
+  const still = actor === 0, range = still ? meta.freeze.range : meta.controls.range;
+  const offset = skillAimOffset(x - startX, y - startY, travel, range);
+  const point = offset && { x: Math.max(0, Math.min(view.width, player.x + offset.x)), y: Math.max(0, Math.min(view.height, player.y - (still ? 30 : 0) + offset.y)) };
+  return skillPreview(view, actor, point);
+}
+
+// Why an aim can't be used, in words.
+function aimProblem(reason, actor) {
+  if (reason === 'aim') return touchLayout() ? S.aimTouch : S.aimMouse;
+  if (reason === 'range' || reason === 'outside') return actor === 0 ? S.errors.freezeRange : S.tapTooFar;
+  if (reason === 'unsupported') return S.tapUnsupported[actor];
+  return S.errors[reason] ?? S.errors.invalid;
+}
+function castSkill(preview) {
+  if (!preview) return;
+  if (preview.reason !== 'ok') { toast(aimProblem(preview.reason, preview.actor)); return; }
+  document.querySelector('#toast').classList.remove('show');
+  dispatch(preview.actor === 0 ? { type: 'ability', actor: 0, x: Math.round(preview.point.x), y: Math.round(preview.point.y) } : { type: 'ability', actor: preview.actor, target: preview.target });
 }
 
 function finishSkillAim(event, released) {
@@ -702,17 +744,83 @@ function finishSkillAim(event, released) {
   const preview = aimPreview(lastView);
   clearSkillAim();
   if (!released || overCancel || modal || stageBusy() || rewind || actor !== touchActor()) return;
-  if (!active) { touchAction('ability'); return; }
-  if (!preview) return;
-  if (preview.reason !== 'ok') {
-    toast(preview.reason === 'range' || preview.reason === 'outside' ? S.errors.freezeRange : S.errors[preview.reason]);
-    return;
-  }
-  dispatch(actor === 0 ? { type: 'ability', actor, ...preview.point } : { type: 'ability', actor, target: preview.target });
+  if (!active) { toast(S.aimTouch); return; } // a tap alone picks nothing: drag to aim
+  castSkill(preview);
 }
 
-cancelAimButton.addEventListener('pointerdown', event => { event.preventDefault(); clearSkillAim(); });
-cancelAimButton.addEventListener('click', clearSkillAim);
+// Throw aim works like skill aim: a short tap throws the default way; dragging aims, the drag's direction and
+// length (up to `travel`) setting the throw's direction and strength, shown as a dashed arc; releasing over the
+// cancel button (or Escape) keeps the crate.
+function clearThrowAim() {
+  if (!throwAim) return;
+  const { pointer } = throwAim;
+  throwAim = null;
+  touchPointers.delete(interactButton); interactButton.classList.remove('pressed');
+  if (!skillAim) { cancelAimButton.hidden = true; cancelAimButton.classList.remove('over'); document.body.classList.remove('skill-aiming'); }
+  if (interactButton.hasPointerCapture(pointer)) interactButton.releasePointerCapture(pointer);
+}
+function updateThrowAim(event) {
+  if (!throwAim || (event && throwAim.pointer !== event.pointerId)) return;
+  if (event) { throwAim.x = event.clientX; throwAim.y = event.clientY; }
+  if (!throwAim.active && Math.hypot(throwAim.x - throwAim.startX, throwAim.y - throwAim.startY) >= 8) {
+    throwAim.active = true;
+    cancelAimButton.hidden = false; cancelAimButton.setAttribute('aria-label', S.cancelThrow);
+    document.body.classList.add('skill-aiming');
+  }
+  if (throwAim.active) {
+    const { left, top, width, height } = cancelAimButton.getBoundingClientRect();
+    throwAim.overCancel = Math.hypot(throwAim.x - left - width / 2, throwAim.y - top - height / 2) <= width / 2;
+    cancelAimButton.classList.toggle('over', throwAim.overCancel);
+  }
+}
+// The throw velocity the current drag asks for (screen and world y both point down).
+function throwVelocity() {
+  const dx = throwAim.x - throwAim.startX, dy = throwAim.y - throwAim.startY, scale = meta.throw.maxSpeed / Math.max(throwAim.travel, Math.hypot(dx, dy));
+  return { vx: Math.round(dx * scale * 100) / 100, vy: Math.round(dy * scale * 100) / 100 };
+}
+// A mouse throw goes toward the pointer; the farther the pointer (up to THROW_REACH world units), the harder.
+const THROW_REACH = 360;
+function throwToward(view, actor, point) {
+  const p = view.actors[actor], dx = point.x - p.x, dy = point.y - (p.y + meta.throw.offset.y), distance = Math.hypot(dx, dy);
+  if (distance < 1) return null;
+  const speed = meta.throw.maxSpeed * Math.min(1, distance / THROW_REACH);
+  return { vx: Math.round(dx / distance * speed * 100) / 100, vy: Math.round(dy / distance * speed * 100) / 100 };
+}
+function throwPreview(view) {
+  if (mouseAim?.kind === 'throw' && view?.status === 'playing') {
+    const p = view.actors[mouseAim.actor], point = mouseWorld();
+    return p && p.carrying !== null ? { points: throwPath(view, mouseAim.actor, point ? throwToward(view, mouseAim.actor, point) : null) } : null;
+  }
+  if (!throwAim?.active || throwAim.overCancel || view?.status !== 'playing') return null;
+  const p = view.actors[throwAim.actor];
+  if (!p || p.carrying === null) return null;
+  return { points: throwPath(view, throwAim.actor, throwVelocity()) };
+}
+function finishThrowAim(event, released) {
+  if (throwAim?.pointer !== event.pointerId) return;
+  updateThrowAim(event);
+  const { actor, active, overCancel } = throwAim, aim = active ? throwVelocity() : null;
+  clearThrowAim();
+  if (!released || overCancel || modal || stageBusy() || rewind || actor !== touchActor()) return;
+  dispatch(aim ? { type: 'grab', actor, aim } : { type: 'grab', actor });
+}
+
+function startMouseAim(kind, key, actor) {
+  mouseAim = { kind, key, actor }; freezePreview = null;
+}
+function finishMouseAim() {
+  const aim = mouseAim, view = lastView; mouseAim = null;
+  if (!aim || !view || modal || stageBusy() || rewind || view.status !== 'playing') return;
+  if (aim.actor !== (onlineMode ? network.actor : state.active)) return; // switched character mid-aim
+  if (aim.kind === 'skill') { castSkill(skillPreview(view, aim.actor, mouseWorld())); return; }
+  if (view.actors[aim.actor]?.carrying === null) return;
+  const point = mouseWorld(), velocity = point && throwToward(view, aim.actor, point);
+  dispatch(velocity ? { type: 'grab', actor: aim.actor, aim: velocity } : { type: 'grab', actor: aim.actor });
+}
+
+const cancelAim = event => { event?.preventDefault(); clearSkillAim(); clearThrowAim(); cancelAimButton.setAttribute('aria-label', S.cancelAim); };
+cancelAimButton.addEventListener('pointerdown', cancelAim);
+cancelAimButton.addEventListener('click', () => cancelAim());
 // Each circle captures only its own pointer, so presses coexist with held movement and with each other.
 for (const button of document.querySelectorAll('[data-touch]')) {
   button.addEventListener('pointerdown', event => {
@@ -722,6 +830,9 @@ for (const button of document.querySelectorAll('[data-touch]')) {
     if (button === abilityButton) {
       const { clientX: x, clientY: y, pointerId: pointer } = event;
       skillAim = { pointer, actor: touchActor(), x, y, startX: x, startY: y, started: performance.now(), travel: Math.max(76, button.clientWidth * 1.15), active: false, overCancel: false };
+    } else if (button === interactButton && interactionFor(lastView ?? state, touchActor()).kind === 'throw') {
+      const { clientX: x, clientY: y, pointerId: pointer } = event;
+      throwAim = { pointer, actor: touchActor(), x, y, startX: x, startY: y, travel: Math.max(90, button.clientWidth * 1.4), active: false, overCancel: false };
     } else touchAction(button.dataset.touch);
     touchPointers.set(button, event.pointerId); button.classList.add('pressed');
   });
@@ -730,6 +841,7 @@ for (const button of document.querySelectorAll('[data-touch]')) {
     touchPointers.delete(button); button.classList.remove('pressed');
     if (button.dataset.touch === 'jump') releaseTouchJump();
     if (button === abilityButton) finishSkillAim(event, name === 'pointerup');
+    if (button === interactButton) finishThrowAim(event, name === 'pointerup');
   });
   // Keyboard / switch-access activation (pointer taps were already handled on pointerdown).
   button.addEventListener('keydown', event => { if (event.repeat && ['Enter', ' '].includes(event.key)) event.preventDefault(); });
@@ -740,6 +852,7 @@ for (const button of document.querySelectorAll('[data-touch]')) {
   });
 }
 abilityButton.addEventListener('pointermove', updateSkillAim);
+interactButton.addEventListener('pointermove', updateThrowAim);
 const chargeBadge = abilityButton.querySelector('.skill-charges');
 function updateTouchControls(view) {
   if (!document.body.classList.contains('touch-layout') || !view?.actors) return;
@@ -757,7 +870,7 @@ function updateTouchControls(view) {
   interactButton.classList.toggle('bloom', actor === 1);
   interactButton.classList.toggle('unavailable', !interaction.available);
   interactButton.dataset.kind = interaction.kind;
-  interactButton.innerHTML = `${itemArt(['drop', 'plant'].includes(interaction.kind) ? 'seed' : 'crate')}<span>${S.interact[interaction.kind]}</span>`;
+  interactButton.innerHTML = `${itemArt(interaction.kind === 'plant' ? 'seed' : 'crate')}<span>${S.interact[interaction.kind]}</span>`;
   interactButton.setAttribute('aria-label', S.interact[interaction.kind]);
 }
 
@@ -805,15 +918,16 @@ function tapWorld(clientX, clientY) {
 const mouseCasts = () => !document.body.classList.contains('touch-layout') && (!onlineMode || network.actor === 0);
 canvas.addEventListener('pointerdown', event => {
   canvas.focus({ preventScroll: true });
-  if (modal || stageBusy() || rewind || skillAim || event.button !== 0) return;
+  if (modal || stageBusy() || rewind || skillAim || mouseAim || event.button !== 0) return;
   if (document.body.classList.contains('touch-layout')) { event.preventDefault(); initAudio(); tapWorld(event.clientX, event.clientY); return; }
   if (event.pointerType !== 'mouse' || !mouseCasts()) return;
   const point = renderer.worldPoint(event.clientX, event.clientY);
   if (point && lastView?.status === 'playing') { initAudio(); toggleFreeze(lastView, point); }
 });
 canvas.addEventListener('pointermove', event => {
-  freezePreview = event.pointerType === 'mouse' && mouseCasts() && !modal && !stageBusy() && !rewind ? renderer.worldPoint(event.clientX, event.clientY) : null;
+  freezePreview = event.pointerType === 'mouse' && mouseCasts() && !mouseAim && !modal && !stageBusy() && !rewind ? renderer.worldPoint(event.clientX, event.clientY) : null;
 });
+window.addEventListener('pointermove', event => { if (event.pointerType === 'mouse') mouseClient = { x: event.clientX, y: event.clientY }; });
 canvas.addEventListener('pointerleave', () => { freezePreview = null; });
 window.addEventListener('blur', () => { clearInputs(); if (!onlineMode && !modal && state.status === 'playing') setModal('pause'); audioContext?.suspend(); });
 window.addEventListener('orientationchange', () => clearInputs());
@@ -885,8 +999,8 @@ function frame(time) {
   const localMenu = ['pause', 'help', 'settings', 'confirm-restart', 'confirm-level'].includes(modal);
   const worldPaused = stageBusy() || (onlineMode ? modal !== null && !localMenu : !!modal) || state.status !== 'playing' || (onlineMode && (!network.connected || network.room?.suspended));
   const touch = touchLayout(), viewActor = onlineMode ? network.actor : state.active;
-  updateSkillAim();
-  const aim = aimPreview(displayState);
+  updateSkillAim(); updateThrowAim();
+  const aim = aimPreview(displayState), throwArc = throwPreview(displayState);
   const cancelPreview = freezePreview && freezeAreaAt(displayState, freezePreview);
   lastView = displayState;
   const tapAge = tapEffect ? (performance.now() - tapEffect.at) / 1400 : 1;
@@ -895,11 +1009,11 @@ function frame(time) {
     reduced, mode: touch ? 'coop' : 'solo', paused: worldPaused && !rewindInfo,
     sceneKey: outgoing?.sceneKey ?? sceneKey, cameraReset: outgoing?.cameraReset ?? cameraReset,
     celebration: celebration && { progress: Math.max(0, Math.min(1, (time - celebration.start) / celebration.duration)), finale: celebration.finale, tower: celebration.tower },
-    target: aim ? aim.target : touch && viewActor === 0 ? null : targetFor(state, state.active)?.id,
+    target: aim?.target ?? null,
     touch, tappable: !aim && touch && viewActor === 1 && displayState.status === 'playing' ? new Set(abilityTargets(displayState, viewActor).map(o => o.id)) : null,
     rewind: rewindInfo,
-    aim,
-    preview: freezePreview && displayState.status === 'playing' ? cancelPreview ? { ...cancelPreview, cancel: true } : { ...freezePreview, radius: meta.freeze.radius, valid: freezeCheck(displayState, freezePreview) === 'ok' } : null,
+    aim, throwArc,
+    preview: freezePreview && !mouseAim && displayState.status === 'playing' ? cancelPreview ? { ...cancelPreview, cancel: true } : { ...freezePreview, radius: meta.freeze.radius, valid: freezeCheck(displayState, freezePreview) === 'ok' } : null,
     tap: tapEffect && { ...tapEffect, age: tapAge },
     bottomInset: touch ? controlsReserve : 0,
   });

@@ -178,12 +178,12 @@ describe('Freeze Areas', () => {
     expect(validateAction(s, 'local', { type: 'ability', actor: STILL, x: 320, y: 480 }).error).toBe('noCharges');
   });
 
-  test('a keyboard cast (no point) centres on what Still would target, or just ahead of Still', () => {
-    let s = setup({ level: 0 });
+  test('a cast without an aimed point has no centre and is refused', () => {
+    const s = setup({ level: 0 });
     s.actors[STILL].x = 300;
-    expect(freezePoint(s)).toEqual({ x: 350, y: 493 });
-    s.objects = [];
-    expect(freezePoint(s)).toEqual({ x: 450, y: 450 });
+    expect(freezePoint(s)).toBe(null);
+    expect(freezePoint(s, { target: 'crate-0' })).toEqual({ x: 350, y: 493 }); // a named object is an aim too
+    expect(validateAction(s, 'local', { type: 'ability', actor: STILL }).error).toBe('aim');
   });
 
   test('Bloom keeps its acceleration and can hasten things inside an area', () => {
@@ -220,12 +220,11 @@ describe('role-specific resources', () => {
     expect(other.pickups.filter(c => c.kind === 'frost')).toHaveLength(2);
   });
 
-  test('each courtyard starts with a seed attached to Bloom and three Hasten charges', () => {
+  test('each courtyard starts with one seed in Bloom\'s count (hands free) and three Hasten charges', () => {
     for (let level = 0; level < 5; level++) {
       const s = setup({ level });
-      const bloom = s.actors[BLOOM];
-      expect(bloom.carrying).toBe('seed-starter');
-      expect(get(s, bloom.carrying)).toMatchObject({ kind: 'seed', held: BLOOM, x: bloom.x + 22, y: bloom.y - 40 });
+      expect(s.actors[BLOOM].carrying).toBe(null);
+      expect(s.seeds).toBe(1);
       expect(s.bloomCharges).toBe(3);
       expect(s.pickups.some(c => c.kind === 'bolt')).toBe(true);
     }
@@ -248,7 +247,7 @@ describe('role-specific resources', () => {
 describe('possible dead ends raise a warning; the game goes on', () => {
   test('a ledge only a mushroom reaches: warns once the last mushroom and seed are gone, without stopping play', () => {
     let s = setup({ level: 1 });
-    s.objects = s.objects.filter(o => o.kind !== 'seed');
+    s.objects = s.objects.filter(o => o.kind !== 'seed'); s.seeds = 0;
     Object.assign(s.actors[STILL], { x: s.exit.x, y: s.exit.y, on: 'platform-1' });
     s = tick(s);
     expect(s).toMatchObject({ status: 'playing', failure: 'stranded', failureSeq: 1 });
@@ -257,10 +256,12 @@ describe('possible dead ends raise a warning; the game goes on', () => {
     expect(s.failureSeq).toBe(1); // the same reason never re-warns
     s.objects.push({ kind: 'seed', id: 'seed-9', x: 90, y: 530, vx: 0, vy: 0, frozen: false, held: null, spawnX: 90, spawnY: 530 });
     s = tick(s);
-    expect(s.failure).toBe(null); // recovered: warning cleared
+    expect(s.failure).toBe(null); // recovered: a seed lying in the courtyard can still be collected
     s.objects = s.objects.filter(o => o.kind !== 'seed');
     s = tick(s);
     expect(s).toMatchObject({ failure: 'stranded', failureSeq: 2 }); // a new warning
+    s.seeds = 1; s = tick(s);
+    expect(s.failure).toBe(null); // a seed in Bloom's count is hope too
   });
 
   test('nothing is judged while someone is in the air (they may be landing on the ledge)', () => {
@@ -301,7 +302,7 @@ describe('possible dead ends raise a warning; the game goes on', () => {
 
   test('a wilting ancient mushroom still counts as hope until it is gone', () => {
     const s = setup({ level: 2 });
-    s.objects = s.objects.filter(o => o.kind !== 'seed');
+    s.objects = s.objects.filter(o => o.kind !== 'seed'); s.seeds = 0;
     Object.assign(s.actors[STILL], { x: s.exit.x, y: s.exit.y, on: 'platform-1' });
     expect(failureReason(s)).toBe(null);
     s.objects = s.objects.filter(o => o.kind !== 'plant');

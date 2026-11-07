@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { setup, applyAction, validateAction, heldPosition, interactionFor } from '../src/logic.js';
+import { setup, applyAction, validateAction, heldPosition, interactionFor, throwPath, meta } from '../src/logic.js';
 import { attachCarried } from '../public/network.js';
 
 const send = (state, type, actor = 0, extra = {}) => {
@@ -84,12 +84,16 @@ describe('contextual interaction label', () => {
     expect(interactionFor(send(state, 'grab'), 0)).toEqual({ kind: 'throw', available: true });
   });
 
-  test('a carried seed offers Plant beside an empty pit and Drop elsewhere', () => {
+  test('Bloom with a seed in the count is offered Plant beside an empty pit, and nothing to plant elsewhere', () => {
     const state = setup({ level: 1 });
     state.actors[1].x = 450;
-    expect(interactionFor(state, 1).kind).toBe('drop');
+    expect(interactionFor(state, 1)).toEqual({ kind: 'pickup', available: false });
     state.actors[1].x = 600;
-    expect(interactionFor(state, 1).kind).toBe('plant');
+    expect(interactionFor(state, 1)).toEqual({ kind: 'plant', available: true });
+    state.seeds = 0;
+    expect(interactionFor(state, 1).kind).toBe('pickup');
+    state.seeds = 1; state.actors[0].x = 600;
+    expect(interactionFor(state, 0).kind).toBe('pickup'); // only Bloom plants
   });
 });
 
@@ -131,5 +135,35 @@ describe('online rendering of carried boxes', () => {
     Object.assign(crate(predicted), { held: 0 }); predicted.actors[0].carrying = 'crate-0';
     const rendered = attachCarried({ ...server, actors: server.actors.map(a => ({ ...a })) }, predicted, 0);
     expect(crate(rendered).held).toBe(1);
+  });
+});
+
+describe('aimed throws', () => {
+  test('without an aim the crate goes the default way; with one it leaves along the aim and the thrower turns to face it', () => {
+    let state = send(carrying(), 'grab');
+    expect(crate(state)).toMatchObject({ held: null, vx: meta.throw.default.vx, vy: meta.throw.default.vy });
+    state = send(carrying(), 'grab', 0, { aim: { vx: -4, vy: -9 } });
+    expect(crate(state)).toMatchObject({ held: null, vx: -4, vy: -9, x: state.actors[0].x - meta.throw.offset.x });
+    expect(state.actors[0].facing).toBe(-1);
+  });
+
+  test('the server refuses an aim that is too strong, malformed, or with nothing to throw', () => {
+    const state = carrying();
+    for (const aim of [{ vx: 9, vy: -9 }, { vx: NaN, vy: 1 }, { vx: '3', vy: 1 }, null, 4]) expect(validateAction(state, 'local', { type: 'grab', actor: 0, aim }).valid).toBe(false);
+    const empty = setup({ level: 0 });
+    expect(validateAction(empty, 'local', { type: 'grab', actor: 0, aim: { vx: 3, vy: -3 } }).valid).toBe(false);
+  });
+
+  test('the dashed preview is the real flight, tick for tick, until the crate lands', () => {
+    const aim = { vx: -3, vy: -7 }, held = carrying(); // lands back on the starting ledge
+    const path = throwPath(held, 0, aim);
+    let state = send(held, 'grab', 0, { aim });
+    expect(path[0]).toEqual({ x: crate(state).x, y: crate(state).y });
+    for (let i = 1; i < path.length; i++) {
+      state = tick(state);
+      expect(crate(state).x).toBeCloseTo(path[i].x, 6);
+      expect(crate(state).y).toBeCloseTo(path[i].y, 6);
+    }
+    expect(crate(state).vy).toBe(0); // it has landed where the preview ends
   });
 });

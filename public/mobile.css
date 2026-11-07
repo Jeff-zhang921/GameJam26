@@ -93,3 +93,12 @@ body.touch-layout .modal button,body.touch-layout .modal .toggle{min-height:44px
 .freeze-count{margin-left:10px;padding:2px 8px;border-radius:999px;background:#bfeef42b;color:#e3fbfd;letter-spacing:.5px;white-space:nowrap}.freeze-count.empty{background:#f1a58f33;color:#ffd7cb}body.rewinding .touch-controls,body.rewinding .touch-controls button,body.rewinding .touch-controls .joystick,body.rewinding .touch-pause{pointer-events:none}body.rewinding .touch-controls,body.rewinding .touch-pause{opacity:.35}
 body.touch-layout .hud-label{display:none}
 body.rewinding .toast{opacity:0!important}
+/* Bloom's seed count, on the right of the play area. */
+.seed-counter{position:absolute;right:max(24px,var(--safe-right));top:22px;display:flex;align-items:center;gap:8px;padding:8px 14px 8px 10px;border:1px solid #e2edddad;border-radius:999px;background:#f8f9ed99;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);box-shadow:0 6px 24px #254d3e12;color:#234b47;pointer-events:none;z-index:2}
+.seed-counter[hidden]{display:none}
+.seed-counter img{width:22px;height:22px;object-fit:contain}
+.seed-counter-label{font-size:9px;letter-spacing:1.6px;text-transform:uppercase;color:#8b7238}
+.seed-counter strong{font:600 17px Georgia,serif}
+.seed-counter.empty strong{color:#b0634f}
+body.touch-layout .seed-counter{top:calc(var(--safe-top) + 64px);right:max(14px,var(--safe-right));padding:6px 12px 6px 8px}
+.shell.at-entry .seed-counter{opacity:0}
