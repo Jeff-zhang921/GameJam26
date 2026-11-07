@@ -12,7 +12,7 @@ export function createRenderer(canvas, S) {
   let transform;
   let entryProgress = 0;
   const cyan = '#a1e3e5', gold = '#e1c68a', muted = '#8aa89b';
-  const sprites = Object.fromEntries(['crate', 'seed', 'mushroom-grow', 'mushroom-die', 'still', 'mage'].map(name => { const img = new Image(); img.src = `/sprites/${name}.png`; return [name, img]; }));
+  const sprites = Object.fromEntries(['crate', 'seed', 'ground', 'mushroom-grow', 'mushroom-die', 'still', 'mage'].map(name => { const img = new Image(); img.src = `/sprites/${name}.png`; return [name, img]; }));
   const loaded = (...names) => names.every(name => sprites[name].complete && sprites[name].naturalWidth > 0);
   // Draws a sprite cropped to its art, centred on x and standing on `bottom`.
   function sprite(name, x, bottom, height, alpha) {
@@ -65,7 +65,32 @@ export function createRenderer(canvas, S) {
       canvas.width = Math.round(width * currentDpr); canvas.height = Math.round(height * currentDpr);
     }
   }
-  function platform(p) {
+  // ground.png: 4x4 variants of a grassy strip (each platform keeps one, picked by its index so neighbours differ), FRAME px each, its moss surface WALK px from the top.
+  // A platform's top is capped with the strip: left end, an odd number of middle tiles (alternately mirrored so
+  // every seam meets a matching edge), right end. Ends that touch the world edge are left open.
+  const GROUND = { frame: [528, 122], walk: 54, left: 172, right: 392, scale: .55 };
+  function groundCap(p, index) {
+    const img = sprites.ground, [fw, fh] = GROUND.frame, k = GROUND.scale, n = (index * 7 + 3) % 16;
+    const sx0 = n % 4 * fw, sy0 = Math.floor(n / 4) * fh, top = p.y - GROUND.walk * k, h = fh * k;
+    const piece = (from, to, x, w, mirror = false) => {
+      if (!mirror) return ctx.drawImage(img, sx0 + from, sy0, to - from, fh, x, top, w, h);
+      ctx.save(); ctx.translate(x + w, 0); ctx.scale(-1, 1); ctx.drawImage(img, sx0 + from, sy0, to - from, fh, 0, top, w, h); ctx.restore();
+    };
+    const openLeft = p.x <= 0, openRight = p.x + p.w >= 1280;
+    const L = openLeft ? 0 : GROUND.left * k, R = openRight ? 0 : (fw - GROUND.right) * k, M = (GROUND.right - GROUND.left) * k;
+    let count = Math.max(1, Math.round((p.w - L - R) / M)); if (count % 2 === 0) count++;
+    const tile = (p.w - L - R) / count;
+    if (!openLeft) piece(0, GROUND.left, p.x, L);
+    for (let i = 0; i < count; i++) piece(GROUND.left, GROUND.right, p.x + L + i * tile, tile + .5, i % 2 === 1);
+    if (!openRight) piece(GROUND.right, fw, p.x + p.w - R, R);
+  }
+  function platform(p, index) {
+    if (loaded('ground')) {
+      const g = ctx.createLinearGradient(0, p.y, 0, 650); g.addColorStop(0, '#4f4a33'); g.addColorStop(1, '#1f2a22'); ctx.fillStyle = g; ctx.fillRect(p.x, p.y + 12, p.w, p.h - 12);
+      for (let x = p.x + 20; x < p.x + p.w - 30; x += 99) arch(ctx, x, p.y + 70, 63, p.h, '#c9b88a1c', 2);
+      line(ctx, [[p.x, p.y + 30], [p.x, 640]], '#d8c79a30'); line(ctx, [[p.x + p.w, p.y + 30], [p.x + p.w, 640]], '#d8c79a30');
+      return groundCap(p, index);
+    }
     const g = ctx.createLinearGradient(0, p.y, 0, 650); g.addColorStop(0, '#35534c'); g.addColorStop(1, '#123239'); ctx.fillStyle = g; ctx.fillRect(p.x, p.y, p.w, p.h);
     ctx.fillStyle = '#b9c0a4'; ctx.fillRect(p.x, p.y, p.w, 8); ctx.fillStyle = '#647c66'; ctx.fillRect(p.x, p.y + 8, p.w, 13); ctx.fillStyle = '#1b3839'; ctx.fillRect(p.x, p.y + 21, p.w, 6);
     line(ctx, [[p.x, p.y - 1], [p.x + p.w, p.y - 1]], '#e5ddba', 1.5);
@@ -292,7 +317,7 @@ export function createRenderer(canvas, S) {
     ctx.save(); ctx.beginPath(); ctx.rect(0, 0, state.width, state.height); ctx.clip();
     ctx.drawImage(background, 0, 0);
     ctx.save(); ctx.translate(780, 158); ctx.rotate(t * .00003); line(ctx, [[0, 9], [0, -62]], '#d8c99777', 2); line(ctx, [[-28, 0], [8, 0]], '#d8c99777', 2); circle(ctx, 0, 0, 3, '#cfc7a1'); ctx.restore();
-    for (const p of state.platforms) platform(p);
+    state.platforms.forEach(platform);
     const target = options.target;
     // Touch: bracket every object the active character can reach (what a tap would act on).
     const marked = o => options.tappable ? options.tappable.has(o.id) : o.id === target;
