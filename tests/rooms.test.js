@@ -90,6 +90,17 @@ describe('rooms and shared lobby', () => {
     expect(f.last(f.host, 'snapshot')).toEqual(f.last(f.guest, 'snapshot'));
     expect(f.last(f.host, 'snapshot').game.history).toBeUndefined();
   });
+  test('an aimed throw reaches the shared game with its aim; a bad aim is refused', () => {
+    const f = fixture(); f.start();
+    const input = (ws, seq, action) => f.send(ws, { type: 'input', seq, action });
+    Object.assign(f.room.game.actors[0], { x: 300 }); // Still (the guest) beside the crate
+    input(f.guest, 1, { type: 'grab' });
+    expect(f.room.game.actors[0].carrying).toBe('crate-0');
+    input(f.guest, 2, { type: 'grab', aim: { vx: 50, vy: -50 } });
+    expect(f.last(f.guest, 'error').code).toBe('invalid');
+    input(f.guest, 3, { type: 'grab', aim: { vx: -3, vy: -7 } });
+    expect(f.room.game.objects.find(o => o.id === 'crate-0')).toMatchObject({ held: null, vx: -3, vy: -7 });
+  });
   test('different room codes isolate input and state', () => {
     const f = fixture(); f.start();
     const other = f.socket(); f.send(other, { type: 'create' });

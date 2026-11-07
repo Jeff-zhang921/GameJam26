@@ -1,4 +1,4 @@
-import { makeEnemy, updateEnemies, enemyBox, isEnemy, isHazard, isMoving, isSolidEnemy, FROZEN_RATE } from './enemies.js';
+import { makeEnemy, updateEnemies, enemyBox, isEnemy, isHazard, isSolidEnemy, FROZEN_RATE } from './enemies.js';
 import { LEVELS } from './levels/index.js';
 import { growFrame, dieFrame } from './mushroom.js';
 
@@ -157,13 +157,12 @@ export function applyFreezeAreas(state) {
   return state;
 }
 
-// Where a Freeze Area would be centred: an explicit point (tap / click), a named object, or by default the
-// object Still would target, else just ahead of Still.
+// Where a Freeze Area would be centred: the point the player aimed at, or a named object. Nothing is chosen for
+// the player: with neither there is no point.
 export function freezePoint(state, action = {}) {
   if (action.x !== undefined || action.y !== undefined) return Number.isFinite(action.x) && Number.isFinite(action.y) ? { x: action.x, y: action.y } : null;
   if (action.target !== undefined) { const o = typeof action.target === 'string' && find(state, action.target); return o && free(o) ? anchor(o) : null; }
-  const p = state.actors[STILL], aim = targetFor(state, STILL);
-  return aim ? anchor(aim) : { x: p.x + p.facing * 150, y: p.y - 70 };
+  return null;
 }
 
 // Can Still cast a Freeze Area here? 'ok', 'noCharges', 'range' (too far from Still) or 'outside' (off the world).
@@ -190,17 +189,9 @@ export function timeObjectAt(state, point, slop = 0, candidates = state.objects)
   return best;
 }
 
-export function targetFor(state, actor, action = {}) {
-  const p = state.actors[actor];
-  const candidates = abilityTargets(state, actor);
-  if (action.target !== undefined) return candidates.find(o => o.id === action.target);
-  const moving = o => isEnemy(o) ? isMoving(o) : !o.frozen && (o.kind === 'crate' ? Math.abs(o.vx) + Math.abs(o.vy) > 0.5 : o.speed > 0 && !o.withered);
-  const score = o => {
-    const a = anchor(o);
-    return dist(p, a) + (o.id === p.on ? 1000 : 0) + ((a.x - p.x) * p.facing < -10 ? 120 : 0) - (actor === STILL && moving(o) ? 150 : 0);
-  };
-  const sorted = candidates.sort((a, b) => score(a) - score(b));
-  return actor === STILL ? sorted[0] : sorted.find(o => o.speed < meta.time.maxSpeed) || sorted[0];
+// The object Bloom aimed at (`action.target`), if Bloom's ability can reach it. Nothing is chosen for the player.
+export function abilityTarget(state, actor, action = {}) {
+  return action.target === undefined ? undefined : abilityTargets(state, actor).find(o => o.id === action.target);
 }
 
 function pickable(state, p) {
@@ -284,13 +275,15 @@ export function validateAction(state, playerId, action) {
     if (action.target !== undefined && typeof action.target !== 'string') return no('invalid');
     if (action.actor === STILL) {
       const point = freezePoint(state, action);
+      if (!point && action.x === undefined && action.target === undefined) return no('aim');
       const check = freezeCheck(state, point);
       // A point cast from an older client snapshot must not spend a charge on a circle already there.
       if (check === 'ok' && action.x !== undefined && freezeAreaAt(state, point)) return no('freezeCovered');
       return check === 'ok' ? { valid: true } : no(check === 'noCharges' ? 'noCharges' : 'freezeRange');
     }
     if (action.x !== undefined || action.y !== undefined) return no('invalid');
-    const target = targetFor(state, action.actor, action);
+    if (action.target === undefined) return no('aim');
+    const target = abilityTarget(state, action.actor, action);
     if (!target) return no('bloomRange');
     if (target.speed >= meta.time.maxSpeed) return no('maxSpeed');
     if (state.bloomCharges <= 0) return no('noBloomCharges');
@@ -625,7 +618,7 @@ export function applyAction(state, playerId, action) {
       event(s, 'freeze', at.x, at.y, { caster: action.actor, area: id });
     } else {
       // Bloom keeps its acceleration: wake a sleeping clock, or hasten it (up to the maximum).
-      const o = targetFor(s, action.actor, action);
+      const o = abilityTarget(s, action.actor, action);
       s.bloomCharges--;
       const woke = o.speed === 0; o.speed++; event(s, woke ? 'wake' : 'grow', anchor(o).x, anchor(o).y, { caster: action.actor, target: o.id });
     }

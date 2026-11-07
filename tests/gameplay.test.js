@@ -178,12 +178,12 @@ describe('Freeze Areas', () => {
     expect(validateAction(s, 'local', { type: 'ability', actor: STILL, x: 320, y: 480 }).error).toBe('noCharges');
   });
 
-  test('a keyboard cast (no point) centres on what Still would target, or just ahead of Still', () => {
-    let s = setup({ level: 0 });
+  test('a cast without an aimed point has no centre and is refused', () => {
+    const s = setup({ level: 0 });
     s.actors[STILL].x = 300;
-    expect(freezePoint(s)).toEqual({ x: 350, y: 493 });
-    s.objects = [];
-    expect(freezePoint(s)).toEqual({ x: 450, y: 450 });
+    expect(freezePoint(s)).toBe(null);
+    expect(freezePoint(s, { target: 'crate-0' })).toEqual({ x: 350, y: 493 }); // a named object is an aim too
+    expect(validateAction(s, 'local', { type: 'ability', actor: STILL }).error).toBe('aim');
   });
 
   test('Bloom keeps its acceleration and can hasten things inside an area', () => {

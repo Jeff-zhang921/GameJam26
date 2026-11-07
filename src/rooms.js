@@ -1,5 +1,5 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { setup, validateAction, applyAction, targetFor } from './logic.js';
+import { setup, validateAction, applyAction } from './logic.js';
 
 const characters = { still: 0, bloom: 1 };
 const lobbyStatuses = new Set(['WAITING', 'READY']);
@@ -210,10 +210,11 @@ export function createRoomManager({ now = Date.now, countdownMs = 3000, reconnec
     if (room.status !== 'PLAYING' || room.suspended || room.rewind) { error(ws, 'NOT_PLAYING', 'Wait until both players are playing.', seq); return; }
     const authoritativeAction = { type: action.type, actor: actorOf(player), ...(action.type === 'move' ? { dir: action.dir } : {}) };
     if (action.type === 'ability') Object.assign(authoritativeAction, { target: action.target, x: action.x, y: action.y, area: action.area });
+    if (action.type === 'grab' && action.aim !== undefined) authoritativeAction.aim = action.aim; // an aimed throw
     const result = validateAction(room.game, player.id, authoritativeAction);
     if (!result.valid) { error(ws, result.error, 'That action is unavailable.', seq); return; }
     const casting = action.type === 'ability' && action.area === undefined;
-    const castTarget = casting ? targetFor(room.game, actorOf(player), authoritativeAction)?.id : null;
+    const castTarget = casting && typeof action.target === 'string' ? action.target : null;
     room.game = applyAction(room.game, player.id, authoritativeAction);
     updateAnimations(room, casting ? actorOf(player) : null, castTarget);
     if (action.type === 'ability' && action.area !== undefined) broadcast(room, 'snapshot');

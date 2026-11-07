@@ -363,9 +363,10 @@ export function createRenderer(canvas, S) {
     ctx.restore();
   }
   function aimedCast({ actor, origin, point, range, radius, target, reason }) {
-    const color = reason === 'ok' ? actor === 0 ? '#bff8ff' : '#ffe293' : '#f4a58a';
+    const color = reason === 'ok' || reason === 'aim' ? actor === 0 ? '#bff8ff' : '#ffe293' : '#f4a58a';
     ctx.save(); ctx.setLineDash([8, 9]);
     circle(ctx, origin.x, origin.y, range, null, `${color}64`, 1.5);
+    if (!point) { ctx.restore(); return; } // not aimed yet: just the reach
     line(ctx, [[origin.x, origin.y - (actor === 1 ? 25 : 0)], [point.x, point.y]], `${color}ae`, 1.5);
     ctx.setLineDash([]);
     circle(ctx, point.x, point.y, radius ?? (target ? 23 : 12), `${color}18`, color, 2.5);
