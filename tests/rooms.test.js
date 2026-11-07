@@ -81,10 +81,11 @@ describe('rooms and shared lobby', () => {
     expect(f.room.game.objects.find(o => o.id === 'crate-0').frozen).toBe(true);
     const cast = cloneActor(f.room.game.actors[0]);
     f.advance(50); expect(f.room.game.actors[0].animation).toEqual(cast.animation);
+    expect(f.room.game.freezeAreas).toHaveLength(1);
+    // Bloom keeps acceleration only: a crate has no clock to hasten, and the server says so.
     input(f.host, 3, { type: 'ability', target: 'crate-0' });
-    expect(f.room.game.objects.find(o => o.id === 'crate-0').frozen).toBe(false);
-    expect(f.room.game.actors[1].animation.name).toBe('cast');
-    expect(f.room.game.actors[1].abilityTarget).toBe('crate-0');
+    expect(f.last(f.host, 'error')).toMatchObject({ code: 'bloomRange', seq: 3 });
+    expect(f.room.game.objects.find(o => o.id === 'crate-0').frozen).toBe(true);
     f.advance(50);
     expect(f.last(f.host, 'snapshot')).toEqual(f.last(f.guest, 'snapshot'));
     expect(f.last(f.host, 'snapshot').game.history).toBeUndefined();
@@ -148,5 +149,65 @@ describe('rewind removal', () => {
     const game = f.last(f.host, 'snapshot').game;
     expect(game.history).toBeUndefined();
     expect(game.rewindsLeft).toBeUndefined();
+  });
+});
+
+describe('host level select and shared failure', () => {
+  test('only the host can move both players to another courtyard, and both arrive together', () => {
+    const f = fixture(); f.start();
+    f.send(f.guest, { type: 'control', action: 'level', level: 2 });
+    expect(f.last(f.guest, 'error').code).toBe('HOST_ONLY');
+    f.send(f.host, { type: 'control', action: 'level', level: 9 });
+    expect(f.last(f.host, 'error').code).toBe('INVALID_CONTROL');
+    const epoch = f.room.epoch;
+    f.send(f.host, { type: 'control', action: 'level', level: 2 });
+    const host = f.last(f.host, 'snapshot'), guest = f.last(f.guest, 'snapshot');
+    expect(host.game.level).toBe(2);
+    expect(guest.game).toEqual(host.game);
+    expect(host.room.epoch).toBe(epoch + 1);
+    expect(host.room.status).toBe('PLAYING');
+  });
+
+  test('a possible dead end warns both players while play goes on; only the host restarts, as one shared 4 s rewind', () => {
+    const f = fixture(); f.start();
+    f.send(f.host, { type: 'control', action: 'level', level: 1 });
+    f.room.game.objects = f.room.game.objects.filter(o => o.kind !== 'seed');
+    Object.assign(f.room.game.actors[0], { x: f.room.game.exit.x, y: f.room.game.exit.y, on: 'platform-1' });
+    f.advance(50);
+    for (const ws of [f.host, f.guest]) expect(f.last(ws, 'snapshot').game).toMatchObject({ status: 'playing', failure: 'stranded', failureSeq: 1 });
+    const going = f.room.game.tick; f.advance(100);
+    expect(f.room.game.tick).toBeGreaterThan(going); // a warning never stops the courtyard
+    f.send(f.guest, { type: 'control', action: 'restart' });
+    expect(f.last(f.guest, 'error').code).toBe('HOST_ONLY');
+    const epoch = f.room.epoch;
+    f.send(f.host, { type: 'control', action: 'restart' });
+    const [hostReplay, guestReplay] = [f.last(f.host, 'replay'), f.last(f.guest, 'replay')];
+    expect(hostReplay.replay).toEqual(guestReplay.replay);
+    expect(hostReplay.replay.duration).toBe(4000);
+    expect(hostReplay.replay.end).toMatchObject({ level: 1, tick: 0, status: 'playing', failure: null });
+    expect(hostReplay.replay.end.objects.filter(o => o.kind === 'seed')).toHaveLength(2);
+    expect(hostReplay.room.rewinding.id).toBe(hostReplay.replay.id);
+    // During the rewind: no inputs, no second restart, and the shared world holds still.
+    f.send(f.guest, { type: 'input', seq: 1, action: { type: 'move', dir: 1 } });
+    expect(f.last(f.guest, 'error').code).toBe('NOT_PLAYING');
+    f.send(f.host, { type: 'control', action: 'restart' });
+    expect(f.last(f.host, 'error').code).toBe('REWINDING');
+    const held = f.room.game.tick;
+    f.advance(3900);
+    expect(f.room.game.tick).toBe(held);
+    expect(f.room.epoch).toBe(epoch);
+    f.advance(150);
+    for (const ws of [f.host, f.guest]) {
+      const snap = f.last(ws, 'snapshot');
+      expect(snap.room.epoch).toBe(epoch + 1);
+      expect(snap.room.rewinding).toBe(null);
+      expect(snap.game).toMatchObject({ level: 1, status: 'playing', failure: null });
+      expect(snap.game.objects.filter(o => o.kind === 'seed')).toHaveLength(2);
+    }
+    expect(f.last(f.host, 'snapshot').game).toEqual(f.last(f.guest, 'snapshot').game);
+    expect(f.room.players.map(p => p.character).sort()).toEqual(['bloom', 'still']);
+    f.send(f.guest, { type: 'input', seq: 2, action: { type: 'move', dir: 1 } });
+    f.advance(50);
+    expect(f.room.game.actors[0].move).toBe(1); // play resumes normally
   });
 });

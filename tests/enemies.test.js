@@ -9,7 +9,7 @@ const ofKind = (state, kind) => state.objects.filter(o => o.kind === kind);
 
 // A flat test courtyard: one floor at y=540, the given enemies, and actors parked far away.
 function arena(enemies, actors = [{ x: 60 }, { x: 1220 }]) {
-  const s = setup({ level: 1 });
+  const s = setup({ level: 0 }); // a courtyard without seeds, so the arena can never run out of them
   s.platforms = [{ x: 0, y: 540, w: 1280, h: 120 }];
   s.objects = enemies.map((e, i) => makeEnemy(e.kind, e, e.id ?? `${e.kind}-${i}`));
   s.nextEnemy = 100;
@@ -315,14 +315,16 @@ describe('strikes and slow freezing', () => {
     expect(get(s, 'g').attack).toBeLessThan(ENEMY.guard.attackEvery - 10);
   });
 
-  test('a frozen guard takes twenty times longer to strike', () => {
+  test('a guard inside a Freeze Area winds up at the slowed rate (1 / frozenRate times longer)', () => {
     let s = action(onGuard(), { type: 'ability', actor: 0, target: 'g' });
     expect(get(s, 'g').frozen).toBe(true);
-    s = step(s, ENEMY.guard.attackEvery * 5);
+    for (const a of s.freezeAreas) a.ticksLeft = 1e6; // measure the rate, not the area's lifetime
+    const slow = Math.floor(0.8 / meta.time.frozenRate);
+    s = step(s, ENEMY.guard.attackEvery * slow);
     expect(hitCount(s)).toBe(0);
     expect(s.actors[0].on).toBe('g');
-    expect(get(s, 'g').attack).toBeCloseTo(ENEMY.guard.attackEvery * 5 * meta.time.frozenRate, 5);
-    s = step(s, ENEMY.guard.attackEvery * 16);
+    expect(get(s, 'g').attack).toBeCloseTo(ENEMY.guard.attackEvery * slow * meta.time.frozenRate, 5);
+    s = step(s, ENEMY.guard.attackEvery * Math.ceil(0.5 / meta.time.frozenRate));
     expect(hitCount(s)).toBe(1);
   });
 
@@ -355,16 +357,14 @@ describe('strikes and slow freezing', () => {
     expect(attackCharge(m)).toBe(0);
   });
 
-  test('freezing a second enemy releases the first, while crates stay frozen', () => {
+  test('a Freeze Area slows exactly what it touches; a second area adds to it instead of releasing the first', () => {
     let s = arena([{ kind: 'guard', id: 'a', x: 400, y: 540, minX: 399, maxX: 401 }, { kind: 'guard', id: 'b', x: 600, y: 540, minX: 599, maxX: 601 }], [{ x: 500 }, { x: 60 }]);
     s.objects.push({ kind: 'crate', id: 'c', x: 500, y: 300, vx: 0, vy: 0, frozen: false, held: null, spawnX: 500, spawnY: 300 });
-    s = action(s, { type: 'ability', actor: 0, target: 'a' });
-    s = action(s, { type: 'ability', actor: 0, target: 'c' });
-    s = action(s, { type: 'ability', actor: 0, target: 'b' });
-    expect(get(s, 'a').frozen).toBe(false);
-    expect(get(s, 'b').frozen).toBe(true);
-    expect(get(s, 'c').frozen).toBe(true);
-    expect(s.events.some(e => e.kind === 'unfreeze' && e.x === 400)).toBe(true);
+    s = action(s, { type: 'ability', actor: 0, x: 400, y: 500 });
+    expect([get(s, 'a').frozen, get(s, 'b').frozen, get(s, 'c').frozen]).toEqual([true, false, false]);
+    s = action(s, { type: 'ability', actor: 0, x: 600, y: 500 });
+    expect([get(s, 'a').frozen, get(s, 'b').frozen, get(s, 'c').frozen]).toEqual([true, true, false]);
+    expect(s.actors.every(p => p.frozen === undefined)).toBe(true); // travellers are never slowed
   });
 
   test('a rider is stopped by a frozen crate above, not carried through it', () => {

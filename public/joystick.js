@@ -5,8 +5,9 @@ export const JOYSTICK = {
   // Jump fires when the thumb enters the upper region, measured as degrees above horizontal.
   // Upper-left / upper-right (~45°) and straight up all qualify; plain left / right do not.
   jumpEnter: { angle: 30, magnitude: 0.55 },
-  // Hysteresis: once in the jump region, the thumb must clearly leave it before another jump can start.
-  jumpExit: { angle: 18, magnitude: 0.4 },
+  // Hysteresis: once in the jump region, the thumb must clearly leave it (back to level or to the centre)
+  // before another jump can start, so a thumb resting on the diagonal never re-triggers.
+  jumpExit: { angle: 8, magnitude: 0.35 },
 };
 
 export function readJoystick(dx, dy, wasJumping = false, config = JOYSTICK) {

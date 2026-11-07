@@ -57,8 +57,8 @@ async (page) => {
   check(frozen.objects[0].frozen && cast.name === 'cast', 'Freeze or cast not shared');
   await host.waitForTimeout(60);
   check((await snapshot(guest)).actors[0].animation.startTick === cast.startTick, 'Snapshots restart cast animation');
-  await send(guest, { type: 'ability' }); await guest.waitForTimeout(80);
-  check(!(await snapshot(host)).objects[0].frozen, 'Bloom release not shared');
+  // Still's Freeze Area is shared state (Bloom no longer releases crates; areas fade on their own).
+  check((await snapshot(host)).freezeAreas.length === 1, 'Freeze Area not shared');
   const identity = await connection(guest);
   await guest.locator('#game').focus(); await guest.keyboard.press('Tab');
   check((await connection(guest)).actor === identity.actor, 'Tab changed online role');

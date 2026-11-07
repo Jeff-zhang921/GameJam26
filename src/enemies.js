@@ -1,7 +1,8 @@
 // Enemy-type world objects: guards, lanterns, launchers with their darts and orbs, nests with their mites.
-// They are always active, but only age once Bloom has hastened them. Still slows them to FROZEN_RATE.
+// They are always active, but only age once Bloom has hastened them. Inside a Freeze Area they run at FROZEN_RATE.
 // Guards, lanterns and adult mites are solid and strike whoever touches them on a fixed rhythm.
-export const FROZEN_RATE = 0.05;
+// Local time inside one of Still's Freeze Areas (configurable): 0.2 means everything there runs at a fifth of normal speed.
+export const FROZEN_RATE = 0.2;
 const STRIKE_CUE_RANGE = 520;
 export const ENEMY = {
   guard: { w: 40, h: 50, life: 1200, patrol: 1.2, chase: 2.6, see: 260, seeHeight: 80, attackEvery: 90, windup: 24 },

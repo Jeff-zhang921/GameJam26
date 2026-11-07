@@ -32,8 +32,10 @@ describe('virtual joystick', () => {
   test('hysteresis keeps a jump held near the boundary and releases only after clearly leaving', () => {
     expect(read(25, 1, false).jump).toBe(false);
     expect(read(25, 1, true).jump).toBe(true);
-    expect(read(45, 0.45, true).jump).toBe(true);
-    expect(read(10, 1, true).jump).toBe(false);
+    // A thumb resting on the diagonal drifts; it still counts as "held up" until it is back to level.
+    expect(read(12, 1, true).jump).toBe(true);
+    expect(read(45, 0.4, true).jump).toBe(true);
+    expect(read(5, 1, true).jump).toBe(false);
     expect(read(45, 0.3, true).jump).toBe(false);
   });
 

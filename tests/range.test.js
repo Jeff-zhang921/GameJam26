@@ -90,8 +90,8 @@ describe('tapping time objects', () => {
     const state = setup({ level: 0 });
     expect(abilityCheck(state, STILL, 'crate-0')).toBe('ok');
     expect(abilityCheck(state, BLOOM, 'crate-0')).toBe('unsupported');
-    get(state, 'crate-0').frozen = true;
-    expect(abilityCheck(state, BLOOM, 'crate-0')).toBe('ok');
+    get(state, 'crate-0').frozen = true; // Bloom never hastens crates, frozen or not
+    expect(abilityCheck(state, BLOOM, 'crate-0')).toBe('unsupported');
     state.actors[STILL].x = 1100;
     expect(abilityCheck(state, STILL, 'crate-0')).toBe('range');
     expect(abilityCheck(state, STILL, 'nothing')).toBe('missing');

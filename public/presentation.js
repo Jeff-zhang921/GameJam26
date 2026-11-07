@@ -7,7 +7,7 @@ export function createCamera() {
   const camera = { scale: 1, offsetX: 0, offsetY: 0, x: 640, y: 320 };
   let initialized = false, previousScene, zoom = 1.2;
   return {
-    update(state, { width, height, dt = 0, mode = 'solo', reduced = false, paused = false, sceneKey, resetCamera = false }) {
+    update(state, { width, height, dt = 0, mode = 'solo', reduced = false, paused = false, sceneKey, resetCamera = false, bottomInset = 0 }) {
       const worldWidth = state.width ?? 1280, worldHeight = state.height ?? 640;
       const fit = Math.min(width / worldWidth, height / worldHeight);
       const actor = state.actors[state.active];
@@ -46,6 +46,17 @@ export function createCamera() {
       }
       camera.offsetX = width / 2 - camera.x * camera.scale;
       camera.offsetY = height / 2 - camera.y * camera.scale;
+      // Taller screens (iPad) show the whole world height with room to spare. With touch controls along
+      // the bottom, sit the world as low as the controls allow (ground stays above the joystick) and give
+      // the rest to the top, where the HUD lives, instead of leaving an empty band under the world.
+      const slack = height - worldHeight * camera.scale;
+      if (bottomInset > 0 && slack > 0.5) {
+        const grounds = (state.platforms ?? []).filter(p => p.y + p.h >= worldHeight - 1).map(p => p.y);
+        const depth = worldHeight - (grounds.length ? Math.max(...grounds) : worldHeight);
+        const band = clamp(bottomInset + 8 - depth * camera.scale, 0, slack);
+        camera.offsetY = height - band - worldHeight * camera.scale;
+        camera.y = (height / 2 - camera.offsetY) / camera.scale;
+      }
       initialized = true; previousScene = sceneKey;
       return camera;
     },

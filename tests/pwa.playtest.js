@@ -54,8 +54,7 @@ async (page) => {
   });
   let spot = await crateOnScreen(host); await host.touchscreen.tap(spot.x, spot.y);
   await guest.waitForFunction(() => window.__moonclock.snapshot().objects[0].frozen);
-  spot = await crateOnScreen(guest); await guest.touchscreen.tap(spot.x, spot.y);
-  await host.waitForFunction(() => !window.__moonclock.snapshot().objects[0].frozen);
+  await host.waitForFunction(() => window.__moonclock.snapshot().freezeAreas.length === 1);
   const id = await guest.evaluate(() => window.__moonclock.connection().playerId);
   await contexts[1].setOffline(true);
   await host.waitForFunction(() => window.__moonclock.connection().room.suspended);
