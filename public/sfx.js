@@ -3,7 +3,7 @@ const outputs = new WeakMap();
 function effectsOutput(context) {
   if (outputs.has(context)) return outputs.get(context);
   const volume = context.createGain(), compressor = context.createDynamicsCompressor();
-  volume.gain.value = 7.5;
+  volume.gain.value = 10;
   compressor.threshold.value = -10;
   compressor.knee.value = 6;
   compressor.ratio.value = 12;
