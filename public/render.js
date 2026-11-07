@@ -35,7 +35,8 @@ export function createRenderer(canvas, S) {
   const handOf = (p, which) => { const [x, y] = CHARACTERS[which].hands[p.grounded && !p.move ? 0 : 1]; return [p.x + p.facing * x, p.y + y]; };
   const smooth = p => p * p * (3 - 2 * p);
   function line(c, points, color, width = 1) { c.beginPath(); c.moveTo(points[0][0], points[0][1]); for (let i = 1; i < points.length; i++) c.lineTo(points[i][0], points[i][1]); c.strokeStyle = color; c.lineWidth = width; c.stroke(); }
-  function circle(c, x, y, r, fill, stroke, width = 1) { c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); if (fill) { c.fillStyle = fill; c.fill(); } if (stroke) { c.strokeStyle = stroke; c.lineWidth = width; c.stroke(); } }
+  // A negative radius makes arc() throw, which would abort the whole frame; a shrinking ring just vanishes instead.
+  function circle(c, x, y, r, fill, stroke, width = 1) { c.beginPath(); c.arc(x, y, Math.max(0, r), 0, Math.PI * 2); if (fill) { c.fillStyle = fill; c.fill(); } if (stroke) { c.strokeStyle = stroke; c.lineWidth = width; c.stroke(); } }
   function ellipse(c, x, y, rx, ry, angle, color) { c.beginPath(); c.ellipse(x, y, Math.max(.1, rx), Math.max(.1, ry), angle, 0, Math.PI * 2); c.fillStyle = color; c.fill(); }
   function arch(c, x, y, w, h, color, width = 1) { c.beginPath(); c.moveTo(x, y + h); c.lineTo(x, y + w / 2); c.arc(x + w / 2, y + w / 2, w / 2, Math.PI, 0); c.lineTo(x + w, y + h); c.strokeStyle = color; c.lineWidth = width; c.stroke(); }
   function star(c, x, y, size, color) { c.beginPath(); c.moveTo(x, y - size); c.quadraticCurveTo(x + 1, y - 1, x + size, y); c.quadraticCurveTo(x + 1, y + 1, x, y + size); c.quadraticCurveTo(x - 1, y + 1, x - size, y); c.quadraticCurveTo(x - 1, y - 1, x, y - size); c.fillStyle = color; c.fill(); }
@@ -373,7 +374,7 @@ export function createRenderer(canvas, S) {
     const { r, spread, alpha } = freezeLook(a, t), life = Math.max(0, a.ticksLeft / a.duration);
     ctx.save(); ctx.globalAlpha *= alpha;
     if (spread < 1) { ctx.globalAlpha *= 1 - spread; circle(ctx, a.x, a.y, r, null, '#efe3bb', 3); ctx.globalAlpha /= 1 - spread; }
-    ctx.setLineDash([5, 12]); ctx.lineDashOffset = -t * .012; circle(ctx, a.x, a.y, r - 2, null, '#e9dcb042', 1.2); ctx.setLineDash([]);
+    ctx.setLineDash([5, 12]); ctx.lineDashOffset = -t * .012; circle(ctx, a.x, a.y, Math.max(0, r - 2), null, '#e9dcb042', 1.2); ctx.setLineDash([]);
     ctx.beginPath(); ctx.arc(a.x, a.y, r + 5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * life); ctx.strokeStyle = '#efe3bb88'; ctx.lineWidth = 2; ctx.stroke();
     for (let i = 0; i < 10; i++) {
       const turn = i * 2.39996 + t * .00025 * (i % 2 ? 1 : -1), d = r * (.15 + ((i * 37) % 70) / 100);
@@ -722,6 +723,8 @@ export function createRenderer(canvas, S) {
       return transform ? worldPoint(transform, clientX - rect.left, clientY - rect.top) : null;
     },
     inspect: () => ({ camera: transform && { ...transform }, particles: effects.count, visualTime }),
+    // After a failed frame: drop any clip / transform / save it left behind (resizing a canvas resets its state).
+    resetContext: () => { const w = canvas.width; canvas.width = 0; canvas.width = w; },
   };
 }
 

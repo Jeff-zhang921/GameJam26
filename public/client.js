@@ -993,7 +993,18 @@ function blendTicks(a, b, t) {
 const menuScreen = () => ['intro', 'pause', 'settings', 'help', 'confirm-restart', 'confirm-level'].includes(modal);
 const currentTrack = () => menuScreen() ? MENU_MUSIC : themeFor(state.level).music;
 let entranceDrawAt = null;
+// The loop always schedules its next frame, even if this one fails: an error in one frame (a drawing glitch,
+// say) must never stop the game. Each distinct error is reported once.
+const frameErrors = new Set();
 function frame(time) {
+  requestAnimationFrame(frame);
+  try { runFrame(time); } catch (error) {
+    renderer.resetContext?.();
+    const key = String(error?.stack ?? error).split('\n').slice(0, 2).join(' ');
+    if (!frameErrors.has(key)) { frameErrors.add(key); console.error('Frame failed; the game keeps running.', error); }
+  }
+}
+function runFrame(time) {
   const musicEnabled = sound && !document.hidden && (menuScreen() || stageBusy() || !modal || modal === 'win');
   music.select(currentTrack()); music.sync(musicEnabled);
   const growthEnabled = sound && !viewport.blocked && !document.hidden && document.hasFocus() && !rewind && state.status === 'playing' && !modal && (!onlineMode || (network.connected && !network.room?.suspended));
@@ -1057,7 +1068,6 @@ function frame(time) {
     frameCount++; if (frameCount % 10 === 0) updateUI();
   }
   if (debug) { const el = document.querySelector('#debug'); el.hidden = false; el.textContent = `tick ${state.tick} | phase ${modal || state.status}\nentities ${state.actors.length + state.objects.length}\nactor ${state.active} | ${Math.round(state.actors[state.active].x)},${Math.round(state.actors[state.active].y)}`; }
-  requestAnimationFrame(frame);
 }
 updateUI(); renderModal();
 // Try immediately; trusted gestures remain a fallback for autoplay restrictions.
