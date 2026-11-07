@@ -21,7 +21,7 @@ export function createRenderer(canvas, S) {
     b.save(); b.translate(780, 158);
     circle(b, 0, 0, 116, '#93bbae10', '#c6c8a25a', 1.3); circle(b, 0, 0, 108, null, '#d5cda63b'); circle(b, 0, 0, 92, null, '#c5d0af3f'); circle(b, 0, 0, 75, '#9bb4a80c', '#cfcea53d');
     for (let i = 0; i < 60; i++) { const a = i / 60 * Math.PI * 2; const r = i % 5 === 0 ? 97 : 102; line(b, [[Math.sin(a) * r, -Math.cos(a) * r], [Math.sin(a) * 107, -Math.cos(a) * 107]], '#c9c99a7a', i % 5 === 0 ? 1.5 : .7); }
-    b.font = '12px Georgia'; b.textAlign = 'center'; b.fillStyle = '#d3d2b693'; ['XII', 'III', 'VI', 'IX'].forEach((s, i) => b.fillText(s, Math.sin(i * Math.PI / 2) * 84, -Math.cos(i * Math.PI / 2) * 84 + 4));
+    b.font = '12px Georgia'; b.textAlign = 'center'; b.fillStyle = '#d3d2b693';['XII', 'III', 'VI', 'IX'].forEach((s, i) => b.fillText(s, Math.sin(i * Math.PI / 2) * 84, -Math.cos(i * Math.PI / 2) * 84 + 4));
     circle(b, -22, -14, 47, '#dddcc395'); circle(b, -3, -25, 43, '#31595c'); star(b, 26, 26, 7, '#ddd4a8b0'); circle(b, 0, 0, 17, null, '#d5cba15a');
     b.restore();
     for (let i = 0; i < 5; i++) { const x = 80 + i * 265; line(b, [[x, 0], [x, 230 + i % 2 * 50]], '#bdbf9227'); const y = 240 + i % 2 * 50; glow(b, x, y, 45, '#d8bc7d22'); b.strokeStyle = '#b8ac714a'; b.strokeRect(x - 8, y - 13, 16, 27); circle(b, x, y, 4, '#d1bc7b87'); line(b, [[x - 10, y - 13], [x, y - 22], [x + 10, y - 13]], '#b8ac714a'); }

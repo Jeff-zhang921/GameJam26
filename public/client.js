@@ -21,7 +21,7 @@ const icons = {
 const icon = name => `<svg viewBox="0 0 24 24" aria-hidden="true">${icons[name] || icons.moon}</svg>`;
 const key = text => `<kbd class="key">${text}</kbd>`;
 let saved = {};
-try { saved = JSON.parse(localStorage.getItem('moonclock-v1') || '{}'); } catch {}
+try { saved = JSON.parse(localStorage.getItem('moonclock-v1') || '{}'); } catch { }
 let state = setup({ level: Number.isInteger(saved.level) ? saved.level : 0 });
 state.unlocked = Math.max(state.level, Math.min(3, saved.unlocked || 0));
 let mode = saved.mode === 'coop' ? 'coop' : 'solo';
@@ -50,10 +50,10 @@ const canvas = document.querySelector('#game');
 const renderer = createRenderer(canvas, S);
 const debug = new URLSearchParams(location.search).has('debug');
 function persist() {
-  try { localStorage.setItem('moonclock-v1', JSON.stringify({ level: state.level, unlocked: state.unlocked, mode, sound, reduced })); } catch {}
+  try { localStorage.setItem('moonclock-v1', JSON.stringify({ level: state.level, unlocked: state.unlocked, mode, sound, reduced })); } catch { }
 }
 function toast(text) { const el = document.querySelector('#toast'); el.textContent = text; el.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 3400); }
-function initAudio() { if (!audioContext && sound) { try { audioContext = new (window.AudioContext || window.webkitAudioContext)(); } catch {} } if (audioContext?.state === 'suspended' && sound) audioContext.resume(); }
+function initAudio() { if (!audioContext && sound) { try { audioContext = new (window.AudioContext || window.webkitAudioContext)(); } catch { } } if (audioContext?.state === 'suspended' && sound) audioContext.resume(); }
 function chime(kind) {
   if (!sound || !audioContext || !['freeze', 'unfreeze', 'grow', 'regrow', 'echo', 'shard', 'win', 'throw', 'return', 'rewind'].includes(kind)) return;
   const now = audioContext.currentTime; const notes = kind === 'win' ? [392, 493.88, 587.33, 783.99] : kind === 'grow' || kind === 'regrow' ? [392, 587.33] : kind === 'freeze' ? [880, 1320] : kind === 'echo' ? [293.66, 440] : [440];
