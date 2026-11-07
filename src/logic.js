@@ -226,13 +226,17 @@ function moveActors(state) {
     const oldX = p.x;
     p.x = Math.max(22, Math.min(1258, p.x + p.vx));
     const body = () => ({ x: p.x - 15, y: p.y - 52, w: 30, h: 51 });
+    const crates = state.objects.filter(o => o.kind === 'crate' && o.held === null).map(o => ({ id: o.id, x: o.x - 27, y: o.y - 27, w: 54, h: 54 }));
+    const inside = crates.filter(c => rectOverlap({ x: oldX - 15, y: p.y - 52, w: 30, h: 51 }, c));
     for (const f of state.platforms) if (rectOverlap(body(), f) && p.y > f.y + 9) p.x = oldX;
+    for (const c of crates) if (!inside.includes(c) && rectOverlap(body(), c) && p.y > c.y + 9) p.x = oldX;
     for (const o of state.objects) if (o.kind === 'plant' && o.barrier && !o.withered && rectOverlap(body(), { x: o.x - 42, y: o.base - o.height, w: 84, h: o.height })) p.x = oldX;
     const previousY = p.y;
     p.vy = Math.min(meta.controls.maxFall, p.vy + (p.vy < 0 ? meta.controls.gravity : meta.controls.fallGravity));
     const impact = p.vy;
     const airborne = !p.grounded;
     p.y += p.vy;
+    if (p.vy < 0) for (const c of crates) if (!inside.includes(c) && p.x + 15 > c.x && p.x - 15 < c.x + c.w && previousY - 52 >= c.y + c.h && p.y - 52 < c.y + c.h) { p.y = c.y + c.h + 52; p.vy = 0; }
     p.grounded = false; p.on = null;
     for (const f of solid) {
       if (f.id === p.carrying) continue;

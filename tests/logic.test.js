@@ -199,6 +199,45 @@ describe('still', () => {
   });
 });
 
+describe('crate collision', () => {
+  test('an actor walking into a resting crate stops at its side', () => {
+    let s = setup();
+    const crate = get(s, 'crate-0');
+    s = action(s, { type: 'move', actor: 1, dir: 1 });
+    s = step(s, 40);
+    expect(s.actors[1].x).toBeLessThanOrEqual(crate.x - 27 - 15);
+    expect(s.actors[1].y).toBe(520);
+  });
+
+  test('jumping up into a frozen crate bumps the head', () => {
+    let s = setup();
+    Object.assign(get(s, 'crate-0'), { x: 250, y: 400, frozen: true });
+    s = action(s, { type: 'jump', actor: 1 });
+    let top = s.actors[1].y;
+    for (let i = 0; i < 40; i++) { s = step(s); top = Math.min(top, s.actors[1].y); }
+    expect(top).toBeGreaterThanOrEqual(400 + 27 + 52 - 0.5);
+    expect(s.actors[1].on).not.toBe('crate-0');
+  });
+
+  test('an actor already overlapping a crate can still walk out of it', () => {
+    let s = setup();
+    s.actors[1].x = 340;
+    s = action(s, { type: 'move', actor: 1, dir: -1 });
+    s = step(s, 10);
+    expect(s.actors[1].x).toBeLessThan(330);
+  });
+
+  test('a carried crate is not solid to the other actor', () => {
+    let s = setup();
+    s.actors[0].x = 330;
+    s = action(s, { type: 'grab', actor: 0 });
+    s.actors[1].x = 300;
+    s = action(s, { type: 'move', actor: 1, dir: 1 });
+    s = step(s, 20);
+    expect(s.actors[1].x).toBeGreaterThan(360);
+  });
+});
+
 describe('movers', () => {
   const moverLevel = () => { const s = setup({ level: 3 }); s.actors[0].x = 600; s.actors[0].y = 290; s.actors[0].on = 'mover-0'; s.actors[1].x = 450; return s; };
 
