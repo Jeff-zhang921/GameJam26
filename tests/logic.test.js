@@ -282,4 +282,17 @@ describe('review fixes', () => {
     s.actors[0].x = 90; s = action(s, { type: 'grab', actor: 0 });
     s = step(s, 5); expect(s.elapsed).toBe(5);
   });
+
+  test('an item resting on a sapling rides it up to the grown canopy', () => {
+    let s = planted();
+    for (let i = 0; i < 3; i++) s = action(s, { type: 'ability', actor: 1 });
+    s = step(s, 40);
+    expect(get(s, 'plant-0')).toMatchObject({ stage: 2, height: 80 });
+    Object.assign(get(s, 'seed-0'), { x: 600, y: 450, vx: 0, vy: 0, held: null });
+    s = step(s, 5);
+    expect(get(s, 'seed-0').y).toBeCloseTo(450, 0);
+    s = action(s, { type: 'ability', actor: 1 });
+    s = step(s, 90);
+    expect(get(s, 'seed-0').y).toBeCloseTo(540 - 235 - 10, 0);
+  });
 });

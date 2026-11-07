@@ -208,7 +208,7 @@ function moveItems(state) {
     if (o.frozen) continue;
     const previous = o.y + half;
     o.vy += 0.3; o.x += o.vx; o.y += o.vy;
-    for (const f of all) if (f.id !== o.id) if (o.vy >= 0 && previous <= f.y + 1 && o.y + half >= f.y && o.x + half > f.x && o.x - half < f.x + f.w) {
+    for (const f of all) if (f.id !== o.id) if (o.vy >= 0 && previous <= f.y + 3 && o.y + half >= f.y && o.x + half > f.x && o.x - half < f.x + f.w) {
       o.y = f.y - half; o.vy = 0; o.vx *= 0.88;
     }
     if (o.y > 720 || o.x < 20 || o.x > 1260) { o.x = o.spawnX; o.y = o.spawnY; o.vx = 0; o.vy = 0; event(state, 'return', o.x, o.y); }
