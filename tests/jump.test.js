@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { setup, applyAction, validateAction, meta } from '../src/logic.js';
+import { setup, applyAction, validateAction, meta, atExit } from '../src/logic.js';
 
 const send = (state, type, actor = 0, extra = {}) => applyAction(state, 'local', { type, actor, ...extra });
 const step = (state, count = 1) => { for (let i = 0; i < count; i++) state = send(state, 'tick'); return state; };
@@ -166,7 +166,10 @@ describe('courtyard jump routes', () => {
     expect(state.flags.frozenTouched).toBe(true);
     state = send(send(state, 'jumpRelease'), 'jump');
     state = until(state, s => s.actors[0].on === 'platform-1');
-    state = until(state, s => s.status === 'won', 120);
+    state = until(state, s => atExit(s, s.actors[0]), 120);
+    expect(state.status).toBe('playing');
+    Object.assign(state.actors[1], { x: state.exit.x, y: state.exit.y });
+    state = until(state, s => s.status === 'won', 5);
   });
 
   function treeCheckpoint(level, x, height) {

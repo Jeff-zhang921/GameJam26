@@ -95,7 +95,7 @@ describe('real WebSocket multiplayer', () => {
     p.host.send({ type: 'input', seq: 4, action: { type: 'ability', target: 'plant-0' } });
     p.host.send({ type: 'input', seq: 5, action: { type: 'ability', target: 'plant-0' } });
     const fast = await p.guest.next('snapshot', m => m.game.objects.some(o => o.id === 'plant-0' && o.speed === 3));
-    p.room.game.actors[0].x = 450; // Still walks within reach of the flower
+    p.room.game.actors[0].x = 450; // Still walks within reach of the mushroom
     p.guest.send({ type: 'input', seq: 1, action: { type: 'ability', target: 'plant-0' } });
     const frozen = await p.host.next('snapshot', m => m.game.objects.some(o => o.id === 'plant-0' && o.frozen));
     expect((await p.guest.next('snapshot', m => m.game.tick === frozen.game.tick)).game).toEqual(frozen.game);
@@ -124,7 +124,7 @@ describe('real WebSocket multiplayer', () => {
     await p.guest.next('snapshot', m => m.game.actors[1].x > 250);
     expect(other.room.game.actors[1].x).toBe(250);
     for (const key of p.room.game.needs) p.room.game.flags[key] = true;
-    Object.assign(p.room.game.actors[0], { x: p.room.game.exit.x, y: p.room.game.exit.y });
+    for (const actor of p.room.game.actors) Object.assign(actor, { x: p.room.game.exit.x, y: p.room.game.exit.y });
     const won = await p.host.next('snapshot', m => m.game.status === 'won');
     expect((await p.guest.next('snapshot', m => m.game.status === 'won')).game).toEqual(won.game);
     expect(won.room.status).toBe('FINISHED'); expect(won.room.canReturnLobby).toBe(false);

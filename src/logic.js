@@ -1,5 +1,6 @@
 import { makeEnemy, updateEnemies, enemyBox, isEnemy, isHazard, isMoving, isSolidEnemy, FROZEN_RATE } from './enemies.js';
 import { LEVELS } from './levels/index.js';
+import { growFrame, dieFrame } from './mushroom.js';
 
 export const meta = {
   name: 'CLOCKBLOOM', minPlayers: 1, maxPlayers: 2, tickRate: 60,
@@ -42,8 +43,11 @@ export function anchor(o) {
   return { x: o.x, y: o.y };
 }
 
-const heightAt = age => Math.min(age, meta.plant.growTicks) / meta.plant.growTicks * meta.plant.maxHeight;
-export const canopyWidth = plant => plant.withered ? 50 : Math.min(138, 40 + plant.height * 0.42);
+const witherProgress = age => (age - meta.plant.growTicks - meta.plant.matureTicks) / meta.plant.witherTicks;
+// A mushroom rises while growing, holds while mature, then sinks with its wilting animation.
+const heightAt = age => { const { growTicks, matureTicks, maxHeight } = meta.plant; return age > growTicks + matureTicks ? dieFrame(witherProgress(age)).height * maxHeight : Math.min(age, growTicks) / growTicks * maxHeight; };
+// The standable cap is as wide as the mushroom art drawn at this height.
+export const canopyWidth = plant => plant.height * (plant.withered ? dieFrame(witherProgress(plant.age)).ratio : growFrame(plant.height, meta.plant.maxHeight, meta.plant.springHeight).ratio);
 
 function makePlant(id, pit, grown = 0, barrier = false) {
   pit.plant = id;
@@ -368,7 +372,8 @@ function tick(state) {
   attachHeld(state);
   const done = state.needs.filter(key => state.flags[key]).length;
   if (done > state.needsDone) { state.needsDone = done; state.lastProgressTick = state.elapsed; }
-  if (done === state.needs.length && state.actors.some(p => Math.abs(p.x - state.exit.x) < 46 && Math.abs(p.y - state.exit.y) < 55)) {
+  // Needs are only suggestions; the courtyard is cleared once both travelers stand in the moon gate.
+  if (state.actors.every(p => atExit(state, p))) {
     state.status = 'won'; state.unlocked = Math.max(state.unlocked, Math.min(LEVELS.length - 1, state.level + 1));
     if (state.shards.some(s => s.taken)) state.collected[state.level] = true;
     state.totalShards = state.collected.filter(Boolean).length;
@@ -420,14 +425,15 @@ export function applyAction(state, playerId, action) {
     const o = targetFor(s, action.actor, action);
     if (action.actor === STILL) {
       if (!o.frozen && isEnemy(o)) for (const other of s.objects) if (other !== o && other.frozen && isEnemy(other)) { other.frozen = false; event(s, 'unfreeze', anchor(other).x, anchor(other).y); }
-      o.frozen = !o.frozen; event(s, o.frozen ? 'freeze' : 'unfreeze', anchor(o).x, anchor(o).y, { caster: action.actor });
+      o.frozen = !o.frozen; event(s, o.frozen ? 'freeze' : 'unfreeze', anchor(o).x, anchor(o).y, { caster: action.actor, target: o.id });
     }
-    else if (o.frozen) { o.frozen = false; if (o.speed === 0) o.speed = 1; event(s, 'unfreeze', anchor(o).x, anchor(o).y, { caster: action.actor }); }
-    else { const woke = o.speed === 0; o.speed++; event(s, woke ? 'wake' : 'grow', anchor(o).x, anchor(o).y, { caster: action.actor }); }
+    else if (o.frozen) { o.frozen = false; if (o.speed === 0) o.speed = 1; event(s, 'unfreeze', anchor(o).x, anchor(o).y, { caster: action.actor, target: o.id }); }
+    else { const woke = o.speed === 0; o.speed++; event(s, woke ? 'wake' : 'grow', anchor(o).x, anchor(o).y, { caster: action.actor, target: o.id }); }
   }
   return s;
 }
 
+export function atExit(state, p) { return Math.abs(p.x - state.exit.x) < 46 && Math.abs(p.y - state.exit.y) < 55; }
 export function hintLevel(state) { return state.elapsed - state.lastProgressTick >= meta.time.hintTicks ? 1 : 0; }
 export function isGameOver(state) { return state.status === 'won' ? { winner: 'together', level: state.level, complete: state.level === LEVELS.length - 1 } : null; }
 export function viewFor(state, playerId) { return state.playerIds.includes(playerId) ? clone(state) : null; }

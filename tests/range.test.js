@@ -24,7 +24,7 @@ describe('ability reach of 300 keeps every courtyard route open', () => {
     expect(window).toBeGreaterThanOrEqual(30);
   });
 
-  test('courtyard 2: Still on the ground can freeze a full-grown flower', () => {
+  test('courtyard 2: Still on the ground can freeze a full-grown mushroom', () => {
     let state = setup({ level: 1 });
     state.actors[BLOOM].x = 380; state = send(state, 'grab', BLOOM);
     state.actors[BLOOM].x = 600; state = send(state, 'grab', BLOOM);
@@ -33,7 +33,7 @@ describe('ability reach of 300 keeps every courtyard route open', () => {
     expect(abilityCheck(state, STILL, 'plant-0')).toBe('ok');
   });
 
-  test('courtyard 3: Bloom can wake the ancient flower from the closest spot the barrier allows', () => {
+  test('courtyard 3: Bloom can wake the ancient mushroom from the closest spot the barrier allows', () => {
     const state = setup({ level: 2 });
     state.actors[BLOOM].x = 540;
     expect(abilityCheck(state, BLOOM, 'plant-0')).toBe('ok');

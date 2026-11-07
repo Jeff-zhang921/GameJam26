@@ -128,7 +128,7 @@ describe('time flow', () => {
     let s = planted();
     for (let i = 0; i < 3; i++) s = action(s, { type: 'ability', actor: 1 });
     s = step(s, G / 6);
-    s.actors[0].x = 450; // Still walks within reach of the flower
+    s.actors[0].x = 450; // Still walks within reach of the mushroom
     s = action(s, { type: 'ability', actor: 0 });
     const rise = s.actors[1].y - apex(action(s, { type: 'jump', actor: 1 }), 1);
     const ground = setup({ level: 1 });
@@ -196,7 +196,7 @@ describe('still', () => {
     let s = action(planted(), { type: 'ability', actor: 1 });
     s = action(s, { type: 'ability', actor: 1 }); s = action(s, { type: 'ability', actor: 1 });
     s = step(s, 10);
-    s.actors[0].x = 450; // Still walks within reach of the flower
+    s.actors[0].x = 450; // Still walks within reach of the mushroom
     s = action(s, { type: 'ability', actor: 0 });
     const frozen = { ...s.objects.find(o => o.kind === 'plant') };
     s = step(s, G / 10);
@@ -384,10 +384,17 @@ describe('room rules', () => {
     for (const level of [-1, levelCount, 1.5, '2']) expect(validateAction(s, 'local', { type: 'level', level }).error).toBe('invalid');
   });
 
+  test('needs are optional, but both travelers must stand in the moon gate', () => {
+    let s = setup(); Object.assign(s.actors[0], { x: s.exit.x, y: s.exit.y });
+    s = step(s); expect(s.status).toBe('playing');
+    Object.assign(s.actors[1], { x: s.exit.x, y: s.exit.y });
+    s = step(s); expect(s.status).toBe('won'); expect(s.needsDone).toBe(0);
+  });
+
   test('replaying a chamber never farms duplicate collectibles', () => {
-    let s = setup(); s.flags.frozenTouched = true; s.shards[0].taken = true; s.actors[0].x = s.exit.x; s.actors[0].y = s.exit.y;
+    let s = setup(); s.flags.frozenTouched = true; s.shards[0].taken = true; for (const p of s.actors) Object.assign(p, { x: s.exit.x, y: s.exit.y });
     s = step(s); expect(s.totalShards).toBe(1);
-    s = action(s, { type: 'restart' }); s.flags.frozenTouched = true; s.shards[0].taken = true; s.actors[0].x = s.exit.x; s.actors[0].y = s.exit.y;
+    s = action(s, { type: 'restart' }); s.flags.frozenTouched = true; s.shards[0].taken = true; for (const p of s.actors) Object.assign(p, { x: s.exit.x, y: s.exit.y });
     s = step(s); expect(s.totalShards).toBe(1); expect(s.collected).toEqual(Array.from({ length: levelCount }, (_, i) => i === 0));
   });
 });
