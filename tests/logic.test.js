@@ -255,6 +255,12 @@ describe('auto-targeting', () => {
 });
 
 describe('crate collision', () => {
+  test('a crate thrown into a cliff face stops against it instead of passing through', () => {
+    let s = setup(), wall = s.platforms[1];
+    Object.assign(get(s, 'crate-0'), { x: wall.x - 60, y: wall.y + 40, vx: 8, vy: 0 });
+    for (let i = 0; i < 20; i++) { s = step(s); expect(get(s, 'crate-0').x).toBeLessThanOrEqual(wall.x - 27); }
+    expect(get(s, 'crate-0').vx).toBe(0);
+  });
   test('an actor walking into a resting crate stops at its side', () => {
     let s = setup();
     const crate = get(s, 'crate-0');

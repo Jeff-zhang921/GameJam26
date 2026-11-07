@@ -245,7 +245,12 @@ function moveItems(state) {
     // Carried items take no physics step; attachHeld places them after their carrier has moved.
     if (o.held !== null) continue;
     const k = o.frozen ? meta.time.frozenRate : 1, previous = o.y + half;
-    o.vy += 0.3 * k; o.x += o.vx * k; o.y += o.vy * k;
+    o.vy += 0.3 * k; o.x += o.vx * k;
+    // Platform sides are walls: an item flying into one stops against it instead of passing through.
+    for (const f of state.platforms) if (o.y + half > f.y + 3 && o.y - half < f.y + f.h && o.x + half > f.x && o.x - half < f.x + f.w) {
+      o.x = o.x < f.x + f.w / 2 ? f.x - half : f.x + f.w + half; o.vx = 0;
+    }
+    o.y += o.vy * k;
     for (const f of all) if (f.id !== o.id) if (o.vy >= 0 && previous <= f.y + 3 && o.y + half >= f.y && o.x + half > f.x && o.x - half < f.x + f.w) {
       if (o.vy > 1) event(state, crate ? 'crateLand' : 'seedLand', o.x, f.y);
       o.y = f.y - half; o.vy = 0; o.vx *= 0.88 ** k;
