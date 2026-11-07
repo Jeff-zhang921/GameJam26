@@ -367,10 +367,10 @@ export function applyAction(state, playerId, action) {
     const o = targetFor(s, action.actor, action);
     if (action.actor === STILL) {
       if (!o.frozen && isEnemy(o)) for (const other of s.objects) if (other !== o && other.frozen && isEnemy(other)) { other.frozen = false; event(s, 'unfreeze', anchor(other).x, anchor(other).y); }
-      o.frozen = !o.frozen; event(s, o.frozen ? 'freeze' : 'unfreeze', anchor(o).x, anchor(o).y);
+      o.frozen = !o.frozen; event(s, o.frozen ? 'freeze' : 'unfreeze', anchor(o).x, anchor(o).y, { caster: action.actor });
     }
-    else if (o.frozen) { o.frozen = false; if (o.speed === 0) o.speed = 1; event(s, 'unfreeze', anchor(o).x, anchor(o).y); }
-    else { const woke = o.speed === 0; o.speed++; event(s, woke ? 'wake' : 'grow', anchor(o).x, anchor(o).y); }
+    else if (o.frozen) { o.frozen = false; if (o.speed === 0) o.speed = 1; event(s, 'unfreeze', anchor(o).x, anchor(o).y, { caster: action.actor }); }
+    else { const woke = o.speed === 0; o.speed++; event(s, woke ? 'wake' : 'grow', anchor(o).x, anchor(o).y, { caster: action.actor }); }
   }
   return s;
 }

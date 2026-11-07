@@ -11,7 +11,7 @@ export function createRenderer(canvas, S) {
   let transform;
   let entryProgress = 0;
   const cyan = '#a1e3e5', gold = '#e1c68a', muted = '#8aa89b';
-  const sprites = Object.fromEntries(['crate', 'seed', 'sprout', 'bud', 'bloom', 'bloom-wind', 'wilted', 'petals'].map(name => { const img = new Image(); img.src = `/sprites/${name}.png`; return [name, img]; }));
+  const sprites = Object.fromEntries(['crate', 'seed', 'sprout', 'bud', 'bloom', 'bloom-wind', 'wilted', 'petals', 'still', 'mage'].map(name => { const img = new Image(); img.src = `/sprites/${name}.png`; return [name, img]; }));
   const loaded = (...names) => names.every(name => sprites[name].complete && sprites[name].naturalWidth > 0);
   // Sprites are cropped to their art. baseX is where the stem meets the ground (fraction of width);
   // walk is how far below the top the standable line sits (fraction of height), so `height` matches the collision surface.
@@ -22,6 +22,9 @@ export function createRenderer(canvas, S) {
     const h = height / (1 - form.walk), w = h * form.aspect;
     ctx.save(); ctx.globalAlpha *= Math.min(1, alpha); ctx.drawImage(sprites[name], x - w * form.baseX, bottom - h, w, h); ctx.restore();
   }
+  // Each character's sheet is 8 columns x 2 rows (idle, run), art facing right. feetX is where the boots sit
+  // within a frame; hand is where spells leave from (staff orb / hourglass), relative to the feet when facing right.
+  const CHARACTERS = [{ sheet: 'still', feetX: .6, hand: [8, -28] }, { sheet: 'mage', feetX: .58, hand: [15, -37] }];
   const smooth = p => p * p * (3 - 2 * p), lerp = (a, b, p) => a + (b - a) * p;
   // Two images drawn as one silhouette whose proportions morph from a to b while b dissolves in over a.
   function morph(a, b, p, x, bottom, height) {
@@ -89,6 +92,20 @@ export function createRenderer(canvas, S) {
     const color = which === 0 ? cyan : gold;
     ctx.save(); ctx.translate(p.x, p.y); ctx.globalAlpha *= ghost ? .32 : 1;
     if (!ghost) { ellipse(ctx, 0, 2, 23, 5, 0, '#001f2780'); if (active) { ellipse(ctx, 0, 2, 25, 7, 0, which === 0 ? '#a1e3e51b' : '#e1c68a1b'); ctx.beginPath(); ctx.ellipse(0, 2, 25, 7, 0, 0, Math.PI * 2); ctx.strokeStyle = color + '80'; ctx.lineWidth = 1; ctx.stroke(); } }
+    const side = p.facing;
+    const cast = p.animation?.name === 'cast' ? Math.sin(Math.min(1, t / 300) * Math.PI) : 0;
+    const look = CHARACTERS[which];
+    if (loaded(look.sheet)) {
+      const img = sprites[look.sheet], fw = img.naturalWidth / 8, fh = img.naturalHeight / 2, h = 72, w = h * fw / fh, feetX = look.feetX;
+      const running = p.grounded && p.move, row = running || !p.grounded ? 1 : 0;
+      const frame = p.grounded ? Math.floor(t * (running ? .014 : .008)) % 8 : 3;
+      ctx.save(); ctx.scale(side, 1); ctx.translate(0, -cast * 4);
+      ctx.drawImage(img, frame * fw, row * fh, fw, fh, -w * feetX, 2 - h, w, h);
+      ctx.restore();
+      if (cast) circle(ctx, side * look.hand[0], look.hand[1] - cast * 4, 9 + cast * 13, null, color, 1.5);
+      if (active && !ghost) { ctx.globalAlpha *= .8; star(ctx, 0, -84 + Math.sin(t * .003) * 2, 4, color); }
+      return ctx.restore();
+    }
     const sway = p.grounded && p.move ? Math.sin(t * .018) * 2 : Math.sin(t * .003) * .7;
     line(ctx, [[-7, -9], [-8 + sway, -1]], '#c4d1c5', 5); line(ctx, [[7, -9], [7 - sway, -1]], '#9dafac', 5);
     ctx.beginPath(); ctx.moveTo(-11, -37); ctx.bezierCurveTo(-15, -25, -18 - sway, -12, -19, -7); ctx.quadraticCurveTo(0, -1, 19, -7); ctx.lineTo(11, -38); ctx.closePath(); const cloth = ctx.createLinearGradient(-15, -30, 17, -12); cloth.addColorStop(0, '#ece9cc'); cloth.addColorStop(.5, '#cdd7c4'); cloth.addColorStop(1, '#8ea79e'); ctx.fillStyle = cloth; ctx.fill();
@@ -96,8 +113,6 @@ export function createRenderer(canvas, S) {
     ctx.beginPath(); ctx.moveTo(-13, -36); ctx.quadraticCurveTo(-16, -58, -1, -62); ctx.quadraticCurveTo(15, -59, 14, -38); ctx.quadraticCurveTo(1, -31, -13, -36); ctx.fillStyle = '#e6e8cd'; ctx.fill();
     ellipse(ctx, p.facing * 2, -46, 9, 11, 0, '#284e51'); circle(ctx, p.facing * 4 - 2, -47, 1.1, '#f2e9bc'); circle(ctx, p.facing * 4 + 3, -47, 1.1, '#f2e9bc');
     ctx.fillStyle = color; ctx.fillRect(-12, -36, 25, 5); ctx.beginPath(); ctx.moveTo(7, -34); ctx.quadraticCurveTo(20 + sway, -29, 26 + sway * 2, -36); ctx.lineTo(23 + sway, -25); ctx.quadraticCurveTo(15, -23, 6, -29); ctx.fill();
-    const side = p.facing;
-    const cast = p.animation?.name === 'cast' ? Math.sin(Math.min(1, t / 300) * Math.PI) : 0;
     ctx.save(); ctx.translate(0, -cast * 12);
     line(ctx, [[side * 16, -34], [side * 23, -25]], '#cbd8c7', 5); line(ctx, [[side * 24, -49], [side * 24, -1]], '#b7a171', 2.5);
     if (which === 0) { circle(ctx, side * 24, -53, 6, null, color, 2); circle(ctx, side * 27, -55, 4, '#21464b'); } else { line(ctx, [[side * 24, -48], [side * 19, -57]], color, 1.5); ellipse(ctx, side * 20, -57, 5, 2.5, .7, color); ellipse(ctx, side * 28, -54, 5, 2.5, -.7, color); }
@@ -233,6 +248,26 @@ export function createRenderer(canvas, S) {
     ctx.restore(); circle(ctx, x, y - 67, 19, null, ready ? '#e4dbaf' : '#8aa89b88'); circle(ctx, x + 8, y - 73, 16, '#2c5b5c');
     ctx.font = '9px "Segoe UI",sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = ready ? gold : '#9fb8a6'; ctx.fillText(ready ? S.gateOpen : S.gateClosed, x, y - 126);
   }
+  // A bolt flies from the caster's staff to what they targeted, then bursts on arrival.
+  const BOLT = 10, BURST = 14;
+  function spell(state, e, reduced) {
+    const age = state.tick - e.tick, caster = state.actors[e.caster];
+    if (!caster || age < 0 || age > BOLT + BURST) return;
+    const color = e.caster === 0 ? cyan : gold, [hx0, hy0] = CHARACTERS[e.caster].hand, sx = caster.x + caster.facing * hx0, sy = caster.y + hy0;
+    const lift = Math.min(60, Math.hypot(e.x - sx, e.y - sy) * .25), cx = (sx + e.x) / 2, cy = Math.min(sy, e.y) - lift;
+    const at = u => [(1 - u) * (1 - u) * sx + 2 * (1 - u) * u * cx + u * u * e.x, (1 - u) * (1 - u) * sy + 2 * (1 - u) * u * cy + u * u * e.y];
+    ctx.save(); ctx.lineCap = 'round';
+    if (reduced) { ctx.globalAlpha = 1 - age / (BOLT + BURST); line(ctx, [[sx, sy], [e.x, e.y]], color, 1.5); return ctx.restore(); }
+    const head = Math.min(1, age / BOLT), tail = Math.max(0, (age - 4) / BOLT);
+    if (tail < 1) {
+      const points = []; for (let i = 0; i <= 16; i++) points.push(at(tail + (head - tail) * i / 16));
+      line(ctx, points, color + '44', 7); line(ctx, points, color, 2.5); line(ctx, points, '#fffbe8', 1);
+    }
+    if (age <= BOLT) { const [hx, hy] = at(head); glow(ctx, hx, hy, 18, color + 'aa'); star(ctx, hx, hy, 6, '#fffbe8'); }
+    else { const b = (age - BOLT) / BURST; ctx.globalAlpha = 1 - b; glow(ctx, e.x, e.y, 30 + b * 20, color + '88'); circle(ctx, e.x, e.y, 8 + b * 30, null, color, 2); }
+    if (age < 6) glow(ctx, sx, sy, 16, color + '99');
+    ctx.restore();
+  }
   function label(x, y, text, color = cyan) {
     ctx.font = '10px "Segoe UI",sans-serif'; const w = ctx.measureText(text).width + 24; ctx.fillStyle = '#0a3037e8'; ctx.beginPath(); ctx.roundRect(x - w / 2, y - 12, w, 25, 5); ctx.fill(); ctx.strokeStyle = color + '55'; ctx.lineWidth = 1; ctx.stroke(); ctx.textAlign = 'center'; ctx.fillStyle = color; ctx.fillText(text, x, y + 4);
   }
@@ -282,6 +317,7 @@ export function createRenderer(canvas, S) {
       const age = state.tick - e.tick; if (age < 0 || age > 60) continue;
       sprite('petals', e.x, Math.min(e.base, e.y + age * 4), 18, 1 - age / 60);
     }
+    for (const e of state.events) if (e.caster !== undefined) spell(state, e, options.reduced);
     for (const kind of ['ambient', 'dust', 'crystal', 'leaf', 'spark']) {
       ctx.beginPath();
       for (const p of effects.particles) {
@@ -317,6 +353,8 @@ export function createRenderer(canvas, S) {
       const ratio = Math.min(canvas.width / 100, canvas.height / 110);
       ctx.setTransform(ratio, 0, 0, ratio, canvas.width / 2, canvas.height * .88); ctx.clearRect(-100, -150, 200, 200);
       actor({ x: 0, y: 0, facing: 1, grounded: true, move: 0 }, which, false, 0);
+      const sheet = sprites[CHARACTERS[which].sheet];
+      if (!loaded(CHARACTERS[which].sheet)) sheet.addEventListener('load', () => this.portrait(which), { once: true });
     },
     draw,
     worldPoint(clientX, clientY) {
