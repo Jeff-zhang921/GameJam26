@@ -1,4 +1,4 @@
-import { playEffect } from './sfx.js';
+import { playEffect, createGrowthAudio, createRewindAudio } from './sfx.js';
 import { createMusic } from './music.js';
 import { setup, applyAction, validateAction, viewFor, targetFor, hintLevel, levelCount, interactionFor, abilityCheck, abilityTargets, timeObjectAt, anchor, exitStatus, freezeCheck, meta } from '../src/logic.js';
 import { createHistory, compactFrame, rewindFrame, REWIND } from './rewind.js';
@@ -10,6 +10,9 @@ import { createLobby } from './lobby.js';
 import { createPWA } from './pwa.js';
 
 const music = createMusic();
+const firstLevelMusic = createMusic({ url: '/audio/what-she-hasnt-seen.mp3', fullTrack: true, volume: .5 });
+const growthAudio = createGrowthAudio();
+const rewindAudio = createRewindAudio();
 const icons = {
   moon: '<path d="M19 15.5A8 8 0 0 1 8.5 5a8.5 8.5 0 1 0 10.5 10.5Z"/><path d="m17 3 .5 2.5L20 6l-2.5.5L17 9l-.5-2.5L14 6l2.5-.5Z"/>',
   leaf: '<path d="M19 4C7 3 3 10 7 16c6 4 13 0 12-12Z"/><path d="M5 21 17 7M10 15l-1-5m5 1 4 1"/>',
@@ -177,8 +180,10 @@ function persist() {
 function toast(text) { const el = document.querySelector('#toast'); el.textContent = text; el.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 3400); }
 function initAudio() {
   music.unlock();
+  firstLevelMusic.unlock();
  if (!audioContext && sound) { try { audioContext = new (window.AudioContext || window.webkitAudioContext)(); } catch { } } if (audioContext?.state === 'suspended' && sound) audioContext.resume(); }
 function chime(event) {
+  if (event.kind === 'growth' || (['wake', 'grow'].includes(event.kind) && state.objects.some(o => o.id === event.target && o.kind === 'plant'))) return;
   if (sound && audioContext) playEffect(audioContext, event);
 }
 function dispatch(action, quiet = false) {
@@ -321,7 +326,7 @@ function renderModal() {
   const close = `<button class="iconbutton close" data-action="close" aria-label="${S.close}">${icon('close')}</button>`;
   if (modal === 'intro') contents = `<div class="intro-icon">${icon('moon')}</div><div class="eyebrow">${S.english} · A COOPERATIVE TIME TALE</div><h1>${S.title}</h1><p>${S.intro}<br>${S.introBody}</p><div class="mode-selector"><button data-mode="solo" class="${mode === 'solo' ? 'selected' : ''}" data-testid="mode-solo">${S.solo}</button><button data-mode="coop" class="${mode === 'coop' ? 'selected' : ''}" data-testid="mode-coop">${S.coop}</button></div><button class="primary" data-action="start" data-testid="start">${saved.unlocked ? S.continue : S.start}${icon('arrow')}</button><p class="intro-foot">${S.subtitle}</p>`;
   if (modal === 'help') contents = `${close}<div class="intro-icon">${icon('help')}</div><h2>${S.helpTitle}</h2><p>${S.helpBody}</p><div class="help-grid">${(touchLayout() ? S.touchKeys : S.keys).map(([k, v]) => `${key(k)}<span>${v}</span>`).join('')}</div>${touchLayout() ? '' : `<p>${S.coopKeys}</p>`}<button class="primary" data-action="close">${S.continue}${icon('arrow')}</button>`;
-  if (modal === 'settings') contents = `${close}<div class="intro-icon">${icon('settings')}</div><h2>${S.settings}</h2><p class="music-credit">Gymnopédie No. 1 · Erik Satie<br>Performed by <a href="https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100787" target="_blank" rel="noopener">Kevin MacLeod</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a><br>Excerpt 0:00–0:50; fades applied.</p><div class="settings-row"><span>${S.sound}</span><button class="toggle" role="switch" aria-checked="${sound}" data-action="sound" aria-label="${S.sound}" data-testid="setting-sound"></button></div><div class="settings-row"><span>${S.motion}</span><button class="toggle" role="switch" aria-checked="${reduced}" data-action="motion" aria-label="${S.motion}" data-testid="setting-motion"></button></div><div class="settings-row"><span>${S.touchControls}</span><button class="toggle" role="switch" aria-checked="${touchControls}" data-action="touch-controls" aria-label="${S.touchControls}" data-testid="setting-touch"></button></div><div class="mode-selector"><button data-mode="solo" class="${mode === 'solo' ? 'selected' : ''}">${S.solo}</button><button data-mode="coop" class="${mode === 'coop' ? 'selected' : ''}">${S.coop}</button></div><button class="primary" data-action="close">${S.continue}${icon('arrow')}</button>`;
+  if (modal === 'settings') contents = `${close}<div class="intro-icon">${icon('settings')}</div><h2>${S.settings}</h2><p class="music-credit">Chamber 01 · 她未曾见过的 (What She Hasn’t Seen) · The 1999<br>Full track · looped<br><br>Menu / other chambers · Gymnopédie No. 1 · Erik Satie<br>Performed by <a href="https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100787" target="_blank" rel="noopener">Kevin MacLeod</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a><br>Excerpt 0:00–0:50; fades applied.</p><div class="settings-row"><span>${S.sound}</span><button class="toggle" role="switch" aria-checked="${sound}" data-action="sound" aria-label="${S.sound}" data-testid="setting-sound"></button></div><div class="settings-row"><span>${S.motion}</span><button class="toggle" role="switch" aria-checked="${reduced}" data-action="motion" aria-label="${S.motion}" data-testid="setting-motion"></button></div><div class="settings-row"><span>${S.touchControls}</span><button class="toggle" role="switch" aria-checked="${touchControls}" data-action="touch-controls" aria-label="${S.touchControls}" data-testid="setting-touch"></button></div><div class="mode-selector"><button data-mode="solo" class="${mode === 'solo' ? 'selected' : ''}">${S.solo}</button><button data-mode="coop" class="${mode === 'coop' ? 'selected' : ''}">${S.coop}</button></div><button class="primary" data-action="close">${S.continue}${icon('arrow')}</button>`;
   if (modal === 'pause') {
     const lockLevels = onlineMode && !network.host;
     const chapters = `<div class="pause-levels"><div class="goal-heading">${icon('arrow')}<span>${S.chooseLevel}</span></div><nav class="pause-chapters" aria-label="${S.chapters}">${Array.from({ length: levelCount }, (_, i) => `<button class="chapter-button ${i < state.unlocked ? 'done' : ''}" data-level="${i}" data-testid="level-${i}" aria-label="${S.levels[i].name}" title="${S.levels[i].name}" ${i === state.level ? 'aria-current="step"' : ''} ${lockLevels ? 'disabled' : ''}><span>${String(i + 1).padStart(2, '0')}</span></button>`).join('')}</nav></div>`;
@@ -625,7 +630,12 @@ function blendTicks(a, b, t) {
   };
 }
 function frame(time) {
-  music.sync(sound && !document.hidden && (modal === 'intro' || entering || !modal || modal === 'win'));
+  const musicEnabled = sound && !document.hidden && (modal === 'intro' || entering || !modal || modal === 'win');
+  const firstLevel = state.level === 0 && modal !== 'intro';
+  music.sync(musicEnabled && !firstLevel);
+  firstLevelMusic.sync(musicEnabled && firstLevel);
+  const growthEnabled = sound && !document.hidden && document.hasFocus() && !rewind && state.status === 'playing' && !modal && (!onlineMode || (network.connected && !network.room?.suspended));
+  growthAudio.sync(audioContext, growthEnabled ? state.objects.filter(o => o.kind === 'plant' && o.speed > 0 && o.age < meta.plant.growTicks && !o.withered).map(o => ({ id: o.id, rate: o.speed * (o.frozen ? meta.time.frozenRate : 1) })) : []);
   pwa.refresh();
   if (lastTime === 0) lastTime = time;
   accumulator += Math.min(100, time - lastTime); lastTime = time;
@@ -640,6 +650,7 @@ function frame(time) {
     // Online, the final picture holds until the server's fresh start arrives (with a safety timeout).
     if (u >= 1 && (!rewind.online || rewind.arrived || now - rewind.start > rewind.duration + 3000)) finishRewind();
   }
+  rewindAudio.sync(audioContext, sound && !document.hidden && document.hasFocus() && rewind ? rewind.u : null);
   // Local play: the simulation runs at 60 ticks/s but the screen may refresh faster (120 Hz iPads) or out
   // of step, so draw positions blended between the last two ticks instead of holding/jumping frames.
   const smooth = !onlineMode && !modal && state.status === 'playing' && previousTick?.level === state.level && previousTick.tick === state.tick - 1;

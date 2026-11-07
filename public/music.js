@@ -1,19 +1,20 @@
 // The music uses its own context so pausing it never cuts off the victory chime.
-export function createMusic() {
+export function createMusic({ url = '/audio/gymnopedie-no-1.mp3', fullTrack = false, volume = 1.5 } = {}) {
   let context, buffer, loading, source, gain, offset = 0, startedAt = 0, wanted = false;
   function stop() {
     if (!source) return;
     offset += context.currentTime - startedAt;
-    if (offset >= 50) offset = 2 + (offset - 2) % 48;
+    if (fullTrack) offset %= buffer.duration;
+    else if (offset >= 50) offset = 2 + (offset - 2) % 48;
     source.stop(); source.disconnect(); source = null;
   }
   function play() {
     if (!wanted || !buffer || source || context.state !== 'running') return;
     source = context.createBufferSource(); source.buffer = buffer;
-    source.loop = true; source.loopStart = 2; source.loopEnd = 50;
+    source.loop = true; source.loopStart = fullTrack ? 0 : 2; source.loopEnd = fullTrack ? buffer.duration : 50;
     source.connect(gain); startedAt = context.currentTime;
     gain.gain.setValueAtTime(0, startedAt);
-    gain.gain.linearRampToValueAtTime(1.5, startedAt + .8);
+    gain.gain.linearRampToValueAtTime(volume, startedAt + .8);
     source.start(0, offset);
   }
   return {
@@ -23,10 +24,11 @@ export function createMusic() {
         if (!gain) { gain = context.createGain(); gain.connect(context.destination); }
         context.resume().then(play).catch(() => { });
         if (!buffer && !loading) {
-          loading = fetch('/audio/gymnopedie-no-1.mp3')
+          loading = fetch(url)
             .then(r => { if (!r.ok) throw new Error('Music unavailable'); return r.arrayBuffer(); })
             .then(data => context.decodeAudioData(data))
             .then(decoded => {
+              if (fullTrack) { buffer = decoded; play(); return; }
               if (decoded.duration < 50) throw new Error('Music too short');
               const length = Math.round(decoded.sampleRate * 50);
               buffer = context.createBuffer(decoded.numberOfChannels, length, decoded.sampleRate);
