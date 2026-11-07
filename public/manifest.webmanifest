@@ -1,0 +1,17 @@
+{
+  "id": "/",
+  "name": "Moonclock",
+  "short_name": "Moonclock",
+  "description": "Two travelers, one borrowed moment. A cooperative adventure in time.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#8cb7a7",
+  "theme_color": "#f4f7eb",
+  "orientation": "landscape",
+  "icons": [
+    { "src": "/icons/moonclock-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/moonclock-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/moonclock-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

@@ -5,6 +5,7 @@ import { S } from './strings.js';
 import { createRenderer } from './render.js';
 import { createNetwork } from './network.js';
 import { createLobby } from './lobby.js';
+import { createPWA } from './pwa.js';
 
 const music = createMusic();
 const icons = {
@@ -30,6 +31,8 @@ let state = setup({ level: Number.isInteger(saved.level) ? saved.level : 0 });
 state.unlocked = Math.max(state.level, Math.min(levelCount - 1, saved.unlocked || 0));
 let mode = saved.mode === 'coop' ? 'coop' : 'solo';
 let sound = saved.sound !== false;
+let touchControls = saved.touchControls === true;
+const touchMedia = window.matchMedia('(pointer: coarse)');
 let reduced = saved.reduced ?? window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 let best = Array.from({ length: levelCount }, (_, i) => Array.isArray(saved.best) && Number.isFinite(saved.best[i]) ? saved.best[i] : null);
 let modal = 'intro', seenEvent = 0, shownHint = 0, toastTimer, audioContext;
@@ -38,7 +41,7 @@ let lastTime = 0, accumulator = 0, frameCount = 0, sceneKey = 0, cameraReset = 0
 let onlineMode = false, networkEpoch = null, networkStatus = 'offline';
 const held = new Set();
 const touchMoves = new Map();
-let touchJumpActor = null, uiChapter = '', uiProgress = '', uiMode = '';
+let touchJumpPointer = null, touchJumpActor = null, uiChapter = '', uiProgress = '', uiMode = '';
 const app = document.querySelector('#app');
 app.innerHTML = `
   <div class="shell">
@@ -77,10 +80,10 @@ const network = createNetwork({
   onState(game, info) {
     const previousStatus = state.status;
     state = { ...game, active: network.actor };
-    if (game.status === 'paused' && previousStatus !== 'paused') { held.clear(); touchMoves.clear(); touchJumpActor = null; }
+    if (game.status === 'paused' && previousStatus !== 'paused') { held.clear(); touchMoves.clear(); touchJumpActor = null; touchJumpPointer = null; }
     if (networkEpoch !== info.epoch) {
       networkEpoch = info.epoch; sceneKey++; cameraReset++; seenEvent = state.eventSeq;
-      shownHint = 0; uiChapter = ''; held.clear(); touchMoves.clear(); touchJumpActor = null;
+      shownHint = 0; uiChapter = ''; held.clear(); touchMoves.clear(); touchJumpActor = null; touchJumpPointer = null;
       modal = network.room.status === 'STARTING' ? 'online' : null;
     }
     const seenBefore = seenEvent;
@@ -96,7 +99,7 @@ const network = createNetwork({
     const root = document.querySelector('#modal-root');
     if (root.dataset.phase !== String(modal)) { renderModal(); if (!modal) canvas.focus({ preventScroll: true }); }
   },
-  onConnection(status) { networkStatus = status; lobby.setConnection(status); if (status !== 'connected') { held.clear(); touchMoves.clear(); touchJumpActor = null; } },
+  onConnection(status) { networkStatus = status; lobby.setConnection(status); if (status !== 'connected') { held.clear(); touchMoves.clear(); touchJumpActor = null; touchJumpPointer = null; } },
   onError(message) { lobby.setError(message); toast(message); },
 });
 const lobby = createLobby({
@@ -109,6 +112,10 @@ const lobby = createLobby({
   returnToLobby() { network.returnToLobby(); },
   retry() { network.retry(); },
 });
+const pwa = createPWA({ isBusy: () => onlineMode || entering || modal !== 'intro' });
+const orientationTip = document.createElement('aside'); orientationTip.className = 'orientation-tip'; orientationTip.setAttribute('role', 'status');
+orientationTip.innerHTML = '<span>Rotate to landscape for a wider view. You can keep playing.</span><button type="button" aria-label="Dismiss orientation tip">×</button>';
+orientationTip.querySelector('button').addEventListener('click', () => { orientationTip.hidden = true; }); document.body.append(orientationTip);
 function enterOnline() {
   clearInputs(); onlineMode = true; modal = 'online'; entering = false;
   renderer.setEntryProgress?.(1); document.body.classList.add('online-mode'); renderModal();
@@ -122,7 +129,7 @@ function leaveOnline() {
 }
 
 function persist() {
-  try { localStorage.setItem('moonclock-v1', JSON.stringify({ level: state.level, unlocked: state.unlocked, mode, sound, reduced, best })); } catch { }
+  try { localStorage.setItem('moonclock-v1', JSON.stringify({ level: state.level, unlocked: state.unlocked, mode, sound, reduced, best, touchControls })); } catch { }
 }
 function toast(text) { const el = document.querySelector('#toast'); el.textContent = text; el.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 3400); }
 function initAudio() {
@@ -188,9 +195,13 @@ function updateUI() {
   document.querySelector('[data-testid="sound"]').innerHTML = icon(sound ? 'sound' : 'mute');
   document.querySelector('[data-testid="touch-ability"]').textContent = S.ability[state.active];
   document.body.classList.toggle('reduced-motion', reduced);
+  document.body.classList.toggle('touch-enabled', touchControls);
+  document.body.classList.toggle('touch-device', touchMedia.matches);
+  document.body.classList.toggle('in-session', modal !== 'intro');
+  pwa.refresh();
 }
 function clearInputs() {
-  held.clear(); touchMoves.clear(); touchJumpActor = null;
+  held.clear(); touchMoves.clear(); touchJumpActor = null; touchJumpPointer = null;
   for (let i = 0; i < 2; i++) { if (onlineMode && i !== network.actor) continue; dispatch({ type: 'move', actor: i, dir: 0 }, true); dispatch({ type: 'jumpRelease', actor: i }, true); }
 }
 function setModal(type) {
@@ -208,7 +219,7 @@ function renderModal() {
   const close = `<button class="iconbutton close" data-action="close" aria-label="${S.close}">${icon('close')}</button>`;
   if (modal === 'intro') contents = `<div class="intro-icon">${icon('moon')}</div><div class="eyebrow">${S.english} · A COOPERATIVE TIME TALE</div><h1>${S.title}</h1><p>${S.intro}<br>${S.introBody}</p><div class="mode-selector"><button data-mode="solo" class="${mode === 'solo' ? 'selected' : ''}" data-testid="mode-solo">${S.solo}</button><button data-mode="coop" class="${mode === 'coop' ? 'selected' : ''}" data-testid="mode-coop">${S.coop}</button></div><button class="primary" data-action="start" data-testid="start">${saved.unlocked ? S.continue : S.start}${icon('arrow')}</button><p class="intro-foot">${S.subtitle}</p>`;
   if (modal === 'help') contents = `${close}<div class="intro-icon">${icon('help')}</div><h2>${S.helpTitle}</h2><p>${S.helpBody}</p><div class="help-grid">${S.keys.map(([k, v]) => `${key(k)}<span>${v}</span>`).join('')}</div><p>${S.coopKeys}</p><button class="primary" data-action="close">${S.continue}${icon('arrow')}</button>`;
-  if (modal === 'settings') contents = `${close}<div class="intro-icon">${icon('settings')}</div><h2>${S.settings}</h2><p class="music-credit">Gymnopédie No. 1 · Erik Satie<br>Performed by <a href="https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100787" target="_blank" rel="noopener">Kevin MacLeod</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a><br>Excerpt 0:00–0:50; fades applied.</p><div class="settings-row"><span>${S.sound}</span><button class="toggle" role="switch" aria-checked="${sound}" data-action="sound" aria-label="${S.sound}" data-testid="setting-sound"></button></div><div class="settings-row"><span>${S.motion}</span><button class="toggle" role="switch" aria-checked="${reduced}" data-action="motion" aria-label="${S.motion}" data-testid="setting-motion"></button></div><div class="mode-selector"><button data-mode="solo" class="${mode === 'solo' ? 'selected' : ''}">${S.solo}</button><button data-mode="coop" class="${mode === 'coop' ? 'selected' : ''}">${S.coop}</button></div><button class="primary" data-action="close">${S.continue}${icon('arrow')}</button>`;
+  if (modal === 'settings') contents = `${close}<div class="intro-icon">${icon('settings')}</div><h2>${S.settings}</h2><p class="music-credit">Gymnopédie No. 1 · Erik Satie<br>Performed by <a href="https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100787" target="_blank" rel="noopener">Kevin MacLeod</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a><br>Excerpt 0:00–0:50; fades applied.</p><div class="settings-row"><span>${S.sound}</span><button class="toggle" role="switch" aria-checked="${sound}" data-action="sound" aria-label="${S.sound}" data-testid="setting-sound"></button></div><div class="settings-row"><span>${S.motion}</span><button class="toggle" role="switch" aria-checked="${reduced}" data-action="motion" aria-label="${S.motion}" data-testid="setting-motion"></button></div><div class="settings-row"><span>${S.touchControls}</span><button class="toggle" role="switch" aria-checked="${touchControls}" data-action="touch-controls" aria-label="${S.touchControls}" data-testid="setting-touch"></button></div><div class="mode-selector"><button data-mode="solo" class="${mode === 'solo' ? 'selected' : ''}">${S.solo}</button><button data-mode="coop" class="${mode === 'coop' ? 'selected' : ''}">${S.coop}</button></div><button class="primary" data-action="close">${S.continue}${icon('arrow')}</button>`;
   if (modal === 'pause') contents = `<div class="intro-icon">${icon('moon')}</div><div class="eyebrow">A MOMENT OF STILLNESS</div><h2>${S.focus}</h2><p>${S.levels[state.level].goal}</p><button class="primary" data-action="close" data-testid="resume">${S.resume}${icon('play')}</button><div class="modal-actions"><button class="text-button" data-action="help">${S.help}</button><button class="text-button" data-action="restart">${S.restart}</button></div>`;
   if (modal === 'win') contents = `<div class="intro-icon">${icon('leaf')}</div><div class="eyebrow">CHAMBER 0${state.level + 1} · RESTORED</div><h2>${state.level === levelCount - 1 ? S.complete : S.chamberComplete}</h2><p>${state.level === levelCount - 1 ? S.completeBody : S.chamberCompleteBody}</p><p>${S.clear} ${clock(state.elapsed)} · ${S.best} ${clock(best[state.level] ?? state.elapsed)}</p><div class="win-stars">✦ ${state.shards[0].taken ? '✦' : '◇'} ✦</div><p>${S.memory} ${state.shards.filter(s => s.taken).length} / ${state.shards.length}</p><button class="primary" data-action="next" data-testid="next">${state.level === levelCount - 1 ? S.replay : S.next}${icon('arrow')}</button>`;
   if (modal === 'intro') {
@@ -236,6 +247,7 @@ document.addEventListener('keydown', unlockEntryMusic, { capture: true });
 document.addEventListener('click', event => {
   const button = event.target.closest('[data-action], [data-level], [data-mode]'); if (!button) return;
   if (entering) return;
+  if (['start', 'create-room', 'join-room'].includes(button.dataset.action) && !pwa.sessionAllowed()) return;
   if (button.dataset.action === 'create-room') { enterOnline(); network.create(); return; }
   if (button.dataset.action === 'join-room') { enterOnline(); lobby.showJoin(); return; }
   if (button.dataset.action === 'return-lobby') { clearInputs(); network.returnToLobby(); return; }
@@ -261,6 +273,7 @@ document.addEventListener('click', event => {
     requestAnimationFrame(advance); return;
   }
   if (action === 'sound') { sound = !sound; if (!sound) audioContext?.suspend(); initAudio(); updateUI(); persist(); if (modal === 'settings' || modal === 'intro') renderModal(); else if (!modal) canvas.focus({ preventScroll: true }); return; }
+  if (action === 'touch-controls') { touchControls = !touchControls; updateUI(); persist(); renderModal(); return; }
   if (action === 'motion') { reduced = !reduced; updateUI(); persist(); renderModal(); return; }
   if (action === 'close') { resume(); return; }
   if (['help', 'settings', 'pause'].includes(action)) { setModal(action); return; }
@@ -327,11 +340,11 @@ const touchJump = document.querySelector('[data-jump]');
 touchJump.addEventListener('pointerdown', event => {
   if (modal || touchJumpActor !== null) return;
   event.preventDefault(); initAudio(); touchJump.setPointerCapture(event.pointerId);
-  touchJumpActor = state.active; dispatch({ type: 'jump', actor: touchJumpActor });
+  touchJumpPointer = event.pointerId; touchJumpActor = state.active; dispatch({ type: 'jump', actor: touchJumpActor });
 });
-function releaseTouchJump() {
-  if (touchJumpActor === null) return;
-  const actor = touchJumpActor; touchJumpActor = null;
+function releaseTouchJump(event) {
+  if (touchJumpActor === null || event.pointerId !== touchJumpPointer) return;
+  const actor = touchJumpActor; touchJumpActor = null; touchJumpPointer = null;
   if (!keyboardJumpHeld(actor)) dispatch({ type: 'jumpRelease', actor }, true);
 }
 for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) touchJump.addEventListener(name, releaseTouchJump);
@@ -339,7 +352,9 @@ touchJump.addEventListener('click', event => { if (event.detail === 0 && !modal)
 canvas.addEventListener('pointerdown', () => canvas.focus({ preventScroll: true }));
 document.querySelector('.hint-panel summary').addEventListener('click', event => { if (event.detail > 0) canvas.focus({ preventScroll: true }); });
 window.addEventListener('blur', () => { clearInputs(); if (!onlineMode && !modal && state.status === 'playing') setModal('pause'); audioContext?.suspend(); });
-document.addEventListener('visibilitychange', () => { if (document.hidden) { clearInputs(); if (!onlineMode && !modal && state.status === 'playing') setModal('pause'); audioContext?.suspend(); } });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { clearInputs(); if (!onlineMode && !modal && state.status === 'playing') setModal('pause'); audioContext?.suspend(); } else if (onlineMode) network.wake(); });
+window.addEventListener('pageshow', () => { if (onlineMode) network.wake(); });
+touchMedia.addEventListener('change', updateUI);
 window.__moonclock = {
   snapshot: () => ({ ...viewFor(state, onlineMode ? network.playerId : 'local'), phase: modal || state.status, players: structuredClone(state.actors) }),
   presentation: () => renderer.inspect(),
@@ -348,12 +363,13 @@ window.__moonclock = {
 };
 function frame(time) {
   music.sync(sound && !document.hidden && (modal === 'intro' || entering || !modal || modal === 'win'));
+  pwa.refresh();
   if (lastTime === 0) lastTime = time;
   accumulator += Math.min(100, time - lastTime); lastTime = time;
   if (!onlineMode && !modal && state.status === 'playing') { while (accumulator >= 1000 / 60) { dispatch({ type: 'tick' }, true); accumulator -= 1000 / 60; } } else accumulator = 0;
   const displayState = onlineMode ? network.render(Math.min(.1, (time - (frame.previous ?? time)) / 1000), time) || state : state;
   frame.previous = time;
-  renderer.draw(displayState, time, { reduced, mode: onlineMode ? 'solo' : mode, paused: !!modal || state.status !== 'playing' || (onlineMode && (!network.connected || network.room?.suspended)), sceneKey, cameraReset, target: targetFor(state, state.active)?.id });
+  renderer.draw(displayState, time, { reduced, mode: (touchMedia.matches || touchControls) ? 'coop' : onlineMode ? 'solo' : mode, paused: !!modal || state.status !== 'playing' || (onlineMode && (!network.connected || network.room?.suspended)), sceneKey, cameraReset, target: targetFor(state, state.active)?.id });
   frameCount++; if (frameCount % 10 === 0) updateUI();
   if (debug) { const el = document.querySelector('#debug'); el.hidden = false; el.textContent = `tick ${state.tick} | phase ${modal || state.status}\nentities ${state.actors.length + state.objects.length}\nactor ${state.active} | ${Math.round(state.actors[state.active].x)},${Math.round(state.actors[state.active].y)}`; }
   requestAnimationFrame(frame);

@@ -3,5 +3,5 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "scripts": { "dev": "bun server.js", "start": "bun server.js", "test": "bun test", "build": "bun build public/client.js --outdir dist --target browser" }
+  "scripts": { "dev": "bun server.js", "start": "bun server.js", "start:production": "bun scripts/start-production.js", "test": "bun test", "build": "bun scripts/build.js" }
 }
