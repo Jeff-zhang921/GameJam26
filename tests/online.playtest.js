@@ -20,11 +20,13 @@ async (page) => {
   await host.reload();
   await host.locator('.online-error:not([hidden])').waitFor({ state: 'visible' });
   await host.getByRole('button', { name: 'Leave Room', exact: true }).click();
+  await host.getByTestId('new-game').click();
   await host.getByTestId('create-room').waitFor({ state: 'visible' });
   await host.getByTestId('create-room').click();
   await host.getByTestId('room-code').waitFor({ state: 'visible' });
   const code = await host.getByTestId('room-code').innerText();
   await guest.goto('http://127.0.0.1:4173/');
+  await guest.getByTestId('new-game').click();
   await guest.getByTestId('join-room').click();
   await guest.getByTestId('room-code-input').fill(code === '000000' ? '111111' : '000000');
   await guest.getByTestId('join-room-submit').click();

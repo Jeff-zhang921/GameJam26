@@ -17,9 +17,11 @@ async (page) => {
   const [host, guest, otherHost, otherGuest] = contexts.map(context => context.pages()[0]);
   const rooms = [];
   for (const [a, b] of [[host, guest], [otherHost, otherGuest]]) {
+    await a.getByTestId('new-game').click();
     await a.getByTestId('create-room').click();
     await a.getByTestId('room-code').waitFor({ state: 'visible' });
     const code = await a.getByTestId('room-code').innerText(); rooms.push(code);
+    await b.getByTestId('new-game').click();
     await b.getByTestId('join-room').click(); await b.getByTestId('room-code-input').fill(code);
     await b.getByTestId('join-room-submit').click(); await b.getByTestId('room-code').waitFor({ state: 'visible' });
     await a.getByTestId('character-still').click(); await b.getByTestId('character-bloom').click();

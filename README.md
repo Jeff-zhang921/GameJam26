@@ -48,10 +48,18 @@ docker run --rm -p 4181:8080 -e PORT=8080 -e PUBLIC_ORIGIN=http://localhost:4181
 
 当前依赖安装通过 `scripts/check-dependencies.js` 检查 `package.json` 与 `package-lock.json` 均为零依赖。Bun 会删除空锁文件，因此镜像不使用空的 Bun 锁文件。以后添加依赖时，需同步更新此检查、提交有效的 Bun 锁文件并改为冻结锁文件安装。
 
+## 主菜单
+
+主菜单的按钮都在同一级：**Continue**（有存档时出现，继续上次的关卡）、**New Game**、**Settings**、**How to Play**、**About**、**Credits**。
+
+- **New Game** 进入第二页：**Local · Solo** 从第 1 关开始本地单人游戏（一人操控两名角色，`Tab` 或切换按钮换人；已解锁关卡和最佳时间保留）；**Online · Two Players** 下是 **Create Room / Join Room**。本地不再提供同机双人，两人一起玩请使用在线模式。
+- Settings、How to Play、About、Credits 以面板形式叠在主菜单上，**Back**、× 或 `Esc` 返回主菜单；在 New Game 页按 `Esc` 回到主页。
+- 菜单文字在 `public/strings.js`（`menu`、`about*`、`credits*`）。
+
 ## 两人在线游戏
 
 1. 两名玩家打开同一服务地址，使用独立的浏览器会话或设备。
-2. 主机点击 **Create Room**，复制六位房间码。另一名玩家点击 **Join Room** 并输入房间码。
+2. 在主菜单点 **New Game**，再在 Online 一栏操作：主机点击 **Create Room**，复制六位房间码。另一名玩家点击 **Join Room** 并输入房间码。
 3. 分别选择 Stillkeeper 和 Bloomkeeper，双方点击 **Ready**。
 4. 主机点击 **Start Game**，等待服务器控制的共享倒计时。
 5. 使用 `A / D` 或方向键移动、`Space` 跳跃、`E` 交互、`F` 使用技能。在线模式每人只能控制自己的角色，不能用 `Tab` 换人。Still 也可以直接用鼠标点击场景放置 Freeze Area。需要重来时使用暂停菜单中的 **Restart Level**（会触发 4 秒时间倒流，见下文）。
@@ -80,9 +88,9 @@ Still 不再选中单个物体，而是点击 / 触摸场景中的任意位置�
 
 每次成功施放消耗 1 次，HUD 显示 `Freeze × N`；为 0 时禁止施放并提示去找霜晶。重新开始或切换关卡会恢复初始次数和全部霜晶。在线模式下次数、区域和霜晶状态都由服务器管理并同步。
 
-`Esc` 或右上角暂停按钮打开暂停菜单：**Resume**、**Restart Level**、**Leave Room / Main Menu**，以及提示（Courtyard Whisper）、操作说明、设置和声音。单人和同机双人模式下暂停会停住本地模拟。在线模式下暂停菜单只覆盖自己的屏幕，共享世界继续运行，打开菜单时会松开所有按住的输入。在线重置关卡只有主机可以操作，需要二次确认，并由服务器同时重置两边。离开房间后，另一名玩家会回到等待大厅。原有单人及同机双人入口继续保留。
+`Esc` 或右上角暂停按钮打开暂停菜单：**Resume**、**Restart Level**、**Leave Room / Main Menu**，以及提示（Courtyard Whisper）、操作说明、设置和声音。本地单人模式下暂停会停住本地模拟。在线模式下暂停菜单只覆盖自己的屏幕，共享世界继续运行，打开菜单时会松开所有按住的输入。在线重置关卡只有主机可以操作，需要二次确认，并由服务器同时重置两边。离开房间后，另一名玩家会回到等待大厅。
 
-暂停菜单里可以选择关卡。单人和同机模式立即切换；在线模式只有主机能选，确认后由服务器让两人同时进入同一关。
+暂停菜单里可以选择关卡。本地模式立即切换；在线模式只有主机能选，确认后由服务器让两人同时进入同一关。
 
 过关条件是 **Still 和 Bloom 两人都到达月门**。只有一人到达时，月门上方显示 “Waiting for Still / Bloom”，并弹出提示等待另一人。在线模式由服务器检查两人的位置。
 
