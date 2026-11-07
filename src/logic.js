@@ -1,12 +1,9 @@
 export const meta = {
   name: 'CLOCKBLOOM', minPlayers: 1, maxPlayers: 2, tickRate: 60,
   controls: { speed: 4.2, jump: -12.5, springJump: -15.3, gravity: 0.48, coyote: 7, jumpBuffer: 7, range: 420, reach: 95, pitReach: 50 },
-  time: { stageTicks: 480, moverSpeed: 1, maxGear: 3, rewinds: 3, hintTicks: 90 * 60 },
+  time: { moverSpeed: 1, maxSpeed: 3, rewinds: 3, hintTicks: 90 * 60 },
+  plant: { maxHeight: 235, springHeight: 45, growTicks: 960, matureTicks: 480, witherTicks: 480 },
 };
-
-export const STAGES = ['seed', 'sprout', 'sapling', 'grown', 'withered'];
-const HEIGHTS = [6, 30, 80, 235, 200];
-const CANOPY = [0, 60, 110, 138, 50];
 const STILL = 0, BLOOM = 1;
 
 const LEVELS = [
@@ -29,7 +26,7 @@ const LEVELS = [
     platforms: [{ x: 0, y: 520, w: 1280, h: 140 }, { x: 1000, y: 265, w: 280, h: 400 }],
     spawn: [{ x: 190, y: 520 }, { x: 265, y: 520 }],
     crates: [], seeds: [{ x: 330, y: 510 }], pits: [{ x: 600, y: 520 }, { x: 880, y: 520 }],
-    plants: [{ pit: 0, stage: 3, barrier: true }], movers: [],
+    plants: [{ pit: 0, grown: 1, barrier: true }], movers: [],
     exit: { x: 1160, y: 265 }, shards: [{ x: 880, y: 300 }], need: ['withered', 'sproutJump'],
   },
   {
@@ -55,9 +52,13 @@ export function anchor(o) {
   return { x: o.x, y: o.y };
 }
 
-function makePlant(id, pit, stage = 0, barrier = false) {
+const heightAt = age => Math.min(age, meta.plant.growTicks) / meta.plant.growTicks * meta.plant.maxHeight;
+export const canopyWidth = plant => plant.withered ? 50 : Math.min(138, 40 + plant.height * 0.42);
+
+function makePlant(id, pit, grown = 0, barrier = false) {
   pit.plant = id;
-  return { kind: 'plant', id, pit: pit.id, x: pit.x, base: pit.y, stage, progress: 0, speed: 0, frozen: false, height: HEIGHTS[stage], barrier };
+  const age = grown * (meta.plant.growTicks + meta.plant.matureTicks);
+  return { kind: 'plant', id, pit: pit.id, x: pit.x, base: pit.y, age, height: heightAt(age), withered: false, speed: 0, frozen: false, barrier };
 }
 
 function makeLevel(index, players, unlocked, totalShards, collected = [false, false, false, false]) {
@@ -67,7 +68,7 @@ function makeLevel(index, players, unlocked, totalShards, collected = [false, fa
     ...level.crates.map((p, i) => ({ kind: 'crate', id: `crate-${i}`, x: p.x, y: p.y, vx: 0, vy: 0, frozen: false, held: null, spawnX: p.x, spawnY: p.y })),
     ...level.seeds.map((p, i) => ({ kind: 'seed', id: `seed-${i}`, x: p.x, y: p.y, vx: 0, vy: 0, held: null, spawnX: p.x, spawnY: p.y })),
     ...level.movers.map((p, i) => ({ kind: 'mover', id: `mover-${i}`, x: p.x1, y: p.y, w: p.w, x1: p.x1, x2: p.x2, dir: 1, speed: 0, frozen: false })),
-    ...level.plants.map((p, i) => makePlant(`plant-${i}`, pits[p.pit], p.stage, p.barrier)),
+    ...level.plants.map((p, i) => makePlant(`plant-${i}`, pits[p.pit], p.grown, p.barrier)),
   ];
   return {
     level: index, levelId: level.id, unlocked, totalShards, collected: clone(collected), tick: 0, status: 'playing', active: 0,
@@ -98,7 +99,7 @@ export function targetFor(state, actor, action = {}) {
   const candidates = state.objects.filter(o => kinds.includes(o.kind) && free(o) && dist(p, anchor(o)) <= meta.controls.range);
   if (action.target) return candidates.find(o => o.id === action.target);
   const sorted = candidates.sort((a, b) => dist(p, anchor(a)) - dist(p, anchor(b)));
-  return actor === STILL ? sorted[0] : sorted.find(o => !o.frozen && !(o.kind === 'mover' && o.speed >= meta.time.maxGear)) || sorted[0];
+  return actor === STILL ? sorted[0] : sorted.find(o => !o.frozen && o.speed < meta.time.maxSpeed) || sorted[0];
 }
 
 function pickable(state, p) {
@@ -132,7 +133,7 @@ export function validateAction(state, playerId, action) {
     const target = targetFor(state, action.actor, action);
     if (!target) return no(action.actor === STILL ? 'freezeRange' : 'bloomRange');
     if (action.actor === BLOOM && target.frozen) return no('heldByStill');
-    if (action.actor === BLOOM && target.kind === 'mover' && target.speed >= meta.time.maxGear) return no('moverMax');
+    if (action.actor === BLOOM && target.speed >= meta.time.maxSpeed) return no('maxSpeed');
     return { valid: true };
   }
   return no('invalid');
@@ -143,22 +144,12 @@ function event(state, kind, x, y) {
   if (state.events.length > 10) state.events.shift();
 }
 
-function advance(state, plant) {
-  plant.stage++; plant.progress = 0;
-  if (plant.barrier && plant.stage >= 4) state.flags.withered = true;
-  if (plant.stage >= STAGES.length) {
-    state.objects = state.objects.filter(o => o !== plant);
-    state.pits.find(p => p.id === plant.pit).plant = null;
-    event(state, 'vanish', plant.x, plant.base - plant.height);
-  } else event(state, 'grow', plant.x, plant.base - plant.height);
-}
-
 function surfaces(state) {
   const result = state.platforms.map((p, i) => ({ ...p, id: `platform-${i}` }));
   for (const o of state.objects) {
     if (o.kind === 'crate' && o.held === null) result.push({ id: o.id, x: o.x - 27, y: o.y - 27, w: 54, h: 54 });
     if (o.kind === 'mover') result.push({ id: o.id, x: o.x, y: o.y, w: o.w, h: 20 });
-    if (o.kind === 'plant' && o.stage > 0) result.push({ id: o.id, x: o.x - CANOPY[o.stage] / 2, y: o.base - o.height, w: CANOPY[o.stage], h: 16, spring: o.stage === 1 });
+    if (o.kind === 'plant' && o.height > 0) { const w = canopyWidth(o); result.push({ id: o.id, x: o.x - w / 2, y: o.base - o.height, w, h: 16, spring: !o.withered && o.height <= meta.plant.springHeight }); }
   }
   return result;
 }
@@ -171,18 +162,21 @@ function remember(state) {
 
 function ageObjects(state) {
   for (const o of [...state.objects]) {
-    if (o.kind === 'plant') {
-      if (!o.frozen && o.speed > 0) {
-        o.progress += o.speed / meta.time.stageTicks;
-        if (o.progress >= 1 - 1e-9) advance(state, o);
-        if (!state.objects.includes(o)) continue;
+    if (o.kind === 'plant' && !o.frozen && o.speed > 0) {
+      const { growTicks, matureTicks, witherTicks } = meta.plant;
+      o.age += o.speed;
+      if (o.age >= growTicks + matureTicks + witherTicks) {
+        state.objects = state.objects.filter(x => x !== o);
+        state.pits.find(p => p.id === o.pit).plant = null;
+        event(state, 'vanish', o.x, o.base - o.height);
+        continue;
       }
-      const before = o.height;
-      if (!o.frozen) o.height += Math.sign(HEIGHTS[o.stage] - o.height) * Math.min(Math.abs(HEIGHTS[o.stage] - o.height), 2.2);
-      const rise = o.height - before;
+      if (!o.withered && o.age > growTicks + matureTicks) { o.withered = true; if (o.barrier) state.flags.withered = true; }
+      const rise = heightAt(o.age) - o.height;
+      o.height += rise;
       if (rise) for (const p of state.actors) if (p.on === o.id && p.grounded) {
         p.y -= rise;
-        if (rise > 0.1) state.flags.treeLifted = true;
+        if (o.height > meta.plant.springHeight) state.flags.treeLifted = true;
       }
     }
     if (o.kind === 'mover' && !o.frozen && o.speed > 0) {
@@ -232,7 +226,7 @@ function moveActors(state) {
     p.x = Math.max(22, Math.min(1258, p.x + p.vx));
     const body = () => ({ x: p.x - 15, y: p.y - 52, w: 30, h: 51 });
     for (const f of state.platforms) if (rectOverlap(body(), f) && p.y > f.y + 9) p.x = oldX;
-    for (const o of state.objects) if (o.kind === 'plant' && o.barrier && o.stage < 4 && rectOverlap(body(), { x: o.x - 42, y: o.base - o.height, w: 84, h: o.height })) p.x = oldX;
+    for (const o of state.objects) if (o.kind === 'plant' && o.barrier && !o.withered && rectOverlap(body(), { x: o.x - 42, y: o.base - o.height, w: 84, h: o.height })) p.x = oldX;
     const previousY = p.y;
     p.vy += meta.controls.gravity;
     p.y += p.vy;
@@ -325,9 +319,7 @@ export function applyAction(state, playerId, action) {
   if (action.type === 'ability') {
     const o = targetFor(s, action.actor, action);
     if (action.actor === STILL) { o.frozen = !o.frozen; event(s, o.frozen ? 'freeze' : 'unfreeze', anchor(o).x, anchor(o).y); }
-    else if (o.kind === 'mover') { o.speed++; event(s, 'grow', anchor(o).x, o.y); }
-    else if (o.speed === 0) { o.speed = 1; event(s, 'wake', o.x, o.base - o.height); }
-    else advance(s, o);
+    else { const woke = o.speed === 0; o.speed++; event(s, woke ? 'wake' : 'grow', anchor(o).x, anchor(o).y); }
   }
   return s;
 }

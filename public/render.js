@@ -1,9 +1,11 @@
+import { canopyWidth, meta } from '../src/logic.js';
+
 export function createRenderer(canvas, S) {
   const ctx = canvas.getContext('2d');
   const background = document.createElement('canvas'); background.width = 1280; background.height = 640;
   const b = background.getContext('2d');
   let scale = 1, offsetX = 0, offsetY = 0, currentDpr = 1;
-  const cyan = '#a1e3e5', gold = '#e1c68a';
+  const cyan = '#a1e3e5', gold = '#e1c68a', muted = '#8aa89b';
   function line(c, points, color, width = 1) { c.beginPath(); c.moveTo(points[0][0], points[0][1]); for (let i = 1; i < points.length; i++) c.lineTo(points[i][0], points[i][1]); c.strokeStyle = color; c.lineWidth = width; c.stroke(); }
   function circle(c, x, y, r, fill, stroke, width = 1) { c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); if (fill) { c.fillStyle = fill; c.fill(); } if (stroke) { c.strokeStyle = stroke; c.lineWidth = width; c.stroke(); } }
   function ellipse(c, x, y, rx, ry, angle, color) { c.beginPath(); c.ellipse(x, y, Math.max(.1, rx), Math.max(.1, ry), angle, 0, Math.PI * 2); c.fillStyle = color; c.fill(); }
@@ -95,23 +97,23 @@ export function createRenderer(canvas, S) {
     ctx.restore();
   }
   function plant(o, targeted, t) {
-    const h = o.height, x = o.x, y = o.base, stage = o.stage, dead = stage === 4;
+    const h = o.height, x = o.x, y = o.base, dead = o.withered;
     timeRing(x, y - h / 2, Math.max(22, h / 2 + 12), o, t);
-    if (stage === 0) { ellipse(ctx, x, y - 5, 6, 8, .4, '#b39a5c'); ellipse(ctx, x - 1, y - 7, 2.5, 4, .4, '#e6d39a'); }
-    else if (stage === 1) { line(ctx, [[x, y], [x, y - h]], '#c5bb80', 3); ellipse(ctx, x - 10, y - h + 5, 13, 5, .6, '#b7bd80'); ellipse(ctx, x + 10, y - h, 13, 5, -.6, '#d2c483'); circle(ctx, x, y - h + 2, 3, gold); }
+    if (h < 4 && !dead) { ellipse(ctx, x, y - 5, 6, 8, .4, '#b39a5c'); ellipse(ctx, x - 1, y - 7, 2.5, 4, .4, '#e6d39a'); }
+    else if (h < 45 && !dead) { const leaf = 5 + h * .2; line(ctx, [[x, y], [x, y - h]], '#c5bb80', 3); ellipse(ctx, x - leaf * .8, y - h + 5, leaf, leaf * .4, .6, '#b7bd80'); ellipse(ctx, x + leaf * .8, y - h, leaf, leaf * .4, -.6, '#d2c483'); circle(ctx, x, y - h + 2, 3, gold); }
     else {
-      const crown = stage === 2 ? 55 : 77, trunkTop = y - h + (dead ? 0 : 28);
-      ctx.beginPath(); ctx.moveTo(x - 14, y); ctx.bezierCurveTo(x - 8, y - h * .45, x - 18, trunkTop + 30, x - 3, trunkTop); ctx.lineTo(x + 8, trunkTop); ctx.bezierCurveTo(x + 2, y - h * .45, x + 16, y - 20, x + 21, y); ctx.fillStyle = dead ? '#7c7c63' : '#a8a276'; ctx.fill();
-      line(ctx, [[x - 3, y], [x + 2, y - h * .4], [x - 4, trunkTop]], '#d3bd836b', 1.5);
-      for (let i = 0; i < 7; i++) { const side = i % 2 ? 1 : -1; const yy = y - h * (.35 + i * .075); const len = (25 + i * 6) * crown / 77; ctx.beginPath(); ctx.moveTo(x, yy + 25); ctx.quadraticCurveTo(x + side * len * .5, yy, x + side * len, yy - 22); ctx.strokeStyle = dead ? '#949277' : '#ada875'; ctx.lineWidth = 5 - i * .3; ctx.stroke(); }
+      const crown = canopyWidth(o) / 2 + 8, k = Math.min(1, h / 160), trunkTop = y - h + (dead ? 0 : 28 * k);
+      ctx.beginPath(); ctx.moveTo(x - 14 * k, y); ctx.bezierCurveTo(x - 8 * k, y - h * .45, x - 18 * k, trunkTop + 30 * k, x - 3, trunkTop); ctx.lineTo(x + 8 * k, trunkTop); ctx.bezierCurveTo(x + 2, y - h * .45, x + 16 * k, y - 20 * k, x + 21 * k, y); ctx.fillStyle = dead ? '#7c7c63' : '#a8a276'; ctx.fill();
+      line(ctx, [[x - 3 * k, y], [x + 2 * k, y - h * .4], [x - 4 * k, trunkTop]], '#d3bd836b', 1.5);
+      for (let i = 0; i < 7; i++) { const side = i % 2 ? 1 : -1; const yy = y - h * (.35 + i * .075); const len = (25 + i * 6) * (dead ? 1 : crown / 77); ctx.beginPath(); ctx.moveTo(x, yy + 25 * k); ctx.quadraticCurveTo(x + side * len * .5, yy, x + side * len, yy - 22 * k); ctx.strokeStyle = dead ? '#949277' : '#ada875'; ctx.lineWidth = (5 - i * .3) * Math.max(.5, k); ctx.stroke(); }
       if (!dead) {
+        const leaf = crown / 77;
         glow(ctx, x, y - h + 15, crown + 23, '#d3bd7920');
-        for (let i = 0; i < 67; i++) { const a = i * 2.399; const r = Math.sqrt(i / 67); const xx = x + Math.cos(a) * r * crown, yy = y - h + 12 + Math.sin(a) * r * crown * .44; ellipse(ctx, xx, yy, 9 + i % 5, 4 + i % 3, Math.sin(a) * .7, ['#9dba81', '#bbc58a', '#d5c686', '#7b9c76', '#c6bd79'][i % 5]); }
-        line(ctx, [[x - crown + 13, y - h + 3], [x + crown - 13, y - h + 3]], '#efdfac77');
+        for (let i = 0; i < 67; i++) { const a = i * 2.399; const r = Math.sqrt(i / 67); const xx = x + Math.cos(a) * r * crown, yy = y - h + 12 * leaf + Math.sin(a) * r * crown * .44; ellipse(ctx, xx, yy, (9 + i % 5) * leaf, (4 + i % 3) * leaf, Math.sin(a) * .7, ['#9dba81', '#bbc58a', '#d5c686', '#7b9c76', '#c6bd79'][i % 5]); }
+        line(ctx, [[x - crown + 13 * leaf, y - h + 3], [x + crown - 13 * leaf, y - h + 3]], '#efdfac77');
       } else { ellipse(ctx, x, y - h, 25, 5, 0, '#8d8a6c'); for (let i = 0; i < 5; i++) ellipse(ctx, x + Math.sin(i * 3) * 43, y - 4, 5, 2, i, '#b3a475'); }
     }
     if (targeted) { circle(ctx, x, y - h - 16, 13, '#d7bd7d10', '#e1c68a70'); star(ctx, x, y - h - 16, 5, gold); }
-    ctx.font = '10px "Segoe UI",sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#cbd3b296'; ctx.fillText(S.plantStages[stage], x, y + 31);
   }
   function mover(o, targeted, t) {
     timeRing(o.x + o.w / 2, o.y + 10, o.w / 2 + 10, o, t);
@@ -153,6 +155,8 @@ export function createRenderer(canvas, S) {
       const top = selected.kind === 'plant' ? selected.base - selected.height - 53 : selected.kind === 'mover' ? selected.y - 30 : selected.y - 62;
       const x = selected.kind === 'mover' ? selected.x + selected.w / 2 : selected.x;
       if (state.active === 0) label(x, top, selected.frozen ? S.targetRelease : S.targetFreeze);
+      else if (selected.frozen) label(x, top, S.targetHeld, muted);
+      else if (selected.speed >= meta.time.maxSpeed) label(x, top, S.targetMax, muted);
       else label(x, top, selected.speed ? S.targetHasten : S.targetWake, gold);
     }
   }

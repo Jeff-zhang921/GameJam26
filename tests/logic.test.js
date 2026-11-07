@@ -4,7 +4,9 @@ import { setup, validateAction, applyAction, isGameOver, viewFor, hintLevel, met
 function step(state, n = 1) { for (let i = 0; i < n; i++) state = applyAction(state, 'local', { type: 'tick' }); return state; }
 function action(state, value) { expect(validateAction(state, 'local', value).valid).toBe(true); return applyAction(state, 'local', value); }
 const get = (state, id) => state.objects.find(o => o.id === id);
-const STAGE = meta.time.stageTicks;
+const { growTicks: G, matureTicks: M, witherTicks: W, maxHeight: H, springHeight } = meta.plant;
+const plantOf = s => s.objects.find(o => o.kind === 'plant');
+const apex = (s, actor) => { let top = s.actors[actor].y; for (let i = 0; i < 60; i++) { s = step(s); top = Math.min(top, s.actors[actor].y); } return top; };
 
 // Level 1 (index 1) has one empty pit at x=600 on ground y=540 and seeds at x=90 / x=380.
 function planted() {
@@ -30,7 +32,7 @@ describe('seeds and pits', () => {
     s = action(s, { type: 'grab', actor: 0 });
     expect(get(s, 'seed-1')).toBeUndefined();
     const plant = s.objects.find(o => o.kind === 'plant');
-    expect(plant).toMatchObject({ stage: 0, speed: 0, x: 600 });
+    expect(plant).toMatchObject({ age: 0, height: 0, speed: 0, x: 600 });
     expect(s.pits[0].plant).toBe(plant.id);
   });
 
@@ -56,65 +58,91 @@ describe('seeds and pits', () => {
 
 describe('time flow', () => {
   test('an untouched plant never ages', () => {
-    let s = step(planted(), STAGE * 2);
-    expect(s.objects.find(o => o.kind === 'plant')).toMatchObject({ stage: 0, progress: 0 });
+    const s = step(planted(), G);
+    expect(plantOf(s)).toMatchObject({ age: 0, height: 0, speed: 0 });
   });
 
-  test('bloom wakes a plant, which then ages one stage per stageTicks', () => {
+  test('bloom wakes a plant, which then grows linearly with time', () => {
     let s = action(planted(), { type: 'ability', actor: 1 });
-    expect(s.objects.find(o => o.kind === 'plant').speed).toBe(1);
-    s = step(s, STAGE);
-    expect(s.objects.find(o => o.kind === 'plant').stage).toBe(1);
+    expect(plantOf(s).speed).toBe(1);
+    s = step(s, G / 4);
+    expect(plantOf(s).height).toBeCloseTo(H / 4, 5);
+    s = step(s, G / 4);
+    expect(plantOf(s).height).toBeCloseTo(H / 2, 5);
   });
 
-  test('blooming an awake plant skips straight to the next stage', () => {
-    let s = action(planted(), { type: 'ability', actor: 1 });
+  test('blooming an awake plant makes it grow faster, up to a cap', () => {
+    let s = planted();
+    for (let i = 0; i < meta.time.maxSpeed; i++) s = action(s, { type: 'ability', actor: 1 });
+    expect(plantOf(s).speed).toBe(meta.time.maxSpeed);
+    expect(validateAction(s, 'local', { type: 'ability', actor: 1 }).error).toBe('maxSpeed');
     s = step(s, 100);
-    s = action(s, { type: 'ability', actor: 1 });
-    expect(s.objects.find(o => o.kind === 'plant')).toMatchObject({ stage: 1, progress: 0, speed: 1 });
+    expect(plantOf(s).height).toBeCloseTo(H * 100 * meta.time.maxSpeed / G, 5);
   });
 
-  test('a withered plant vanishes, frees its pit and drops its rider', () => {
-    let s = action(planted(), { type: 'ability', actor: 1 });
+  test('a plant growing under an actor standing on its pit lifts them', () => {
+    let s = planted();
     for (let i = 0; i < 3; i++) s = action(s, { type: 'ability', actor: 1 });
-    s = step(s, 120);
-    const plant = s.objects.find(o => o.kind === 'plant');
-    expect(plant.stage).toBe(3);
-    s.actors[0].x = plant.x; s.actors[0].y = plant.base - plant.height; s.actors[0].on = plant.id;
-    s = action(s, { type: 'ability', actor: 1 });
-    s = step(s, 30);
-    expect(s.actors[0].on).toBe(plant.id);
-    s = action(s, { type: 'ability', actor: 1 });
-    expect(s.objects.some(o => o.kind === 'plant')).toBe(false);
-    expect(s.pits[0].plant).toBe(null);
-    s = step(s, 5);
-    expect(s.actors[0].grounded).toBe(false);
-  });
-
-  test('growing from sapling to grown lifts the rider', () => {
-    let s = action(planted(), { type: 'ability', actor: 1 });
-    s = action(s, { type: 'ability', actor: 1 }); s = action(s, { type: 'ability', actor: 1 });
-    s = step(s, 40);
-    const plant = s.objects.find(o => o.kind === 'plant');
-    s.actors[0].x = plant.x; s.actors[0].y = plant.base - plant.height; s.actors[0].on = plant.id;
-    s = action(s, { type: 'ability', actor: 1 });
-    s = step(s, 90);
-    expect(s.actors[0].y).toBeCloseTo(540 - 235, 5);
+    s = step(s, G / 6);
+    expect(s.actors[1].on).toBe(plantOf(s).id);
+    expect(s.actors[1].y).toBeCloseTo(540 - plantOf(s).height, 5);
+    expect(plantOf(s).height).toBeCloseTo(H / 2, 5);
     expect(s.flags.treeLifted).toBe(true);
   });
 
-  test('jumping from a sprout goes higher than jumping from the ground', () => {
-    const apex = s => { let top = s.actors[0].y; for (let i = 0; i < 60; i++) { s = step(s); top = Math.min(top, s.actors[0].y); } return top; };
-    let s = action(planted(), { type: 'ability', actor: 1 });
-    s = action(s, { type: 'ability', actor: 1 });
-    s = step(s, 20);
-    const plant = s.objects.find(o => o.kind === 'plant');
-    s.actors[0].x = plant.x; s.actors[0].y = plant.base - plant.height; s.actors[0].on = plant.id;
+  test('a fully grown plant stays lush for a while, then withers, then vanishes, freeing its pit and dropping its rider', () => {
+    let s = planted();
+    for (let i = 0; i < 3; i++) s = action(s, { type: 'ability', actor: 1 });
+    s = step(s, G / 3);
+    expect(plantOf(s)).toMatchObject({ height: H, withered: false });
+    expect(M).toBeGreaterThan(0);
+    s = step(s, M / 3);
+    expect(plantOf(s)).toMatchObject({ height: H, withered: false });
     s = step(s);
-    const springRise = s.actors[0].y - apex(action(s, { type: 'jump', actor: 0 }));
+    expect(plantOf(s).withered).toBe(true);
+    expect(s.actors[1].on).toBe(plantOf(s).id);
+    s = step(s, W / 3 - 1);
+    expect(plantOf(s)).toBeUndefined();
+    expect(s.pits[0].plant).toBe(null);
+    s = step(s, 5);
+    expect(s.actors[1].grounded).toBe(false);
+  });
+
+  test('jumping from a young sprout goes higher than jumping from the ground', () => {
+    let s = action(planted(), { type: 'ability', actor: 1 });
+    s = step(s, Math.round(G * 30 / H));
+    expect(plantOf(s).height).toBeLessThan(springHeight);
+    expect(s.actors[1].on).toBe(plantOf(s).id);
+    const jumped = action(s, { type: 'jump', actor: 1 });
+    const springRise = s.actors[1].y - apex(jumped, 1);
     const ground = setup({ level: 1 });
-    const groundRise = ground.actors[0].y - apex(action(ground, { type: 'jump', actor: 0 }));
+    const groundRise = ground.actors[1].y - apex(action(ground, { type: 'jump', actor: 1 }), 1);
     expect(springRise).toBeGreaterThan(groundRise * 1.4);
+    expect(step(jumped).flags.sproutJump).toBe(true);
+  });
+
+  test('jumping from a tall tree is an ordinary jump', () => {
+    let s = planted();
+    for (let i = 0; i < 3; i++) s = action(s, { type: 'ability', actor: 1 });
+    s = step(s, G / 6);
+    s = action(s, { type: 'ability', actor: 0 });
+    const rise = s.actors[1].y - apex(action(s, { type: 'jump', actor: 1 }), 1);
+    const ground = setup({ level: 1 });
+    expect(rise).toBeCloseTo(ground.actors[1].y - apex(action(ground, { type: 'jump', actor: 1 }), 1), 0);
+  });
+
+  test('an ancient barrier tree blocks the path until it withers', () => {
+    let s = setup({ level: 2 });
+    const tree = plantOf(s);
+    Object.assign(s.actors[0], { x: tree.x - 80 });
+    s = action(s, { type: 'move', actor: 0, dir: 1 });
+    s = step(s, 30);
+    expect(s.actors[0].x).toBeLessThan(tree.x - 42);
+    s.actors[1].x = tree.x - 100;
+    s = action(s, { type: 'ability', actor: 1 });
+    s = step(s, 40);
+    expect(s.flags.withered).toBe(true);
+    expect(s.actors[0].x).toBeGreaterThan(tree.x + 42);
   });
 });
 
@@ -140,8 +168,8 @@ describe('still', () => {
     s = step(s, 10);
     s = action(s, { type: 'ability', actor: 0 });
     const frozen = { ...s.objects.find(o => o.kind === 'plant') };
-    s = step(s, STAGE * 2);
-    expect(s.objects.find(o => o.kind === 'plant')).toMatchObject({ stage: frozen.stage, progress: frozen.progress, height: frozen.height });
+    s = step(s, G);
+    expect(plantOf(s)).toMatchObject({ age: frozen.age, height: frozen.height });
     expect(validateAction(s, 'local', { type: 'ability', actor: 1 }).error).toBe('heldByStill');
     s = action(s, { type: 'ability', actor: 0 });
     s = step(s, 10);
@@ -167,9 +195,9 @@ describe('movers', () => {
 
   test('blooming a moving mover speeds it up to a cap', () => {
     let s = moverLevel();
-    for (let i = 0; i < meta.time.maxGear; i++) s = action(s, { type: 'ability', actor: 1, target: 'mover-0' });
-    expect(get(s, 'mover-0').speed).toBe(meta.time.maxGear);
-    expect(validateAction(s, 'local', { type: 'ability', actor: 1, target: 'mover-0' }).error).toBe('moverMax');
+    for (let i = 0; i < meta.time.maxSpeed; i++) s = action(s, { type: 'ability', actor: 1, target: 'mover-0' });
+    expect(get(s, 'mover-0').speed).toBe(meta.time.maxSpeed);
+    expect(validateAction(s, 'local', { type: 'ability', actor: 1, target: 'mover-0' }).error).toBe('maxSpeed');
   });
 });
 
@@ -283,16 +311,14 @@ describe('review fixes', () => {
     s = step(s, 5); expect(s.elapsed).toBe(5);
   });
 
-  test('an item resting on a sapling rides it up to the grown canopy', () => {
+  test('an item resting on a growing plant rides it up', () => {
     let s = planted();
+    s.actors[1].x = 300;
     for (let i = 0; i < 3; i++) s = action(s, { type: 'ability', actor: 1 });
     s = step(s, 40);
-    expect(get(s, 'plant-0')).toMatchObject({ stage: 2, height: 80 });
-    Object.assign(get(s, 'seed-0'), { x: 600, y: 450, vx: 0, vy: 0, held: null });
-    s = step(s, 5);
-    expect(get(s, 'seed-0').y).toBeCloseTo(450, 0);
-    s = action(s, { type: 'ability', actor: 1 });
-    s = step(s, 90);
-    expect(get(s, 'seed-0').y).toBeCloseTo(540 - 235 - 10, 0);
+    Object.assign(get(s, 'seed-0'), { x: 600, y: 540 - plantOf(s).height - 10, vx: 0, vy: 0, held: null });
+    s = step(s, 120);
+    expect(plantOf(s).height).toBeGreaterThan(100);
+    expect(get(s, 'seed-0').y).toBeCloseTo(540 - plantOf(s).height - 10, 0);
   });
 });
