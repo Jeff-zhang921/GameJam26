@@ -49,7 +49,7 @@ describe('real WebSocket multiplayer', () => {
     const server = serve();
     expect((await fetch(server.url)).status).toBe(200);
     expect((await fetch(new URL('/src/logic.js', server.url))).status).toBe(200);
-    for (const path of ['/src/enemies.js', '/src/levels/index.js', '/src/levels/stillwater.js', '/music.js', '/sfx.js']) {
+    for (const path of ['/src/enemies.js', '/src/levels/index.js', '/src/levels/01-stillwater.js', '/music.js', '/sfx.js']) {
       const response = await fetch(new URL(path, server.url));
       expect(response.status).toBe(200);
       expect(response.headers.get('content-type')).toContain('javascript');
