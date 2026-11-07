@@ -13,7 +13,7 @@ export function createMusic() {
     source.loop = true; source.loopStart = 2; source.loopEnd = 50;
     source.connect(gain); startedAt = context.currentTime;
     gain.gain.setValueAtTime(0, startedAt);
-    gain.gain.linearRampToValueAtTime(.08, startedAt + .8);
+    gain.gain.linearRampToValueAtTime(.12, startedAt + .8);
     source.start(0, offset);
   }
   return {
