@@ -36,6 +36,7 @@ export const BACKGROUNDS = {
   chamber3: { image: '/art/backgrounds/chamber-3.png' },
   chamber4: { image: '/art/backgrounds/chamber-4.png' },
   chamber5: { image: '/art/backgrounds/chamber-5.png' },
+  chamber6: { image: '/art/backgrounds/chamber-6.png' },
 };
 
 // Music: `length` is how many seconds of the file are used (default: all of it); the last `fade` seconds are
