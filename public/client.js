@@ -90,8 +90,7 @@ app.innerHTML = `
         <div class="goal-heading">${icon('arrow')}<span>${S.objective}</span><span id="goal-count"></span></div>
         <p id="objective"></p><ul class="checklist" id="checklist" aria-live="polite"></ul>
       </section>
-      <div class="seed-counter" id="seed-counter" data-testid="seed-counter" hidden><img src="/sprites/seed.png" alt="" draggable="false"><span class="seed-counter-label">${S.seedsLabel}</span><strong id="seed-count"></strong></div>
-      <div class="game-bottom"><div class="status-strip"><span class="live-dot"></span><span id="hud"></span><span class="freeze-count" id="freeze-count" data-testid="freeze-count"></span><span id="stage-count"></span></div>
+      <div class="game-bottom"><div class="status-strip"><span class="live-dot"></span><span id="hud"></span><span class="freeze-count" id="freeze-count" data-testid="freeze-count"></span><span class="seed-chip" data-testid="seed-counter" role="img" hidden><img src="/sprites/seed.png" alt="" draggable="false"><b></b></span><span id="stage-count"></span></div>
         <div class="action-strip"><span class="controls-strip" id="controls"></span><button class="ability-chip" data-action="ability" id="ability" data-testid="ability">${icon('snow')}<span id="ability-label"></span>${key('F')}</button><button class="text-button switch-button" data-action="switch" aria-label="${S.switchRole}">${icon('swap')}${key('Tab')}</button></div>
       </div>
       <div class="touch-controls" data-testid="touch-controls">
@@ -100,6 +99,7 @@ app.innerHTML = `
           <button type="button" class="touch-switch" data-touch="switch" data-testid="touch-switch" aria-label="${S.switchRole}">${icon('swap')}</button>
         </div>
         <div class="touch-actions">
+          <span class="seed-chip touch-seeds" data-testid="touch-seed-counter" role="img" hidden><img src="/sprites/seed.png" alt="" draggable="false"><b></b></span>
           <button type="button" class="touch-skill touch-jump" data-touch="jump" data-testid="touch-jump" aria-label="${S.jump}">${icon('up')}<span>${S.jump}</span></button>
           <button type="button" class="touch-skill touch-interact" data-touch="grab" data-testid="touch-interact" aria-label="${S.interact.pickup}">${itemArt('crate')}<span>${S.interact.pickup}</span></button>
           <button type="button" class="touch-skill touch-ability" data-touch="ability" data-testid="touch-ability" aria-label="${S.ability[0]}">${skillArt('frost')}<span class="skill-charges" data-testid="skill-charges"></span></button>
@@ -321,11 +321,13 @@ function updateUI() {
   const charges = state.freezeCharges ?? 0, freezeCount = document.querySelector('#freeze-count');
   freezeCount.textContent = S.freezeCount(charges); freezeCount.classList.toggle('empty', charges <= 0);
   // Bloom's seeds, shown in courtyards that have somewhere to plant them.
-  const seedCounter = document.querySelector('#seed-counter'), seeds = state.seeds ?? 0;
-  seedCounter.hidden = !state.pits?.length;
-  seedCounter.classList.toggle('empty', seeds <= 0);
-  document.querySelector('#seed-count').textContent = S.seedCount(seeds);
-  seedCounter.setAttribute('aria-label', `${S.seedsLabel} ${seeds}`);
+  const seeds = state.seeds ?? 0;
+  for (const chip of document.querySelectorAll('.seed-chip')) {
+    chip.hidden = !state.pits?.length;
+    chip.classList.toggle('empty', seeds <= 0);
+    chip.querySelector('b').textContent = S.seedCount(seeds);
+    chip.setAttribute('aria-label', `${S.seedsLabel} ${seeds}`); chip.title = S.seedsLabel;
+  }
   checkWarning();
   document.body.classList.toggle('in-session', modal !== 'intro');
   pwa.refresh();
