@@ -80,25 +80,49 @@ export function createRenderer(canvas, S) {
     if (targeted) { const a = 32; ctx.strokeStyle = cyan; ctx.lineWidth = 1.5; for (const [x, y] of [[-a, -a], [a, -a], [-a, a], [a, a]]) line(ctx, [[x, y - Math.sign(y) * 8], [x, y], [x - Math.sign(x) * 8, y]], cyan); }
     ctx.restore();
   }
-  function tree(tree, targeted, t) {
-    const h = tree.height; const x = tree.x, y = tree.base; const dead = tree.age === 4;
-    if (h < 36 && !dead) { line(ctx, [[x, y], [x, y - h]], '#c5bb80', 3); ellipse(ctx, x - 10, y - h + 5, 13, 5, .6, '#b7bd80'); ellipse(ctx, x + 10, y - h, 13, 5, -.6, '#d2c483'); circle(ctx, x, y - h + 2, 3, gold); }
+  function timeRing(x, y, r, o, t) {
+    if (o.frozen) { glow(ctx, x, y, r * 1.7, '#9de3e527'); circle(ctx, x, y, r + Math.sin(t * .002) * 2, null, '#a1e3e570'); return; }
+    if (!o.speed) return;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(t * .0012 * o.speed); ctx.setLineDash([6, 9]); circle(ctx, 0, 0, r, null, '#e1c68a88', 1.5); ctx.restore();
+  }
+  function pit(p) {
+    ellipse(ctx, p.x, p.y - 1, 30, 7, 0, '#2a3d33'); ellipse(ctx, p.x, p.y - 3, 24, 4, 0, p.plant ? '#4d5a41' : '#1b2a25');
+    if (!p.plant) for (let i = 0; i < 4; i++) circle(ctx, p.x - 15 + i * 10, p.y - 6 - (i % 2) * 2, 1.5, '#6f7d5a');
+  }
+  function seed(o, t) {
+    ctx.save(); ctx.translate(o.x, o.y); glow(ctx, 0, 0, 26, '#e1c68a22');
+    ellipse(ctx, 0, 0, 7, 10, .5, '#b39a5c'); ellipse(ctx, -1.5, -2, 3, 5, .5, '#e6d39a'); line(ctx, [[3, -7], [6, -12 + Math.sin(t * .004)]], '#9fbf7f', 1.5);
+    ctx.restore();
+  }
+  function plant(o, targeted, t) {
+    const h = o.height, x = o.x, y = o.base, stage = o.stage, dead = stage === 4;
+    timeRing(x, y - h / 2, Math.max(22, h / 2 + 12), o, t);
+    if (stage === 0) { ellipse(ctx, x, y - 5, 6, 8, .4, '#b39a5c'); ellipse(ctx, x - 1, y - 7, 2.5, 4, .4, '#e6d39a'); }
+    else if (stage === 1) { line(ctx, [[x, y], [x, y - h]], '#c5bb80', 3); ellipse(ctx, x - 10, y - h + 5, 13, 5, .6, '#b7bd80'); ellipse(ctx, x + 10, y - h, 13, 5, -.6, '#d2c483'); circle(ctx, x, y - h + 2, 3, gold); }
     else {
-      const trunkTop = y - h + (dead ? -35 : 28);
+      const crown = stage === 2 ? 55 : 77, trunkTop = y - h + (dead ? 0 : 28);
       ctx.beginPath(); ctx.moveTo(x - 14, y); ctx.bezierCurveTo(x - 8, y - h * .45, x - 18, trunkTop + 30, x - 3, trunkTop); ctx.lineTo(x + 8, trunkTop); ctx.bezierCurveTo(x + 2, y - h * .45, x + 16, y - 20, x + 21, y); ctx.fillStyle = dead ? '#7c7c63' : '#a8a276'; ctx.fill();
       line(ctx, [[x - 3, y], [x + 2, y - h * .4], [x - 4, trunkTop]], '#d3bd836b', 1.5);
-      for (let i = 0; i < 7; i++) { const side = i % 2 ? 1 : -1; const yy = y - h * (.35 + i * .075); const len = 25 + i * 6; ctx.beginPath(); ctx.moveTo(x, yy + 25); ctx.quadraticCurveTo(x + side * len * .5, yy, x + side * len, yy - 22); ctx.strokeStyle = dead ? '#949277' : '#ada875'; ctx.lineWidth = 5 - i * .3; ctx.stroke(); }
+      for (let i = 0; i < 7; i++) { const side = i % 2 ? 1 : -1; const yy = y - h * (.35 + i * .075); const len = (25 + i * 6) * crown / 77; ctx.beginPath(); ctx.moveTo(x, yy + 25); ctx.quadraticCurveTo(x + side * len * .5, yy, x + side * len, yy - 22); ctx.strokeStyle = dead ? '#949277' : '#ada875'; ctx.lineWidth = 5 - i * .3; ctx.stroke(); }
       if (!dead) {
-        glow(ctx, x, y - h + 15, 100, '#d3bd7920');
-        for (let i = 0; i < 67; i++) { const a = i * 2.399; const r = Math.sqrt(i / 67); const xx = x + Math.cos(a) * r * 77, yy = y - h + 12 + Math.sin(a) * r * 34; ellipse(ctx, xx, yy, 9 + i % 5, 4 + i % 3, Math.sin(a) * .7, ['#9dba81', '#bbc58a', '#d5c686', '#7b9c76', '#c6bd79'][i % 5]); }
-        line(ctx, [[x - 64, y - h + 3], [x + 64, y - h + 3]], '#efdfac77');
-      } else { ellipse(ctx, x, y - 6, 28, 7, 0, '#6a7966'); for (let i = 0; i < 5; i++) ellipse(ctx, x + Math.sin(i * 3) * 43, y - 4, 5, 2, i, '#b3a475'); }
+        glow(ctx, x, y - h + 15, crown + 23, '#d3bd7920');
+        for (let i = 0; i < 67; i++) { const a = i * 2.399; const r = Math.sqrt(i / 67); const xx = x + Math.cos(a) * r * crown, yy = y - h + 12 + Math.sin(a) * r * crown * .44; ellipse(ctx, xx, yy, 9 + i % 5, 4 + i % 3, Math.sin(a) * .7, ['#9dba81', '#bbc58a', '#d5c686', '#7b9c76', '#c6bd79'][i % 5]); }
+        line(ctx, [[x - crown + 13, y - h + 3], [x + crown - 13, y - h + 3]], '#efdfac77');
+      } else { ellipse(ctx, x, y - h, 25, 5, 0, '#8d8a6c'); for (let i = 0; i < 5; i++) ellipse(ctx, x + Math.sin(i * 3) * 43, y - 4, 5, 2, i, '#b3a475'); }
     }
     if (targeted) { circle(ctx, x, y - h - 16, 13, '#d7bd7d10', '#e1c68a70'); star(ctx, x, y - h - 16, 5, gold); }
-    ctx.font = '10px "Segoe UI",sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#cbd3b296'; ctx.fillText(S.treeStages[tree.age], x, y + 31);
+    ctx.font = '10px "Segoe UI",sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#cbd3b296'; ctx.fillText(S.plantStages[stage], x, y + 31);
+  }
+  function mover(o, targeted, t) {
+    timeRing(o.x + o.w / 2, o.y + 10, o.w / 2 + 10, o, t);
+    line(ctx, [[o.x1 + 6, o.y + 26], [o.x2 + o.w - 6, o.y + 26]], '#b6bea133', 1);
+    const g = ctx.createLinearGradient(0, o.y, 0, o.y + 20); g.addColorStop(0, '#b9c0a4'); g.addColorStop(.4, '#647c66'); g.addColorStop(1, '#1b3839');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.roundRect(o.x, o.y, o.w, 20, 4); ctx.fill();
+    line(ctx, [[o.x, o.y - 1], [o.x + o.w, o.y - 1]], '#e5ddba', 1.5); circle(ctx, o.x + o.w / 2, o.y + 10, 5, '#183e42', o.speed ? gold : '#8aa89b', 1.5);
+    if (targeted) { const a = o.w / 2 + 6, cx = o.x + o.w / 2, cy = o.y + 10; for (const [x, y] of [[-a, -18], [a, -18], [-a, 18], [a, 18]]) line(ctx, [[cx + x, cy + y - Math.sign(y) * 8], [cx + x, cy + y], [cx + x - Math.sign(x) * 8, cy + y]], gold); }
   }
   function door(state, t) {
-    const x = state.exit.x, y = state.exit.y; const ready = state.needs.every(k => state.flags[k]) && state.plates.every(p => p.lit);
+    const x = state.exit.x, y = state.exit.y; const ready = state.needs.every(k => state.flags[k]);
     glow(ctx, x, y - 60, 110, ready ? '#dce2b73c' : '#a7c4ba11'); arch(ctx, x - 38, y - 107, 76, 107, '#d2c89c', 7); arch(ctx, x - 30, y - 99, 60, 99, '#a8b6a281', 1); line(ctx, [[x - 43, y], [x + 43, y]], '#e7d8a8', 3);
     ctx.save(); ctx.beginPath(); ctx.moveTo(x - 30, y); ctx.lineTo(x - 30, y - 69); ctx.arc(x, y - 69, 30, Math.PI, 0); ctx.lineTo(x + 30, y); ctx.clip(); const g = ctx.createLinearGradient(x, y - 100, x, y); g.addColorStop(0, ready ? '#d5dfbd99' : '#497c7d33'); g.addColorStop(1, '#9ccac511'); ctx.fillStyle = g; ctx.fillRect(x - 30, y - 110, 60, 115);
     for (let i = 0; i < 9; i++) { const yy = y - ((t * .015 + i * 13) % 110); star(ctx, x + Math.sin(i * 2.2) * 19, yy, ready ? 2 : 1, ready ? '#f1e5b3bb' : '#b7d4ba44'); }
@@ -113,25 +137,23 @@ export function createRenderer(canvas, S) {
     ctx.save(); ctx.translate(780, 158); ctx.rotate(t * .00003); line(ctx, [[0, 9], [0, -62]], '#d8c99777', 2); line(ctx, [[-28, 0], [8, 0]], '#d8c99777', 2); circle(ctx, 0, 0, 3, '#cfc7a1'); ctx.restore();
     for (let i = 0; i < 22; i++) { const x = ((i * 137.5 + t * .006 * (i % 3 + 1)) % 1240) + 20; const y = 350 + Math.sin(i * 6 + t * .0006) * 145; circle(ctx, x, y, i % 4 === 0 ? 1.5 : .8, i % 4 === 0 ? '#d4d8a28c' : '#b6d4bf4d'); }
     for (const p of state.platforms) platform(p);
-    for (const plate of state.plates) {
-      ellipse(ctx, plate.x, plate.y - 2, plate.w / 2, 7, 0, '#b8b18b'); ellipse(ctx, plate.x, plate.y - 4, plate.w / 2 - 5, 5, 0, plate.lit ? '#b6dfd7' : '#2b5557');
-      if (plate.lit) glow(ctx, plate.x, plate.y - 6, 70, '#b6e8df26'); circle(ctx, plate.x, plate.y - 5, 9, null, '#d6d2a3'); ctx.font = '9px "Segoe UI",sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#b5c8b1'; ctx.fillText(S.plate, plate.x, plate.y + 27);
-    }
-    const p = state.actors[state.active];
-    let target = options.target;
-    if (!target) { const objects = state.active === 0 ? state.crates.filter(c => c.held === null) : state.trees; let best = 420; for (const object of objects) { const d = Math.hypot(object.x - p.x, (object.base ?? object.y) - p.y); if (d < best) { best = d; target = object.id; } } }
-    for (const tr of state.trees) tree(tr, tr.id === target && state.active === 1, t);
+    const target = options.target;
+    for (const p of state.pits) pit(p);
+    for (const o of state.objects) if (o.kind === 'mover') mover(o, o.id === target, t);
+    for (const o of state.objects) if (o.kind === 'plant') plant(o, o.id === target && state.active === 1, t);
     door(state, t);
     for (const shard of state.shards) if (!shard.taken) { const yy = shard.y + Math.sin(t * .002 + shard.id) * 5; glow(ctx, shard.x, yy, 40, '#e7d2a51b'); ctx.save(); ctx.translate(shard.x, yy); ctx.rotate(Math.PI / 4); ctx.fillStyle = '#e2d194'; ctx.fillRect(-5, -5, 10, 10); ctx.strokeStyle = '#f4e7b477'; ctx.strokeRect(-10, -10, 20, 20); ctx.restore(); }
-    for (const e of state.echoes) { actor({ ...e, grounded: true, move: 0 }, e.actor, false, 0, true); circle(ctx, e.x, e.y - 29, 42, null, '#b5dddb22'); }
-    for (const c of state.crates) if (c.held === null) crate(c, c.id === target && state.active === 0, t);
+    for (const o of state.objects) if (o.kind === 'crate' && o.held === null) crate(o, o.id === target && state.active === 0, t);
+    for (const o of state.objects) if (o.kind === 'seed' && o.held === null) seed(o, t);
     for (const actorState of state.actors) actor(actorState, actorState.id, actorState.id === state.active, t);
-    for (const c of state.crates) if (c.held !== null) crate(c, false, t);
-    for (const e of state.events) { const age = state.tick - e.tick; if (age > 45 || age < 0 || options.reduced) continue; const color = ['grow', 'regrow', 'shard', 'win'].includes(e.kind) ? gold : cyan; ctx.globalAlpha = Math.max(0, 1 - age / 45); circle(ctx, e.x, e.y, 12 + age * 1.8, null, color, 1); for (let i = 0; i < 6; i++) star(ctx, e.x + Math.sin(i * 1.05) * (12 + age), e.y + Math.cos(i * 1.05) * (12 + age), 2, color); ctx.globalAlpha = 1; }
-    const selectedCrate = state.crates.find(c => c.id === target && c.held === null); const selectedTree = state.trees.find(tr => tr.id === target);
-    if (state.status === 'playing') {
-      if (selectedCrate && state.active === 0 && Math.hypot(p.x - selectedCrate.x, p.y - selectedCrate.y) < 420) label(selectedCrate.x, selectedCrate.y - 62, selectedCrate.frozen ? S.targetRelease : S.targetFreeze);
-      if (selectedTree && state.active === 1 && Math.hypot(p.x - selectedTree.x, p.y - selectedTree.base) < 420) label(selectedTree.x, selectedTree.base - selectedTree.height - 53, selectedTree.age === 4 ? S.targetDead : S.targetGrow, gold);
+    for (const o of state.objects) if (o.held !== undefined && o.held !== null) o.kind === 'crate' ? crate(o, false, t) : seed(o, t);
+    for (const e of state.events) { const age = state.tick - e.tick; if (age > 45 || age < 0 || options.reduced) continue; const color = ['grow', 'wake', 'plant', 'shard', 'win'].includes(e.kind) ? gold : cyan; ctx.globalAlpha = Math.max(0, 1 - age / 45); circle(ctx, e.x, e.y, 12 + age * 1.8, null, color, 1); for (let i = 0; i < 6; i++) star(ctx, e.x + Math.sin(i * 1.05) * (12 + age), e.y + Math.cos(i * 1.05) * (12 + age), 2, color); ctx.globalAlpha = 1; }
+    const selected = state.objects.find(o => o.id === target);
+    if (state.status === 'playing' && selected) {
+      const top = selected.kind === 'plant' ? selected.base - selected.height - 53 : selected.kind === 'mover' ? selected.y - 30 : selected.y - 62;
+      const x = selected.kind === 'mover' ? selected.x + selected.w / 2 : selected.x;
+      if (state.active === 0) label(x, top, selected.frozen ? S.targetRelease : S.targetFreeze);
+      else label(x, top, selected.speed ? S.targetHasten : S.targetWake, gold);
     }
   }
   return { draw, worldPoint(clientX, clientY) { const rect = canvas.getBoundingClientRect(); return { x: (clientX - rect.left - offsetX) / scale, y: (clientY - rect.top - offsetY) / scale }; } };
