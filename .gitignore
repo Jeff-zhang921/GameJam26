@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+
+# Build output and test coverage
+/dist/
+coverage/
+*.tsbuildinfo
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+
+# Caches and logs
+.cache/
+.parcel-cache/
+*.log
+
+# Editor and operating system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+
+# Local agent tools and session state
+.started
+.agents/
+.codex/
+.claude/
+.openai/
+.audit/
+.tools/
+.playwright-mcp/
+skills-lock.json
+
+# Browser test output
+playwright-report/
+test-results/
+blob-report/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+*.bak
+*~
