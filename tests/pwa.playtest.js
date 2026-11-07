@@ -43,13 +43,14 @@ async (page) => {
     for (const [i, a] of circles.entries()) for (const b of circles.slice(i + 1)) {
       if (Math.hypot(a.x - b.x, a.y - b.y) < a.radius + b.radius + 5) throw new Error('Touch circles overlap or are too close');
     }
-    if (circles.slice(1).some(c => c.radius !== circles[1].radius)) throw new Error('Jump, Ability and Interact differ in size');
+    const [, jump, ability, interact] = circles;
+    if (jump.radius <= ability.radius || jump.radius <= interact.radius || ability.y >= jump.y || interact.x >= jump.x) throw new Error('Skill buttons are not above and left of the largest Jump button');
     const canvas = document.querySelector('#game').getBoundingClientRect();
     if (canvas.height !== innerHeight || canvas.width !== innerWidth) throw new Error('Touch controls resized the canvas');
     return circles;
   });
   const [stick, jump, ability, interact] = await layout(host);
-  if (stick.radius * 2 < 200 || ability.radius * 2 < 130) throw new Error('iPad controls are too small');
+  if (stick.radius * 2 < 200 || jump.radius * 2 < 135 || ability.radius * 2 < 95) throw new Error('iPad controls are too small');
   await layout(guest);
   const cdp = await contexts[0].newCDPSession(host);
   const finger = ({ x, y }, id) => ({ x, y, id });
@@ -66,14 +67,17 @@ async (page) => {
   await touch('touchStart', moving, jumpFinger, abilityFinger);
   await guest.waitForFunction(() => {
     const game = window.__moonclock.snapshot();
-    return game.actors[0].move === 1 && !game.actors[0].grounded && game.freezeAreas.length === 1;
+    return game.actors[0].move === 1 && !game.actors[0].grounded && !game.freezeAreas.length;
   });
+  await host.getByTestId('cancel-aim').waitFor();
+  if ((await snapshot(guest)).freezeCharges !== 2) throw new Error('Holding a skill spent a charge before release');
   await touch('touchMove', at(0, 0), jumpFinger, abilityFinger);
   await guest.waitForFunction(() => window.__moonclock.snapshot().actors[0].grounded);
   const landing = (await snapshot(guest)).eventSeq;
   await host.waitForTimeout(220);
   if ((await snapshot(guest)).events.some(e => e.kind === 'jump' && e.id > landing)) throw new Error('Holding Jump triggered another jump');
   await touch('touchEnd');
+  await guest.waitForFunction(() => window.__moonclock.snapshot().freezeAreas.length === 1);
   await host.touchscreen.tap(jump.x, jump.y);
   await guest.waitForFunction(id => window.__moonclock.snapshot().events.some(e => e.kind === 'jump' && e.id > id), landing);
   if ((await snapshot(otherHost)).actors[0].x !== 180) throw new Error('Cross-room movement leak');
@@ -82,18 +86,30 @@ async (page) => {
     const rect = document.querySelector('#game').getBoundingClientRect();
     return { x: rect.left + camera.offsetX + x * camera.scale, y: rect.top + camera.offsetY + y * camera.scale };
   }, { x, y });
-  // Cancel the button's cast from the world, then place and cancel a second area in empty space.
-  for (const castInWorld of [false, true]) {
-    if (castInWorld) {
-      const spot = await world(host, 410, 425); await host.touchscreen.tap(spot.x, spot.y);
-    }
+  const endArea = async () => {
     await host.waitForFunction(() => window.__moonclock.snapshot().freezeAreas.length === 1);
     const game = await snapshot(host), area = game.freezeAreas[0];
-    if (castInWorld && (Math.abs(area.x - 410) > 2 || Math.abs(area.y - 425) > 2)) throw new Error('World tap did not centre the area');
     const spot = await world(host, area.x + 30, area.y - 55); await host.touchscreen.tap(spot.x, spot.y);
     for (const tab of [host, guest]) await tab.waitForFunction(() => !window.__moonclock.snapshot().freezeAreas.length && !window.__moonclock.snapshot().objects[0].frozen);
     if ((await snapshot(guest)).freezeCharges !== game.freezeCharges) throw new Error('Cancellation changed charges');
-  }
+  };
+  await endArea();
+  await touch('touchStart', abilityFinger);
+  const cancelButton = host.getByTestId('cancel-aim'); await cancelButton.waitFor();
+  const cancel = await cancelButton.boundingBox();
+  await touch('touchMove', { x: cancel.x + cancel.width / 2, y: cancel.y + cancel.height / 2, id: 3 });
+  await touch('touchEnd');
+  await cancelButton.waitFor({ state: 'hidden' });
+  if ((await snapshot(guest)).freezeCharges !== 1) throw new Error('Dragging to × changed the charge count');
+  await touch('touchStart', abilityFinger);
+  await touch('touchMove', { ...abilityFinger, x: abilityFinger.x - 31 });
+  await cancelButton.waitFor();
+  await host.screenshot({ path: '.audit/mobile-skill-aim.png' });
+  await touch('touchEnd');
+  await guest.waitForFunction(() => window.__moonclock.snapshot().freezeAreas.length === 1);
+  const aimed = await snapshot(guest);
+  if (aimed.freezeAreas[0].x >= aimed.actors[0].x - 35 || aimed.freezeCharges !== 0) throw new Error('Dragging left did not aim and spend one charge on release');
+  await endArea();
   await guest.waitForFunction(() => window.__moonclock.snapshot().actors[0].grounded);
   await touch('touchStart', moving, finger(interact, 4));
   await guest.waitForFunction(() => window.__moonclock.snapshot().actors[0].carrying === 'crate-0');

@@ -166,5 +166,29 @@ async function checkOnline(server) {
   await Promise.all([ready(host), ready(guest)]);
   assert.equal((await snapshot(host)).level, 1);
   assert.equal((await snapshot(guest)).level, 1);
+  await checkBloomAim(guest, room);
   await host.close(); await guest.close();
+}
+
+async function checkBloomAim(page, room) {
+  const bloom = room.game.actors[1];
+  for (const [id, offset] of [['left', -115], ['right', 70]]) {
+    room.game.objects.push({ id, kind: 'plant', x: bloom.x + offset, base: bloom.y, height: 0, age: 0, speed: 0, frozen: false });
+  }
+  await page.waitForFunction(() => window.__moonclock.snapshot().objects.some(o => o.id === 'left'));
+  const skill = page.getByTestId('touch-ability');
+  const rect = await skill.boundingBox();
+  const travel = await skill.evaluate(button => Math.max(76, button.clientWidth * 1.15));
+  const cdp = await page.context().newCDPSession(page);
+  const center = { id: 1, x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [center] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...center, x: center.x - travel * 115 / 300 }] });
+  await page.getByTestId('cancel-aim').waitFor();
+  assert.equal((await snapshot(page)).bloomCharges, 3);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await page.waitForFunction(() => window.__moonclock.snapshot().bloomCharges === 2);
+  const game = await snapshot(page);
+  assert.equal(game.objects.find(o => o.id === 'left').speed, 1);
+  assert.equal(game.objects.find(o => o.id === 'right').speed, 0);
+  await page.waitForFunction(() => document.querySelector('[data-testid="skill-charges"]').textContent === '2');
 }

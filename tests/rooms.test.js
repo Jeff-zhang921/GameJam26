@@ -185,7 +185,7 @@ describe('host level select and shared failure', () => {
     expect(hostReplay.replay).toEqual(guestReplay.replay);
     expect(hostReplay.replay.duration).toBe(4000);
     expect(hostReplay.replay.end).toMatchObject({ level: 1, tick: 0, status: 'playing', failure: null });
-    expect(hostReplay.replay.end.objects.filter(o => o.kind === 'seed')).toHaveLength(2);
+    expect(hostReplay.replay.end.objects.filter(o => o.kind === 'seed')).toHaveLength(3);
     expect(hostReplay.room.rewinding.id).toBe(hostReplay.replay.id);
     // During the rewind: no inputs, no second restart, and the shared world holds still.
     f.send(f.guest, { type: 'input', seq: 1, action: { type: 'move', dir: 1 } });
@@ -202,7 +202,7 @@ describe('host level select and shared failure', () => {
       expect(snap.room.epoch).toBe(epoch + 1);
       expect(snap.room.rewinding).toBe(null);
       expect(snap.game).toMatchObject({ level: 1, status: 'playing', failure: null });
-      expect(snap.game.objects.filter(o => o.kind === 'seed')).toHaveLength(2);
+      expect(snap.game.objects.filter(o => o.kind === 'seed')).toHaveLength(3);
     }
     expect(f.last(f.host, 'snapshot').game).toEqual(f.last(f.guest, 'snapshot').game);
     expect(f.room.players.map(p => p.character).sort()).toEqual(['bloom', 'still']);

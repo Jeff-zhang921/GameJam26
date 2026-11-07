@@ -8,9 +8,9 @@ export const meta = {
   time: { moverSpeed: 1, maxSpeed: 3, hintTicks: 90 * 60, invulnTicks: 60, frozenRate: FROZEN_RATE },
   plant: { maxHeight: 235, springHeight: 45, growTicks: 960, matureTicks: 480, witherTicks: 480 },
   // Still's Freeze Area: a circle cast at a chosen point. `range` is how far from Still the centre may be,
-  // `duration` is in ticks (60 per second), `rate` is local time inside it. `pickupReach` is how close a
-  // traveller must come to collect a frost crystal (extra charge).
-  freeze: { rate: FROZEN_RATE, radius: 130, range: 380, duration: 600, pickupReach: 36 },
+  // `duration` is in ticks (60 per second), `rate` is local time inside it.
+  freeze: { rate: FROZEN_RATE, radius: 130, range: 380, duration: 600 },
+  charges: { bloomStart: 3, pickupReach: 36 },
 };
 const STILL = 0, BLOOM = 1;
 
@@ -59,17 +59,19 @@ function makePlant(id, pit, grown = 0, barrier = false) {
   return { kind: 'plant', id, pit: pit.id, x: pit.x, base: pit.y, age, height: heightAt(age), withered: false, speed: 0, frozen: false, barrier };
 }
 
+const makeSeed = (id, x, y, held = null) => ({ kind: 'seed', id, x, y, vx: 0, vy: 0, frozen: false, held, spawnX: x, spawnY: y });
+
 function makeLevel(index, players, unlocked, totalShards, collected = LEVELS.map(() => false)) {
   const level = LEVELS[index];
   const pits = level.pits.map((p, i) => ({ id: `pit-${i}`, x: p.x, y: p.y, plant: null }));
   const objects = [
     ...level.crates.map((p, i) => ({ kind: 'crate', id: `crate-${i}`, x: p.x, y: p.y, vx: 0, vy: 0, frozen: false, held: null, spawnX: p.x, spawnY: p.y })),
-    ...level.seeds.map((p, i) => ({ kind: 'seed', id: `seed-${i}`, x: p.x, y: p.y, vx: 0, vy: 0, frozen: false, held: null, spawnX: p.x, spawnY: p.y })),
+    ...level.seeds.map((p, i) => makeSeed(`seed-${i}`, p.x, p.y)),
     ...level.movers.map((p, i) => ({ kind: 'mover', id: `mover-${i}`, x: p.x1, y: p.y, w: p.w, x1: p.x1, x2: p.x2, dir: 1, speed: 0, frozen: false })),
     ...level.plants.map((p, i) => makePlant(`plant-${i}`, pits[p.pit], p.grown, p.barrier)),
     ...(level.enemies ?? []).map((e, i) => makeEnemy(e.kind, e, `${e.kind}-${i}`)),
   ];
-  return {
+  const state = {
     level: index, levelId: level.id, unlocked, totalShards, collected: clone(collected), tick: 0, status: 'playing', active: 0,
     playerIds: players, width: 1280, height: 640,
     actors: level.spawn.map((p, i) => ({ id: i, x: p.x, y: p.y, vx: 0, vy: 0, facing: 1, grounded: true, on: 'ground', coyote: meta.controls.coyote, jumpBuffer: 0, jumpHeld: false, jumpCut: true, move: 0, carrying: null, invuln: 0, spawnX: p.x, spawnY: p.y })),
@@ -79,12 +81,18 @@ function makeLevel(index, players, unlocked, totalShards, collected = LEVELS.map
     flags: { frozenTouched: false, treeLifted: false, withered: false, sproutJump: false, moverRide: false, dartRide: false, miteGone: false },
     needs: clone(level.need), needsDone: 0, events: [], eventSeq: 0,
     started: false, elapsed: 0, lastProgressTick: 0, falls: 0,
-    // Freeze Areas, Still's charges for this courtyard and the frost crystals that add more.
-    freezeAreas: [], nextArea: 0, freezeCharges: level.freezeCharges ?? 1,
-    pickups: (level.freezePickups ?? []).map((p, i) => ({ id: `frost-${i}`, x: p.x, y: p.y, taken: false })),
+    freezeAreas: [], nextArea: 0, freezeCharges: level.freezeCharges ?? 1, bloomCharges: meta.charges.bloomStart,
+    pickups: [
+      ...(level.freezePickups ?? []).map((p, i) => ({ ...p, id: `frost-${i}`, kind: 'frost', taken: false })),
+      ...level.bloomPickups.map((p, i) => ({ ...p, id: `bolt-${i}`, kind: 'bolt', taken: false })),
+    ],
     // A possible dead end: the reason, and a counter that only moves when a new warning appears.
     failure: null, failureSeq: 0,
   };
+  const bloom = state.actors[BLOOM];
+  bloom.carrying = 'seed-starter';
+  objects.push(makeSeed(bloom.carrying, bloom.x, bloom.y - 10, BLOOM));
+  return attachHeld(state);
 }
 
 export function setup(options = {}) {
@@ -110,7 +118,7 @@ export function abilityTargets(state, actor) {
   return state.objects.filter(o => canAffect(actor, o) && free(o) && dist(p, anchor(o)) <= meta.controls.range);
 }
 
-// Why a chosen object can or cannot take this actor's ability: 'ok', 'range', 'unsupported', 'held', 'maxSpeed' or 'missing'.
+// Validate the target shown in a Bloom preview before sending the cast to the server.
 export function abilityCheck(state, actor, id) {
   const p = state.actors[actor], o = find(state, id);
   if (!p || !o || !timeObject(o)) return 'missing';
@@ -118,6 +126,7 @@ export function abilityCheck(state, actor, id) {
   if (!canAffect(actor, o)) return 'unsupported';
   if (dist(p, anchor(o)) > meta.controls.range) return 'range';
   if (actor === BLOOM && o.speed >= meta.time.maxSpeed) return 'maxSpeed';
+  if (actor === BLOOM && state.bloomCharges <= 0) return 'noBloomCharges';
   return 'ok';
 }
 
@@ -163,9 +172,9 @@ export function freezeCheck(state, point) {
 }
 
 // The time object under a world-space point (touch tap), allowing `slop` world units of finger tolerance.
-export function timeObjectAt(state, point, slop = 0) {
+export function timeObjectAt(state, point, slop = 0, candidates = state.objects) {
   let best = null, bestDistance = Infinity, bestArea = Infinity;
-  for (const o of state.objects) {
+  for (const o of candidates) {
     if (!timeObject(o) || !free(o)) continue;
     const box = objectBox(o);
     const dx = Math.max(box.x - point.x, 0, point.x - (box.x + box.w)), dy = Math.max(box.y - point.y, 0, point.y - (box.y + box.h));
@@ -179,7 +188,7 @@ export function timeObjectAt(state, point, slop = 0) {
 export function targetFor(state, actor, action = {}) {
   const p = state.actors[actor];
   const candidates = abilityTargets(state, actor);
-  if (action.target) return candidates.find(o => o.id === action.target);
+  if (action.target !== undefined) return candidates.find(o => o.id === action.target);
   const moving = o => isEnemy(o) ? isMoving(o) : !o.frozen && (o.kind === 'crate' ? Math.abs(o.vx) + Math.abs(o.vy) > 0.5 : o.speed > 0 && !o.withered);
   const score = o => {
     const a = anchor(o);
@@ -190,7 +199,7 @@ export function targetFor(state, actor, action = {}) {
 }
 
 function pickable(state, p) {
-  return state.objects.filter(o => (o.kind === 'crate' || o.kind === 'seed') && o.held === null && dist(p, o) < meta.controls.reach)
+  return state.objects.filter(o => (o.kind === 'crate' || (p.id === BLOOM && o.kind === 'seed')) && o.held === null && dist(p, o) < meta.controls.reach)
     .sort((a, b) => dist(p, a) - dist(p, b));
 }
 
@@ -244,9 +253,11 @@ export function validateAction(state, playerId, action) {
       if (check === 'ok' && action.x !== undefined && freezeAreaAt(state, point)) return no('freezeCovered');
       return check === 'ok' ? { valid: true } : no(check === 'noCharges' ? 'noCharges' : 'freezeRange');
     }
+    if (action.x !== undefined || action.y !== undefined) return no('invalid');
     const target = targetFor(state, action.actor, action);
     if (!target) return no('bloomRange');
     if (target.speed >= meta.time.maxSpeed) return no('maxSpeed');
+    if (state.bloomCharges <= 0) return no('noBloomCharges');
     return { valid: true };
   }
   return no('invalid');
@@ -475,8 +486,14 @@ function tick(state) {
 }
 
 function collectPickups(state) {
-  for (const c of state.pickups) if (!c.taken && state.actors.some(p => Math.hypot(p.x - c.x, p.y - 26 - c.y) < meta.freeze.pickupReach)) {
-    c.taken = true; state.freezeCharges++; event(state, 'frost', c.x, c.y);
+  for (const c of state.pickups) {
+    if (c.taken) continue;
+    const frost = c.kind === 'frost';
+    const player = state.actors[frost ? STILL : BLOOM];
+    if (Math.hypot(player.x - c.x, player.y - 26 - c.y) >= meta.charges.pickupReach) continue;
+    c.taken = true;
+    state[frost ? 'freezeCharges' : 'bloomCharges']++;
+    event(state, c.kind, c.x, c.y);
   }
 }
 
@@ -506,7 +523,7 @@ export function assessFailure(state) {
   const level = LEVELS[state.level], stuck = belowExit(state);
   if (!level || !stuck.length) return { known: true, reason: null };
   if (level.exitNeedsPlant && !state.objects.some(o => o.kind === 'seed' || o.kind === 'plant')) return { known: true, reason: 'stranded' };
-  if (level.crossingNeedsFreeze && state.freezeCharges <= 0 && !state.freezeAreas.length && !state.pickups.some(c => !c.taken)) return { known: true, reason: 'freeze' };
+  if (level.crossingNeedsFreeze && state.freezeCharges <= 0 && !state.freezeAreas.length && !state.pickups.some(c => c.kind === 'frost' && !c.taken)) return { known: true, reason: 'freeze' };
   return { known: true, reason: null };
 }
 export function failureReason(state) { return assessFailure(state).reason; }
@@ -566,6 +583,7 @@ export function applyAction(state, playerId, action) {
     } else {
       // Bloom keeps its acceleration: wake a sleeping clock, or hasten it (up to the maximum).
       const o = targetFor(s, action.actor, action);
+      s.bloomCharges--;
       const woke = o.speed === 0; o.speed++; event(s, woke ? 'wake' : 'grow', anchor(o).x, anchor(o).y, { caster: action.actor, target: o.id });
     }
   }
