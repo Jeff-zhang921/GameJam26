@@ -5,5 +5,6 @@ export default {
   crates: [{ x: 350, y: 493 }], seeds: [], pits: [], plants: [], movers: [],
   // Freeze: crossing needs one Freeze Area per traveller; a crystal above the start ledge adds a spare.
   freezeCharges: 2, freezePickups: [{ x: 230, y: 430 }], crossingNeedsFreeze: true,
+  bloomPickups: [{ x: 310, y: 494 }],
   exit: { x: 1160, y: 430 }, shards: [{ x: 620, y: 300 }], need: ['frozenTouched'],
 };

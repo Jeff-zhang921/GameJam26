@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <symbol id="frost" viewBox="0 0 64 64">
+    <path d="M32 4 56 18v28L32 60 8 46V18Z" fill="#246a80" stroke="#e2ffff" stroke-width="2"/>
+    <path d="M32 7v50M10 19l44 26m0-26L10 45M22 15l10 9 10-9M22 49l10-9 10 9M11 28l12-3-3-12m33 23-12 3 3 12m-24 0 3-12-12-3m33-23-3 12 12 3" fill="none" stroke="#e4fdff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="m32 24 8 8-8 8-8-8Z" fill="#a9f2ff" stroke="#f3ffff" stroke-width="1.5"/>
+  </symbol>
+  <symbol id="bolt" viewBox="0 0 64 64">
+    <path d="M34 3 9 36h20l-5 25 31-37H35l8-21Z" fill="#f2c768" stroke="#633e22" stroke-width="3" stroke-linejoin="round"/>
+    <path d="m36 8-19 25h17l-5 17 18-22H30Z" fill="#fff0a6" stroke="none"/>
+    <path d="M7 14h12M13 8v12m39 29h8m-4-4v8" fill="none" stroke="#fff1ba" stroke-width="2" stroke-linecap="round"/>
+  </symbol>
+</svg>

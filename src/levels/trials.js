@@ -13,5 +13,6 @@ export default {
   ],
   // Freeze is optional for the exit (the rift is jumpable) but handy for guards, mites and orbs.
   freezeCharges: 2, freezePickups: [{ x: 130, y: 430 }, { x: 1110, y: 430 }],
+  bloomPickups: [{ x: 163, y: 494 }, { x: 907, y: 494 }],
   exit: { x: 1170, y: 520 }, shards: [{ x: 680, y: 400 }], need: ['dartRide', 'miteGone'],
 };

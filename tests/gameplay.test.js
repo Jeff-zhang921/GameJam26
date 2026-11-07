@@ -200,22 +200,48 @@ describe('Freeze Areas', () => {
   });
 });
 
-describe('frost crystals (extra charges)', () => {
-  test('touching a crystal adds exactly one charge, once; restart and level select restore charges and crystals', () => {
+describe('role-specific resources', () => {
+  test('only the matching role collects each crystal once, and restart restores both budgets', () => {
     let s = setup({ level: 0 });
-    const crystal = s.pickups[0];
-    Object.assign(s.actors[BLOOM], { x: crystal.x, y: crystal.y + 26, grounded: false, vy: 0 });
+    const [frost, bolt] = s.pickups;
+    const touch = (actor, c) => Object.assign(s.actors[actor], { x: c.x, y: c.y + 26, grounded: false, vy: 0 });
+    touch(STILL, bolt); touch(BLOOM, frost);
     s = tick(s);
-    expect(s.pickups[0].taken).toBe(true);
-    expect(s.freezeCharges).toBe(3);
-    s = tick(s, 5);
-    expect(s.freezeCharges).toBe(3);
+    expect(s.pickups.every(c => !c.taken)).toBe(true);
+    touch(STILL, frost); touch(BLOOM, bolt);
+    s = tick(s, 6);
+    expect(s.pickups.every(c => c.taken)).toBe(true);
+    expect(s).toMatchObject({ freezeCharges: 3, bloomCharges: 4 });
     const again = send(s, 'restart');
-    expect(again.freezeCharges).toBe(2);
+    expect(again).toMatchObject({ freezeCharges: 2, bloomCharges: 3 });
     expect(again.pickups.every(c => !c.taken)).toBe(true);
     const other = send(s, 'level', 0, { level: 4 });
-    expect(other.freezeCharges).toBe(2);
-    expect(other.pickups).toHaveLength(2);
+    expect(other).toMatchObject({ freezeCharges: 2, bloomCharges: 3 });
+    expect(other.pickups.filter(c => c.kind === 'frost')).toHaveLength(2);
+  });
+
+  test('each courtyard starts with a seed attached to Bloom and three Hasten charges', () => {
+    for (let level = 0; level < 5; level++) {
+      const s = setup({ level });
+      const bloom = s.actors[BLOOM];
+      expect(bloom.carrying).toBe('seed-starter');
+      expect(get(s, bloom.carrying)).toMatchObject({ kind: 'seed', held: BLOOM, x: bloom.x + 22, y: bloom.y - 40 });
+      expect(s.bloomCharges).toBe(3);
+      expect(s.pickups.some(c => c.kind === 'bolt')).toBe(true);
+    }
+  });
+
+  test('only a successful cast spends Hasten and an empty budget keeps the target unchanged', () => {
+    let s = setup({ level: 3 });
+    s.actors[BLOOM].x = 510;
+    expect(act(s, { type: 'ability', actor: BLOOM, target: 'missing' })).toBe(s);
+    s = send(s, 'ability', BLOOM, { target: 'mover-0' });
+    expect(s.bloomCharges).toBe(2);
+    s.bloomCharges = 0;
+    const cast = { type: 'ability', actor: BLOOM, target: 'mover-0' };
+    expect(validateAction(s, 'local', cast).error).toBe('noBloomCharges');
+    expect(act(s, cast)).toBe(s);
+    expect(get(s, 'mover-0').speed).toBe(1);
   });
 });
 
@@ -255,6 +281,8 @@ describe('possible dead ends raise a warning; the game goes on', () => {
     expect(failureReason(lost())).toBe('freeze');
     const crystal = lost(); crystal.pickups[0].taken = false;
     expect(failureReason(crystal)).toBe(null);
+    const bolt = lost(); bolt.pickups.find(c => c.kind === 'bolt').taken = false;
+    expect(failureReason(bolt)).toBe('freeze');
     const charge = lost(); charge.freezeCharges = 1;
     expect(failureReason(charge)).toBe(null);
     const area = lost(); area.freezeAreas.push({ id: 'a', x: 600, y: 400, radius: 130, ticksLeft: 100, duration: 600 });

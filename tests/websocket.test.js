@@ -80,20 +80,23 @@ describe('real WebSocket multiplayer', () => {
   test('shared existing time abilities and animation identities agree on both clients', async () => {
     const server = serve(), p = await pair(server); await start(p);
     p.room.game = setup({ level: 1, players: p.room.game.playerIds }); p.room.epoch++;
-    Object.assign(p.room.game.actors[1], { x: 380 });
     p.host.send({ type: 'input', seq: 1, action: { type: 'grab' } });
+    await p.host.next('snapshot', m => m.ack[p.h.playerId] === 1 && m.game.actors[1].carrying === null);
+    Object.assign(p.room.game.actors[1], { x: 380 });
+    p.host.send({ type: 'input', seq: 2, action: { type: 'grab' } });
     await p.host.next('snapshot', m => m.game.actors[1].carrying === 'seed-1');
     p.room.game.actors[1].x = 600;
-    p.host.send({ type: 'input', seq: 2, action: { type: 'grab' } });
+    p.host.send({ type: 'input', seq: 3, action: { type: 'grab' } });
     await p.host.next('snapshot', m => m.game.objects.some(o => o.kind === 'plant'));
-    p.host.send({ type: 'input', seq: 3, action: { type: 'ability', target: 'plant-0' } });
+    p.host.send({ type: 'input', seq: 4, action: { type: 'ability', target: 'plant-0' } });
     const woke = await p.host.next('snapshot', m => m.game.objects.some(o => o.id === 'plant-0' && o.speed === 1));
     expect((await p.guest.next('snapshot', m => m.game.tick === woke.game.tick)).game).toEqual(woke.game);
     expect(woke.game.actors[1].animation.name).toBe('cast');
+    expect(woke.game.bloomCharges).toBe(2);
     const later = await p.host.next('snapshot', m => m.game.tick > woke.game.tick && m.game.tick < woke.game.tick + 10);
     expect(later.game.actors[1].animation).toEqual(woke.game.actors[1].animation);
-    p.host.send({ type: 'input', seq: 4, action: { type: 'ability', target: 'plant-0' } });
     p.host.send({ type: 'input', seq: 5, action: { type: 'ability', target: 'plant-0' } });
+    p.host.send({ type: 'input', seq: 6, action: { type: 'ability', target: 'plant-0' } });
     const fast = await p.guest.next('snapshot', m => m.game.objects.some(o => o.id === 'plant-0' && o.speed === 3));
     p.room.game.actors[0].x = 450; // Still walks within reach of the mushroom
     p.guest.send({ type: 'input', seq: 1, action: { type: 'ability', target: 'plant-0' } });
@@ -101,9 +104,10 @@ describe('real WebSocket multiplayer', () => {
     expect((await p.guest.next('snapshot', m => m.game.tick === frozen.game.tick)).game).toEqual(frozen.game);
     expect(frozen.game.objects.find(o => o.id === 'plant-0').age).toBeGreaterThan(0);
     expect(fast.game.objects.find(o => o.id === 'plant-0').speed).toBe(3);
+    expect(fast.game.bloomCharges).toBe(0);
     const [area] = frozen.game.freezeAreas;
     expect(area.owner).toBe(p.g.playerId);
-    p.host.send({ type: 'input', seq: 6, action: { type: 'ability', area: area.id, owner: p.g.playerId } });
+    p.host.send({ type: 'input', seq: 7, action: { type: 'ability', area: area.id, owner: p.g.playerId } });
     expect((await p.host.next('error')).code).toBe('role');
     p.guest.send({ type: 'input', seq: 2, action: { type: 'ability', area: area.id } });
     const cancelled = await p.host.next('snapshot', m => m.ack[p.g.playerId] === 2);

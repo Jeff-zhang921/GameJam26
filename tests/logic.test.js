@@ -13,8 +13,6 @@ const apex = (s, actor) => { let top = s.actors[actor].y; for (let i = 0; i < 60
 // Level 1 (index 1) has one empty pit at x=600 on ground y=540 and seeds at x=90 / x=380.
 function planted() {
   let s = setup({ level: 1 });
-  s.actors[1].x = 380;
-  s = action(s, { type: 'grab', actor: 1 });
   s.actors[1].x = 600;
   s = action(s, { type: 'grab', actor: 1 });
   return s;
@@ -24,14 +22,17 @@ describe('seeds and pits', () => {
   test('a carried seed is planted into an empty pit and dropped anywhere else', () => {
     let s = setup({ level: 1 });
     s.actors[0].x = 380;
-    s = action(s, { type: 'grab', actor: 0 });
-    expect(s.actors[0].carrying).toBe('seed-1');
-    s = action(s, { type: 'grab', actor: 0 });
+    expect(validateAction(s, 'local', { type: 'grab', actor: 0 }).error).toBe('grabRange');
+    s = action(s, { type: 'grab', actor: 1 }); // Drop the starter before picking up a loose seed.
+    s.actors[1].x = 380;
+    s = action(s, { type: 'grab', actor: 1 });
+    expect(s.actors[1].carrying).toBe('seed-1');
+    s = action(s, { type: 'grab', actor: 1 });
     expect(get(s, 'seed-1').held).toBe(null);
     expect(s.objects.some(o => o.kind === 'plant')).toBe(false);
-    s = action(s, { type: 'grab', actor: 0 });
-    s.actors[0].x = 610;
-    s = action(s, { type: 'grab', actor: 0 });
+    s = action(s, { type: 'grab', actor: 1 });
+    s.actors[1].x = 610;
+    s = action(s, { type: 'grab', actor: 1 });
     expect(get(s, 'seed-1')).toBeUndefined();
     const plant = s.objects.find(o => o.kind === 'plant');
     expect(plant).toMatchObject({ age: 0, height: 0, speed: 0, x: 600 });
@@ -40,10 +41,10 @@ describe('seeds and pits', () => {
 
   test('an occupied pit does not accept a second seed', () => {
     let s = planted();
-    s.actors[0].x = 90;
-    s = action(s, { type: 'grab', actor: 0 });
-    s.actors[0].x = 600;
-    s = action(s, { type: 'grab', actor: 0 });
+    s.actors[1].x = 90;
+    s = action(s, { type: 'grab', actor: 1 });
+    s.actors[1].x = 600;
+    s = action(s, { type: 'grab', actor: 1 });
     expect(s.objects.filter(o => o.kind === 'plant')).toHaveLength(1);
     expect(get(s, 'seed-0').held).toBe(null);
   });
@@ -409,8 +410,8 @@ describe('room rules', () => {
 describe('review fixes', () => {
   test('bloom auto-target skips full-speed plants and picks the nearest usable one', () => {
     let s = setup({ level: 3 });
-    s.actors[1].x = 480; s = action(s, { type: 'grab', actor: 1 });
     s.actors[1].x = 400; s = action(s, { type: 'grab', actor: 1 });
+    s.actors[1].x = 345; s = step(s); // Collect the extra Hasten charge needed to wake the second plant.
     s.actors[1].x = 110; s = action(s, { type: 'grab', actor: 1 });
     s.actors[1].x = 60; s = action(s, { type: 'grab', actor: 1 });
     for (let i = 0; i < meta.time.maxSpeed; i++) s = action(s, { type: 'ability', actor: 1, target: 'plant-1' });
@@ -444,9 +445,9 @@ describe('review fixes', () => {
   });
 
   test('the clock starts on a first grab', () => {
-    let s = setup({ level: 1 });
+    let s = setup({ level: 0 });
     s = step(s, 5); expect(s.elapsed).toBe(0);
-    s.actors[0].x = 90; s = action(s, { type: 'grab', actor: 0 });
+    s.actors[0].x = 300; s = action(s, { type: 'grab', actor: 0 });
     s = step(s, 5); expect(s.elapsed).toBe(5);
   });
 

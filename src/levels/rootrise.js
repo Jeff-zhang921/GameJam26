@@ -5,6 +5,7 @@ export default {
   crates: [], seeds: [{ x: 90, y: 530 }, { x: 380, y: 530 }], pits: [{ x: 600, y: 540 }], plants: [], movers: [],
   // Freeze is optional here (it lengthens the mushroom's tall moment).
   freezeCharges: 1,
+  bloomPickups: [{ x: 470, y: 514 }],
   // The exit ledge is out of jumping reach without a flower (used by fail detection).
   exitNeedsPlant: true,
   exit: { x: 1160, y: 290 }, shards: [{ x: 600, y: 250 }], need: ['treeLifted'],

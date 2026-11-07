@@ -1,11 +1,11 @@
 import { playEffect } from './sfx.js';
 import { createMusic } from './music.js';
-import { setup, applyAction, validateAction, viewFor, targetFor, hintLevel, levelCount, interactionFor, abilityCheck, abilityTargets, timeObjectAt, anchor, exitStatus, freezeAreaAt, freezeCheck, meta } from '../src/logic.js';
+import { setup, applyAction, validateAction, viewFor, targetFor, hintLevel, levelCount, interactionFor, abilityCheck, abilityTargets, timeObjectAt, anchor, exitStatus, freezeAreaAt, freezePoint, freezeCheck, meta } from '../src/logic.js';
 import { createHistory, compactFrame, rewindFrame, REWIND } from './rewind.js';
 import { S } from './strings.js';
 import { createRenderer } from './render.js';
 import { createNetwork } from './network.js';
-import { readJoystick } from './joystick.js';
+import { readJoystick, skillAimOffset } from './joystick.js';
 import { createLobby } from './lobby.js';
 import { createPWA } from './pwa.js';
 
@@ -31,6 +31,8 @@ const icons = {
 };
 const icon = name => `<svg viewBox="0 0 24 24" aria-hidden="true">${icons[name] || icons.moon}</svg>`;
 const key = text => `<kbd class="key">${text}</kbd>`;
+const skillArt = name => `<svg class="skill-art" viewBox="0 0 64 64" aria-hidden="true"><use href="/art/touch-controls.svg#${name}"/></svg>`;
+const itemArt = name => `<img class="skill-art" src="/sprites/${name}.png" alt="" draggable="false">`;
 let saved = {};
 try { saved = JSON.parse(localStorage.getItem('moonclock-v1') || '{}'); } catch { }
 let state = setup({ level: Number.isInteger(saved.level) ? saved.level : 0 });
@@ -52,6 +54,7 @@ let onlineMode = false, networkEpoch = null, networkStatus = 'offline';
 const held = new Set();
 const touchPointers = new Map();
 let touchJumpActor = null, uiChapter = '', uiProgress = '', uiMode = '', touchKey = '';
+let skillAim = null;
 // Touch: the last drawn world (for tap hit-testing) and the short-lived feedback of the last tap.
 let lastView = null, tapEffect = null, tapIntroShown = false;
 // Height (px) the bottom touch controls take up; the camera lowers the world only as far as keeps the
@@ -84,13 +87,14 @@ app.innerHTML = `
       <div class="touch-controls" data-testid="touch-controls">
         <div class="touch-movement">
           <div class="joystick" data-testid="joystick" role="group" aria-label="${S.joystick}"><div class="joystick-base" aria-hidden="true"></div><div class="joystick-thumb" aria-hidden="true"></div></div>
-          <button type="button" class="touch-skill touch-jump" data-touch="jump" data-testid="touch-jump" aria-label="${S.jump}">${icon('up')}<span>${S.jump}</span></button>
+          <button type="button" class="touch-switch" data-touch="switch" data-testid="touch-switch" aria-label="${S.switchRole}">${icon('swap')}</button>
         </div>
         <div class="touch-actions">
-          <button type="button" class="touch-switch" data-touch="switch" data-testid="touch-switch" aria-label="${S.switchRole}">${icon('swap')}</button>
-          <button type="button" class="touch-skill touch-interact" data-touch="grab" data-testid="touch-interact" aria-label="${S.interact.pickup}">${icon('pickup')}<span>${S.interact.pickup}</span></button>
-          <button type="button" class="touch-skill touch-ability" data-touch="ability" data-testid="touch-ability" aria-label="${S.ability[0]}">${icon('snow')}<span>${S.ability[0]}</span></button>
+          <button type="button" class="touch-skill touch-jump" data-touch="jump" data-testid="touch-jump" aria-label="${S.jump}">${icon('up')}<span>${S.jump}</span></button>
+          <button type="button" class="touch-skill touch-interact" data-touch="grab" data-testid="touch-interact" aria-label="${S.interact.pickup}">${itemArt('crate')}<span>${S.interact.pickup}</span></button>
+          <button type="button" class="touch-skill touch-ability" data-touch="ability" data-testid="touch-ability" aria-label="${S.ability[0]}">${skillArt('frost')}<span class="skill-charges" data-testid="skill-charges"></span></button>
         </div>
+        <button type="button" class="touch-cancel" data-testid="cancel-aim" aria-label="${S.cancelAim}" hidden>${icon('close')}</button>
       </div>
       <button type="button" class="touch-pause" data-action="pause" data-testid="touch-pause" aria-label="${S.pause}" title="${S.pause}">${icon('pause')}<span class="hint-dot" aria-hidden="true"></span></button>
       <div class="toast" role="status" id="toast"></div><div class="debug" id="debug" hidden></div>
@@ -163,9 +167,9 @@ const network = createNetwork({
     }
     resetTouchState();
   },
-  onError(message) {
+  onError(message, code) {
     if (nextPending) { nextPending = false; renderModal(); }
-    lobby.setError(message); toast(message);
+    lobby.setError(message); toast(S.errors[code] ?? message);
   },
 });
 const lobby = createLobby({
@@ -289,6 +293,7 @@ function updateUI() {
 }
 // Forget every held key, finger and joystick state without sending anything.
 function resetTouchState() {
+  clearSkillAim();
   held.clear(); touchPointers.clear(); touchJumpActor = null;
   Object.assign(joy, { pointer: null, actor: null, dx: 0, dy: 0, dir: 0 });
   const stick = document.querySelector('.joystick');
@@ -525,6 +530,7 @@ document.addEventListener('keydown', event => {
   const code = event.code;
   if (rewind) return;
   if (stageBusy()) { event.preventDefault(); return; }
+  if (code === 'Escape' && skillAim) { event.preventDefault(); clearSkillAim(); return; }
   if (code === 'Escape') { event.preventDefault(); if (modal && !['intro', 'win'].includes(modal)) resume(); else if (!modal) setModal('pause'); return; }
   if (modal) {
     if (code === 'Tab') {
@@ -616,19 +622,92 @@ function touchAction(type) {
     if (!keyboardJumpHeld(actor) && canJumpNow(actor)) dispatch({ type, actor }, true);
   } else dispatch({ type, actor });
 }
+const interactButton = document.querySelector('.touch-interact');
+const abilityButton = document.querySelector('.touch-ability');
+const cancelAimButton = document.querySelector('.touch-cancel');
+const skillCharges = (view, actor) => actor === 0 ? view.freezeCharges : view.bloomCharges;
+
+function clearSkillAim() {
+  if (!skillAim) return;
+  const { pointer } = skillAim;
+  skillAim = null;
+  touchPointers.delete(abilityButton); abilityButton.classList.remove('pressed');
+  cancelAimButton.hidden = true; cancelAimButton.classList.remove('over');
+  document.body.classList.remove('skill-aiming');
+  if (abilityButton.hasPointerCapture(pointer)) abilityButton.releasePointerCapture(pointer);
+}
+
+function updateSkillAim(event) {
+  if (!skillAim || (event && skillAim.pointer !== event.pointerId)) return;
+  if (event) { skillAim.x = event.clientX; skillAim.y = event.clientY; }
+  const distance = Math.hypot(skillAim.x - skillAim.startX, skillAim.y - skillAim.startY);
+  if (!skillAim.active && (distance >= 8 || performance.now() - skillAim.started >= 160)) {
+    skillAim.active = true;
+    cancelAimButton.hidden = false;
+    document.body.classList.add('skill-aiming');
+  }
+  if (skillAim.active) {
+    const { left, top, width, height } = cancelAimButton.getBoundingClientRect();
+    skillAim.overCancel = Math.hypot(skillAim.x - left - width / 2, skillAim.y - top - height / 2) <= width / 2;
+    cancelAimButton.classList.toggle('over', skillAim.overCancel);
+  }
+}
+
+function aimPreview(view) {
+  if (!skillAim?.active || skillAim.overCancel || view?.status !== 'playing') return null;
+  const { actor, x, y, startX, startY, travel } = skillAim;
+  const still = actor === 0, player = view.actors[actor];
+  const range = still ? meta.freeze.range : meta.controls.range;
+  const origin = { x: player.x, y: player.y - (still ? 30 : 0) };
+  const offset = skillAimOffset(x - startX, y - startY, travel, range);
+  const point = offset && { x: Math.max(0, Math.min(view.width, origin.x + offset.x)), y: Math.max(0, Math.min(view.height, origin.y + offset.y)) };
+  if (still) {
+    const center = point ?? freezePoint(view);
+    const check = freezeCheck(view, center);
+    const reason = check !== 'ok' ? check : freezeAreaAt(view, center) ? 'freezeCovered' : 'ok';
+    return { actor, origin, range, point: center, radius: meta.freeze.radius, reason };
+  }
+  const candidates = abilityTargets(view, actor).filter(o => o.speed < meta.time.maxSpeed);
+  const target = point ? timeObjectAt(view, point, 30, candidates) : targetFor(view, actor);
+  const reason = skillCharges(view, actor) <= 0 ? 'noBloomCharges' : target ? abilityCheck(view, actor, target.id) : 'bloomRange';
+  return { actor, origin, range, point: target ? anchor(target) : point ?? origin, target: target?.id, reason };
+}
+
+function finishSkillAim(event, released) {
+  if (skillAim?.pointer !== event.pointerId) return;
+  updateSkillAim(event);
+  const { actor, active, overCancel } = skillAim;
+  const preview = aimPreview(lastView);
+  clearSkillAim();
+  if (!released || overCancel || modal || stageBusy() || rewind || actor !== touchActor()) return;
+  if (!active) { touchAction('ability'); return; }
+  if (!preview) return;
+  if (preview.reason !== 'ok') {
+    toast(preview.reason === 'range' || preview.reason === 'outside' ? S.errors.freezeRange : S.errors[preview.reason]);
+    return;
+  }
+  dispatch(actor === 0 ? { type: 'ability', actor, ...preview.point } : { type: 'ability', actor, target: preview.target });
+}
+
+cancelAimButton.addEventListener('pointerdown', event => { event.preventDefault(); clearSkillAim(); });
+cancelAimButton.addEventListener('click', clearSkillAim);
 // Each circle captures only its own pointer, so presses coexist with held movement and with each other.
 for (const button of document.querySelectorAll('[data-touch]')) {
   button.addEventListener('pointerdown', event => {
     if (modal || stageBusy() || rewind || event.button !== 0 || touchPointers.has(button)) return;
     event.preventDefault(); initAudio();
     try { button.setPointerCapture(event.pointerId); } catch { }
-    touchAction(button.dataset.touch);
+    if (button === abilityButton) {
+      const { clientX: x, clientY: y, pointerId: pointer } = event;
+      skillAim = { pointer, actor: touchActor(), x, y, startX: x, startY: y, started: performance.now(), travel: Math.max(76, button.clientWidth * 1.15), active: false, overCancel: false };
+    } else touchAction(button.dataset.touch);
     touchPointers.set(button, event.pointerId); button.classList.add('pressed');
   });
   for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) button.addEventListener(name, event => {
     if (touchPointers.get(button) !== event.pointerId) return;
     touchPointers.delete(button); button.classList.remove('pressed');
     if (button.dataset.touch === 'jump') releaseTouchJump();
+    if (button === abilityButton) finishSkillAim(event, name === 'pointerup');
   });
   // Keyboard / switch-access activation (pointer taps were already handled on pointerdown).
   button.addEventListener('keydown', event => { if (event.repeat && ['Enter', ' '].includes(event.key)) event.preventDefault(); });
@@ -638,22 +717,25 @@ for (const button of document.querySelectorAll('[data-touch]')) {
     if (button.dataset.touch === 'jump') releaseTouchJump();
   });
 }
-const interactButton = document.querySelector('.touch-interact');
-const abilityButton = document.querySelector('.touch-ability');
+abilityButton.addEventListener('pointermove', updateSkillAim);
+const chargeBadge = abilityButton.querySelector('.skill-charges');
 function updateTouchControls(view) {
   if (!document.body.classList.contains('touch-layout') || !view?.actors) return;
   const actor = onlineMode ? network.actor : view.active;
+  const charges = skillCharges(view, actor);
   const interaction = interactionFor(view, actor);
-  const next = `${actor}:${interaction.kind}:${interaction.available}`;
+  const next = `${actor}:${charges}:${interaction.kind}:${interaction.available}`;
   if (next === touchKey) return;
   touchKey = next;
+  chargeBadge.textContent = charges;
+  abilityButton.classList.toggle('empty', charges <= 0);
+  abilityButton.setAttribute('aria-label', S.skillCount(S.ability[actor], charges));
   abilityButton.classList.toggle('bloom', actor === 1);
-  abilityButton.innerHTML = `${icon(actor === 1 ? 'leaf' : 'snow')}<span>${S.ability[actor]}</span>`;
-  abilityButton.setAttribute('aria-label', S.ability[actor]);
+  abilityButton.querySelector('use').setAttribute('href', `/art/touch-controls.svg#${actor === 1 ? 'bolt' : 'frost'}`);
   interactButton.classList.toggle('bloom', actor === 1);
   interactButton.classList.toggle('unavailable', !interaction.available);
   interactButton.dataset.kind = interaction.kind;
-  interactButton.innerHTML = `${icon(interaction.kind)}<span>${S.interact[interaction.kind]}</span>`;
+  interactButton.innerHTML = `${itemArt(['drop', 'plant'].includes(interaction.kind) ? 'seed' : 'crate')}<span>${S.interact[interaction.kind]}</span>`;
   interactButton.setAttribute('aria-label', S.interact[interaction.kind]);
 }
 
@@ -693,7 +775,7 @@ function tapWorld(clientX, clientY) {
   const result = abilityCheck(view, actor, hit.id), at = anchor(hit);
   tapEffect = { x: at.x, y: at.y, at: performance.now(), ok: result === 'ok', ring: result === 'range' ? actor : null };
   if (result === 'ok') { document.querySelector('#toast').classList.remove('show'); dispatch({ type: 'ability', actor, target: hit.id }); }
-  else toast(result === 'range' ? S.tapTooFar : result === 'unsupported' ? S.tapUnsupported[actor] : result === 'maxSpeed' ? S.errors.maxSpeed : S.errors.invalid);
+  else toast(result === 'range' ? S.tapTooFar : result === 'unsupported' ? S.tapUnsupported[actor] : S.errors[result] ?? S.errors.invalid);
   return { result, target: hit.id };
 }
 // With a mouse (no touch layout), clicking the world places Still's Freeze Area; Bloom keeps F / L.
@@ -701,7 +783,7 @@ function tapWorld(clientX, clientY) {
 const mouseCasts = () => !document.body.classList.contains('touch-layout') && (!onlineMode || network.actor === 0);
 canvas.addEventListener('pointerdown', event => {
   canvas.focus({ preventScroll: true });
-  if (modal || stageBusy() || rewind || event.button !== 0) return;
+  if (modal || stageBusy() || rewind || skillAim || event.button !== 0) return;
   if (document.body.classList.contains('touch-layout')) { event.preventDefault(); initAudio(); tapWorld(event.clientX, event.clientY); return; }
   if (event.pointerType !== 'mouse' || !mouseCasts()) return;
   const point = renderer.worldPoint(event.clientX, event.clientY);
@@ -772,6 +854,8 @@ function frame(time) {
   const localMenu = ['pause', 'help', 'settings', 'confirm-restart', 'confirm-level'].includes(modal);
   const worldPaused = stageBusy() || (onlineMode ? modal !== null && !localMenu : !!modal) || state.status !== 'playing' || (onlineMode && (!network.connected || network.room?.suspended));
   const touch = touchLayout(), viewActor = onlineMode ? network.actor : state.active;
+  updateSkillAim();
+  const aim = aimPreview(displayState);
   const cancelPreview = freezePreview && freezeAreaAt(displayState, freezePreview);
   lastView = displayState;
   const tapAge = tapEffect ? (performance.now() - tapEffect.at) / 1400 : 1;
@@ -780,9 +864,10 @@ function frame(time) {
     reduced, mode: touch ? 'coop' : onlineMode ? 'solo' : mode, paused: worldPaused && !rewindInfo,
     sceneKey: outgoing?.sceneKey ?? sceneKey, cameraReset: outgoing?.cameraReset ?? cameraReset,
     celebration: celebration && { progress: Math.max(0, Math.min(1, (time - celebration.start) / celebration.duration)), finale: celebration.finale },
-    target: touch && viewActor === 0 ? null : targetFor(state, state.active)?.id,
-    touch, tappable: touch && viewActor === 1 && displayState.status === 'playing' ? new Set(abilityTargets(displayState, viewActor).map(o => o.id)) : null,
+    target: aim ? aim.target : touch && viewActor === 0 ? null : targetFor(state, state.active)?.id,
+    touch, tappable: !aim && touch && viewActor === 1 && displayState.status === 'playing' ? new Set(abilityTargets(displayState, viewActor).map(o => o.id)) : null,
     rewind: rewindInfo,
+    aim,
     preview: freezePreview && displayState.status === 'playing' ? cancelPreview ? { ...cancelPreview, cancel: true } : { ...freezePreview, radius: meta.freeze.radius, valid: freezeCheck(displayState, freezePreview) === 'ok' } : null,
     tap: tapEffect && { ...tapEffect, age: tapAge },
     bottomInset: touch ? controlsReserve : 0,

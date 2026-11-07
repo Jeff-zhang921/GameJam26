@@ -7,5 +7,6 @@ export default {
   movers: [{ x1: 540, x2: 640, y: 290, w: 120 }],
   // Freeze: each traveller needs a frozen crate to cross the last rift.
   freezeCharges: 2, freezePickups: [{ x: 470, y: 430 }], crossingNeedsFreeze: true,
+  bloomPickups: [{ x: 345, y: 494 }],
   exit: { x: 1160, y: 300 }, shards: [{ x: 400, y: 240 }], need: ['treeLifted', 'moverRide', 'frozenTouched'],
 };

@@ -92,13 +92,11 @@ async (page) => {
   check(await guest.getByTestId('next').isDisabled(), 'Guest may not advance level');
   await host.screenshot({ path: '.audit/online-win.png' });
   await host.getByTestId('next').click();
-  for (const tab of [host, guest]) await tab.waitForFunction(() => window.__moonclock.snapshot().level === 1);
+  for (const tab of [host, guest]) await tab.waitForFunction(() => window.__moonclock.snapshot().level === 1 && document.querySelector('.scene-veil').hidden);
   const next = [await snapshot(host), await snapshot(guest)];
   check(next[0].level === next[1].level, 'Next level diverged');
   await send(guest, { type: 'move', dir: 1 });
-  await guest.waitForFunction(() => window.__moonclock.snapshot().actors[1].x >= 300);
-  await send(guest, { type: 'grab' });
-  await guest.waitForFunction(() => window.__moonclock.snapshot().actors[1].carrying !== null);
+  check(next[1].actors[1].carrying === 'seed-starter', 'Bloom did not start with the seed');
   await guest.waitForFunction(() => window.__moonclock.snapshot().actors[1].x >= 590);
   await send(guest, { type: 'move', dir: 0 }); await send(guest, { type: 'grab' });
   await guest.waitForFunction(() => window.__moonclock.snapshot().objects.some(o => o.kind === 'plant'));

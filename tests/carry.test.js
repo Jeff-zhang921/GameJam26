@@ -85,9 +85,7 @@ describe('contextual interaction label', () => {
   });
 
   test('a carried seed offers Plant beside an empty pit and Drop elsewhere', () => {
-    let state = setup({ level: 1 });
-    state.actors[1].x = 380;
-    state = send(state, 'grab', 1);
+    const state = setup({ level: 1 });
     state.actors[1].x = 450;
     expect(interactionFor(state, 1).kind).toBe('drop');
     state.actors[1].x = 600;
