@@ -178,7 +178,7 @@ function ageObjects(state) {
       if (!o.withered && o.age > growTicks + matureTicks) { event(state, 'wither', o.x, o.base); o.withered = true; if (o.barrier) state.flags.withered = true; }
       const rise = heightAt(o.age) - o.height;
       o.height += rise;
-      if (rise > 0 && state.tick % 30 === 0) event(state, 'growth', o.x, o.base - o.height);
+      if (rise > 0 && state.tick % 60 === 0) event(state, 'growth', o.x, o.base - o.height);
       if (rise) for (const p of state.actors) if (p.on === o.id && p.grounded) {
         p.y -= rise;
         if (o.height > meta.plant.springHeight) state.flags.treeLifted = true;
