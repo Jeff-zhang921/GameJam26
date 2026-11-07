@@ -1,7 +1,10 @@
+import { createMusic } from './music.js';
 import { setup, applyAction, validateAction, viewFor, targetFor, hintLevel } from '../src/logic.js';
 import { S } from './strings.js';
 import { createRenderer } from './render.js';
 
+const music = createMusic();
+let journeyStarted = false;
 const icons = {
   moon: '<path d="M19 15.5A8 8 0 0 1 8.5 5a8.5 8.5 0 1 0 10.5 10.5Z"/><path d="m17 3 .5 2.5L20 6l-2.5.5L17 9l-.5-2.5L14 6l2.5-.5Z"/>',
   leaf: '<path d="M19 4C7 3 3 10 7 16c6 4 13 0 12-12Z"/><path d="M5 21 17 7M10 15l-1-5m5 1 4 1"/>',
@@ -63,7 +66,9 @@ function persist() {
   try { localStorage.setItem('moonclock-v1', JSON.stringify({ level: state.level, unlocked: state.unlocked, mode, sound, reduced, best })); } catch { }
 }
 function toast(text) { const el = document.querySelector('#toast'); el.textContent = text; el.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 3400); }
-function initAudio() { if (!audioContext && sound) { try { audioContext = new (window.AudioContext || window.webkitAudioContext)(); } catch { } } if (audioContext?.state === 'suspended' && sound) audioContext.resume(); }
+function initAudio() {
+  music.unlock();
+ if (!audioContext && sound) { try { audioContext = new (window.AudioContext || window.webkitAudioContext)(); } catch { } } if (audioContext?.state === 'suspended' && sound) audioContext.resume(); }
 function chime(kind) {
   if (!sound || !audioContext || !['freeze', 'unfreeze', 'grow', 'wake', 'plant', 'vanish', 'shard', 'win', 'throw', 'return', 'rewind'].includes(kind)) return;
   const now = audioContext.currentTime; const notes = kind === 'win' ? [392, 493.88, 587.33, 783.99] : kind === 'grow' || kind === 'wake' ? [392, 587.33] : kind === 'freeze' ? [880, 1320] : kind === 'plant' ? [293.66, 440] : kind === 'vanish' ? [220] : [440];
@@ -137,7 +142,7 @@ function renderModal() {
   const close = `<button class="iconbutton close" data-action="close" aria-label="${S.close}">${icon('close')}</button>`;
   if (modal === 'intro') contents = `<div class="intro-icon">${icon('moon')}</div><div class="eyebrow">${S.english} · A COOPERATIVE TIME TALE</div><h1>${S.title}</h1><p>${S.intro}<br>${S.introBody}</p><div class="mode-selector"><button data-mode="solo" class="${mode === 'solo' ? 'selected' : ''}" data-testid="mode-solo">${S.solo}</button><button data-mode="coop" class="${mode === 'coop' ? 'selected' : ''}" data-testid="mode-coop">${S.coop}</button></div><button class="primary" data-action="start" data-testid="start">${saved.unlocked ? S.continue : S.start}${icon('arrow')}</button><p class="intro-foot">${S.subtitle}</p>`;
   if (modal === 'help') contents = `${close}<div class="intro-icon">${icon('help')}</div><h2>${S.helpTitle}</h2><p>${S.helpBody}</p><div class="help-grid">${S.keys.map(([k, v]) => `${key(k)}<span>${v}</span>`).join('')}</div><p>${S.coopKeys}</p><button class="primary" data-action="close">${S.continue}${icon('arrow')}</button>`;
-  if (modal === 'settings') contents = `${close}<div class="intro-icon">${icon('settings')}</div><h2>${S.settings}</h2><div class="settings-row"><span>${S.sound}</span><button class="toggle" role="switch" aria-checked="${sound}" data-action="sound" aria-label="${S.sound}" data-testid="setting-sound"></button></div><div class="settings-row"><span>${S.motion}</span><button class="toggle" role="switch" aria-checked="${reduced}" data-action="motion" aria-label="${S.motion}" data-testid="setting-motion"></button></div><div class="mode-selector"><button data-mode="solo" class="${mode === 'solo' ? 'selected' : ''}">${S.solo}</button><button data-mode="coop" class="${mode === 'coop' ? 'selected' : ''}">${S.coop}</button></div><button class="primary" data-action="close">${S.continue}${icon('arrow')}</button>`;
+  if (modal === 'settings') contents = `${close}<div class="intro-icon">${icon('settings')}</div><h2>${S.settings}</h2><p class="music-credit">Gymnopédie No. 1 · Erik Satie<br>Performed by <a href="https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100787" target="_blank" rel="noopener">Kevin MacLeod</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a><br>Excerpt 0:00–0:50; fades applied.</p><div class="settings-row"><span>${S.sound}</span><button class="toggle" role="switch" aria-checked="${sound}" data-action="sound" aria-label="${S.sound}" data-testid="setting-sound"></button></div><div class="settings-row"><span>${S.motion}</span><button class="toggle" role="switch" aria-checked="${reduced}" data-action="motion" aria-label="${S.motion}" data-testid="setting-motion"></button></div><div class="mode-selector"><button data-mode="solo" class="${mode === 'solo' ? 'selected' : ''}">${S.solo}</button><button data-mode="coop" class="${mode === 'coop' ? 'selected' : ''}">${S.coop}</button></div><button class="primary" data-action="close">${S.continue}${icon('arrow')}</button>`;
   if (modal === 'pause') contents = `<div class="intro-icon">${icon('moon')}</div><div class="eyebrow">A MOMENT OF STILLNESS</div><h2>${S.focus}</h2><p>${S.levels[state.level].goal}</p><button class="primary" data-action="close" data-testid="resume">${S.resume}${icon('play')}</button><div class="modal-actions"><button class="text-button" data-action="help">${S.help}</button><button class="text-button" data-action="restart">${S.restart}</button></div>`;
   if (modal === 'win') contents = `<div class="intro-icon">${icon('leaf')}</div><div class="eyebrow">CHAMBER 0${state.level + 1} · RESTORED</div><h2>${state.level === 3 ? S.complete : S.chamberComplete}</h2><p>${state.level === 3 ? S.completeBody : S.chamberCompleteBody}</p><p>${S.clear} ${clock(state.elapsed)} · ${S.best} ${clock(best[state.level] ?? state.elapsed)}</p><div class="win-stars">✦ ${state.shards[0].taken ? '✦' : '◇'} ✦</div><p>${S.memory} ${state.shards.filter(s => s.taken).length} / ${state.shards.length}</p><button class="primary" data-action="next" data-testid="next">${state.level === 3 ? S.replay : S.next}${icon('arrow')}</button>`;
   if (modal === 'intro') {
@@ -156,7 +161,7 @@ document.addEventListener('click', event => {
   const action = button.dataset.action;
   if (action === 'start') {
     if (entering) return;
-    entering = true; clearInputs(); initAudio();
+    journeyStarted = true; entering = true; clearInputs(); initAudio();
     const entry = document.querySelector('.entry-screen');
     entry.classList.add('departing');
     const duration = reduced ? 200 : 2000;
@@ -171,7 +176,7 @@ document.addEventListener('click', event => {
     }
     requestAnimationFrame(advance); return;
   }
-  if (action === 'sound') { sound = !sound; initAudio(); updateUI(); persist(); if (modal === 'settings') renderModal(); else if (!modal) canvas.focus({ preventScroll: true }); return; }
+  if (action === 'sound') { sound = !sound; if (!sound) audioContext?.suspend(); initAudio(); updateUI(); persist(); if (modal === 'settings') renderModal(); else if (!modal) canvas.focus({ preventScroll: true }); return; }
   if (action === 'motion') { reduced = !reduced; updateUI(); persist(); renderModal(); return; }
   if (action === 'close') { resume(); return; }
   if (['help', 'settings', 'pause'].includes(action)) { setModal(action); return; }
@@ -257,6 +262,7 @@ window.__moonclock = {
   dispatch: action => { if (action.type === 'tick' && action.count) { for (let i = 0; i < Math.min(1800, action.count); i++) dispatch({ type: 'tick' }, true); } else dispatch(action); return window.__moonclock.snapshot(); },
 };
 function frame(time) {
+  music.sync(sound && journeyStarted && !document.hidden && document.hasFocus() && (entering || !modal || modal === 'win'));
   if (lastTime === 0) lastTime = time;
   accumulator += Math.min(100, time - lastTime); lastTime = time;
   if (!modal && state.status === 'playing') { while (accumulator >= 1000 / 60) { dispatch({ type: 'tick' }, true); accumulator -= 1000 / 60; } } else accumulator = 0;
