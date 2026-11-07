@@ -11,7 +11,7 @@ export const S = {
   aboutBody: 'Two timekeepers wake in a forgotten moon-garden where nothing ages until it is touched. Bloom starts clocks and hurries them along; Still casts Freeze Areas that slow the world to a crawl. Neither can cross the courtyards alone. Grow mushrooms into stairs, turn falling crates into ledges and outwait the garden\'s creatures, then meet at the moon gate together.',
   aboutModes: [['Local · Solo', 'Play both timekeepers and switch between them with Tab or the swap button.'], ['Online', 'Two players: create a room, share the six-letter code and play on two devices.']],
   creditsTitle: 'Credits', creditsMade: 'Made for Game Jam 2026',
-  creditsTeam: ['StephenYang', 'Yihua REN (Carol)', 'Kehao Zhou', 'Jeff Zhang', 'Erised233'],
+  creditsTeam: ['StephenYang', 'Yihua REN', 'Kehao Zhou', 'Jeff Zhang', 'Dorian Li'],
   creditsMusic: 'Music', creditsTech: 'Built with Bun, Canvas and WebSocket. Icons and art drawn for this game; no paid asset services were used.', chapter: 'CHAMBER', chapters: 'Courtyards',
   intro: 'In a forgotten greenhouse, nothing moves until you touch it.', introBody: 'Bloom sets time flowing and hurries it along. Still slows any moment to a crawl. One clock, two hands.',
   roleNames: ['Stillkeeper', 'Bloomkeeper'], roleLabels: ['STILL', 'BLOOM'], roleDescriptions: ['Casts a Freeze Area: everything inside slows to a crawl — even midair — until it fades. Each cast uses a charge.', 'Starts an object\'s clock and hurries it onward.'],
