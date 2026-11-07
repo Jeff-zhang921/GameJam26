@@ -19,34 +19,38 @@ function planted() {
 }
 
 describe('seeds and pits', () => {
-  test('a carried seed is planted into an empty pit and dropped anywhere else', () => {
+  test('Bloom collects a seed by touch and plants from the count beside an empty pit', () => {
     let s = setup({ level: 1 });
-    s.actors[0].x = 380;
+    expect(s.seeds).toBe(1);
+    Object.assign(s.actors[0], { x: 380 }); // Still walks over a seed: it stays, and Still cannot take it
+    s = step(s);
+    expect(get(s, 'seed-1')).toBeDefined();
     expect(validateAction(s, 'local', { type: 'grab', actor: 0 }).error).toBe('grabRange');
-    s = action(s, { type: 'grab', actor: 1 }); // Drop the starter before picking up a loose seed.
-    s.actors[1].x = 380;
-    s = action(s, { type: 'grab', actor: 1 });
-    expect(s.actors[1].carrying).toBe('seed-1');
-    s = action(s, { type: 'grab', actor: 1 });
-    expect(get(s, 'seed-1').held).toBe(null);
-    expect(s.objects.some(o => o.kind === 'plant')).toBe(false);
-    s = action(s, { type: 'grab', actor: 1 });
+    s.actors[0].x = 200;
+    s.actors[1].x = 380; // Bloom touches it: gone, and the count goes up
+    s = step(s);
+    expect(get(s, 'seed-1')).toBeUndefined();
+    expect(s.seeds).toBe(2);
+    expect(s.events.some(e => e.kind === 'seedPick')).toBe(true);
+    expect(s.actors[1].carrying).toBe(null);
+    s.actors[1].x = 300; // no pit here: nothing to do
+    expect(validateAction(s, 'local', { type: 'grab', actor: 1 }).error).toBe('grabRange');
     s.actors[1].x = 610;
     s = action(s, { type: 'grab', actor: 1 });
-    expect(get(s, 'seed-1')).toBeUndefined();
     const plant = s.objects.find(o => o.kind === 'plant');
     expect(plant).toMatchObject({ age: 0, height: 0, speed: 0, x: 600 });
     expect(s.pits[0].plant).toBe(plant.id);
+    expect(s.seeds).toBe(1);
   });
 
-  test('an occupied pit does not accept a second seed', () => {
+  test('an occupied pit takes no second seed, and an empty one needs a seed in the count', () => {
     let s = planted();
-    s.actors[1].x = 90;
-    s = action(s, { type: 'grab', actor: 1 });
-    s.actors[1].x = 600;
-    s = action(s, { type: 'grab', actor: 1 });
-    expect(s.objects.filter(o => o.kind === 'plant')).toHaveLength(1);
-    expect(get(s, 'seed-0').held).toBe(null);
+    expect(s.seeds).toBe(0);
+    s.seeds = 1;
+    expect(validateAction(s, 'local', { type: 'grab', actor: 1 }).error).toBe('grabRange');
+    s.pits.push({ id: 'pit-9', x: 300, y: 540, plant: null });
+    s.seeds = 0; s.actors[1].x = 300;
+    expect(validateAction(s, 'local', { type: 'grab', actor: 1 }).error).toBe('noSeeds');
   });
 
   test('bloom ignores loose seeds and crates', () => {
@@ -412,7 +416,7 @@ describe('review fixes', () => {
     let s = setup({ level: 3 });
     s.actors[1].x = 400; s = action(s, { type: 'grab', actor: 1 });
     s.actors[1].x = 345; s = step(s); // Collect the extra Hasten charge needed to wake the second plant.
-    s.actors[1].x = 110; s = action(s, { type: 'grab', actor: 1 });
+    s.actors[1].x = 110; s = step(s); // Collect a seed by touch.
     s.actors[1].x = 60; s = action(s, { type: 'grab', actor: 1 });
     for (let i = 0; i < meta.time.maxSpeed; i++) s = action(s, { type: 'ability', actor: 1, target: 'plant-1' });
     s.actors[1].x = 130; // both pits within reach; the full-speed one is nearer
@@ -433,11 +437,9 @@ describe('review fixes', () => {
     expect(plantOf(s).age).toBeCloseTo(age + 10 * meta.time.frozenRate, 5);
   });
 
-  test('a seed dropped on a crate rests on it', () => {
+  test('a seed falling onto a crate rests on it', () => {
     let s = setup();
-    s.objects.push({ kind: 'seed', id: 'seed-9', x: 0, y: 0, vx: 0, vy: 0, held: 1, spawnX: 100, spawnY: 100 });
-    Object.assign(s.actors[1], { x: 350, y: 466, on: 'crate-0', carrying: 'seed-9' });
-    s = action(s, { type: 'grab', actor: 1 });
+    s.objects.push({ kind: 'seed', id: 'seed-9', x: 350, y: 380, vx: 0, vy: 0, frozen: false, held: null, spawnX: 100, spawnY: 100 });
     s = step(s, 40);
     const seed = get(s, 'seed-9'), crate = get(s, 'crate-0');
     expect(seed.y).toBeCloseTo(crate.y - 27 - 10, 0);

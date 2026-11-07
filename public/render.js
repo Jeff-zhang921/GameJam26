@@ -372,6 +372,19 @@ export function createRenderer(canvas, S) {
     star(ctx, point.x, point.y, 5, color);
     ctx.restore();
   }
+  // Aiming a throw: the crate's flight as a dashed arc (the real physics, see throwPath), ending in a ring where
+  // it comes down, or a short tick against the wall it would hit.
+  function throwArc({ points }) {
+    if (points.length < 2) return;
+    const end = points[points.length - 1];
+    ctx.save(); ctx.lineCap = 'round'; ctx.setLineDash([7, 9]);
+    ctx.beginPath(); ctx.moveTo(points[0].x, points[0].y); for (const q of points) ctx.lineTo(q.x, q.y);
+    ctx.strokeStyle = '#173c37aa'; ctx.lineWidth = 5; ctx.stroke();
+    ctx.strokeStyle = '#fff3cfee'; ctx.lineWidth = 2.5; ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath(); ctx.ellipse(end.x, end.y + 27, 30, 8, 0, 0, Math.PI * 2); ctx.fillStyle = '#fff3cf26'; ctx.fill(); ctx.strokeStyle = '#fff3cfcc'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.restore();
+  }
   function freezePreview(p) {
     if (p.cancel) {
       circle(ctx, p.x, p.y, p.radius + 2, null, '#f6db9fe6', 2.5);
@@ -550,6 +563,7 @@ export function createRenderer(canvas, S) {
     if (options.celebration) celebrateGate(state, options.celebration, options.reduced);
     if (options.preview) freezePreview(options.preview);
     if (options.aim) aimedCast(options.aim);
+    if (options.throwArc) throwArc(options.throwArc);
     const selected = state.objects.find(o => o.id === target);
     if (state.status === 'playing' && selected) {
       const top = isEnemy(selected) ? enemyBox(selected).y - 26 : selected.kind === 'plant' ? selected.base - selected.height - 53 : selected.kind === 'mover' ? selected.y - 30 : selected.y - 62;
