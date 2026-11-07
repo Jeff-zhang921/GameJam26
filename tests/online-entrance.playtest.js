@@ -84,7 +84,7 @@ async (page) => {
     await host.context().close(); await guest.context().close();
 
     const reducedHost = await open({ viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });
-    const reducedGuest = await open({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, reducedMotion: 'reduce' });
+    const reducedGuest = await open({ viewport: { width: 852, height: 393 }, isMobile: true, hasTouch: true, reducedMotion: 'reduce' });
     await pair(reducedHost, reducedGuest); await reducedHost.getByTestId('start-game').click();
     await reducedGuest.getByTestId('online-entrance').waitFor();
     await reducedGuest.waitForTimeout(350);
@@ -92,7 +92,7 @@ async (page) => {
     await reducedGuest.waitForTimeout(1000);
     check(Number(await reducedGuest.getByTestId('online-entrance').getAttribute('data-zoom')) === 1, 'Reduced motion still zoomed the camera');
     await Promise.all([readyToPlay(reducedHost), readyToPlay(reducedGuest)]);
-    results.push({ case: 'reduced motion and portrait', sharedWait: true, entered: true });
+    results.push({ case: 'reduced motion and mobile landscape', sharedWait: true, entered: true });
     await reducedHost.context().close(); await reducedGuest.context().close();
 
     const cancelHost = await open(), cancelGuest = await open();

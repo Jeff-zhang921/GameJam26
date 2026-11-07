@@ -4,10 +4,14 @@ import { LEVELS } from '../src/levels/index.js';
 // (src/levels/*.js); anything a level leaves out falls back to DEFAULT_THEME.
 
 // Ground: `surface` is the strip that caps each platform, `fill` the texture below it.
-// surface: `height` and the x ranges are source px; `walk` is where feet rest, measured from the strip's top;
+// surface: `y`, `height` and the x ranges are source px; `walk` is where feet rest, measured from the strip's top;
 // `scale` is world units per source px. A platform is capped with `left`, tiles of `fillL` / `fillR` either side
 // of `emblem` (alternately mirrored), then `right`; with no `emblem` the middle is all `fillR` tiles. fill: a texture that tiles both ways, drawn at `scale`.
 export const GROUNDS = {
+  bridge: {
+    surface: { src: '/sprites/bridge.png', y: 24, height: 132, walk: 4, scale: .45, left: [64, 220], right: [1545, 1712], fillL: [250, 800], emblem: [800, 975], fillR: [975, 1525] },
+    fill: { src: '/sprites/ground-fill.png', scale: .6 },
+  },
   mossy: {
     surface: { src: '/sprites/ground.png', height: 174, walk: 28, scale: .45, left: [0, 160], right: [1540, 1690], fillL: [240, 740], emblem: [740, 960], fillR: [960, 1460] },
     fill: { src: '/sprites/ground-fill.png', scale: .6 },

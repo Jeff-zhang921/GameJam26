@@ -38,16 +38,17 @@ const icons = {
 };
 const icon = name => `<svg viewBox="0 0 24 24" aria-hidden="true">${icons[name] || icons.moon}</svg>`;
 const key = text => `<kbd class="key">${text}</kbd>`;
-// Skill icons come from /art/touch-controls.svg, copied into the page (below) so <use> points inside the document:
-// Safari often fails to redraw a <use> whose href to an external file changes, which lost Bloom's bolt.
-const skillArt = name => `<svg class="skill-art" viewBox="0 0 64 64" aria-hidden="true"><use href="#skill-${name}"/></svg>`;
-fetch('/art/touch-controls.svg').then(r => r.ok ? r.text() : '').then(svg => {
-  if (!svg) return;
-  const sprite = document.createElement('div');
-  sprite.setAttribute('aria-hidden', 'true'); sprite.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden';
-  sprite.innerHTML = svg.replace(/<symbol id="/g, '<symbol id="skill-');
-  document.body.prepend(sprite);
-}).catch(() => { });
+const skillIcons = {
+  hourglass: `<path d="M32 4 56 18v28L32 60 8 46V18Z" fill="#6f6548" stroke="#f3e8c4" stroke-width="2"/>
+    <path d="M22 15h20c0 8-6 12-10 17 4 5 10 9 10 17H22c0-8 6-12 10-17-4-5-10-9-10-17Z" fill="#efe6c8" fill-opacity=".35" stroke="#f3e8c4" stroke-width="2.5" stroke-linejoin="round"/>
+    <path d="M25 19h14c-1 4-4 7-7 9-3-2-6-5-7-9Zm7 17c3 3 7 6 8 10H24c1-4 5-7 8-10Z" fill="#f2c768"/>
+    <path d="M32 28v9" stroke="#f2c768" stroke-width="2" stroke-linecap="round"/>
+    <path d="M18 12h28M18 52h28" stroke="#e8d7a0" stroke-width="4" stroke-linecap="round"/>`,
+  bolt: `<path d="M34 3 9 36h20l-5 25 31-37H35l8-21Z" fill="#f2c768" stroke="#633e22" stroke-width="3" stroke-linejoin="round"/>
+    <path d="m36 8-19 25h17l-5 17 18-22H30Z" fill="#fff0a6" stroke="none"/>
+    <path d="M7 14h12M13 8v12m39 29h8m-4-4v8" fill="none" stroke="#fff1ba" stroke-width="2" stroke-linecap="round"/>`,
+};
+const skillArt = name => `<svg class="skill-art" viewBox="0 0 64 64" aria-hidden="true">${skillIcons[name]}</svg>`;
 const itemArt = name => `<img class="skill-art" src="/sprites/${name}.png" alt="" draggable="false">`;
 let saved = {};
 try { saved = JSON.parse(localStorage.getItem('moonclock-v1') || '{}'); } catch { }
@@ -343,10 +344,10 @@ function updateUI() {
   noticeWaiting();
   const charges = state.freezeCharges ?? 0, freezeCount = document.querySelector('#freeze-count');
   freezeCount.textContent = S.freezeCount(charges); freezeCount.classList.toggle('empty', charges <= 0);
-  // Bloom's seeds, shown in courtyards that have somewhere to plant them.
   const seeds = state.seeds ?? 0;
+  const showSeeds = (onlineMode ? network.actor : state.active) === 1 && !!state.pits?.length;
   for (const chip of document.querySelectorAll('.seed-chip')) {
-    chip.hidden = !state.pits?.length;
+    chip.hidden = !showSeeds;
     chip.classList.toggle('empty', seeds <= 0);
     chip.querySelector('b').textContent = S.seedCount(seeds);
     chip.setAttribute('aria-label', `${S.seedsLabel} ${seeds}`); chip.title = S.seedsLabel;
@@ -892,7 +893,7 @@ function updateTouchControls(view) {
   abilityButton.classList.toggle('empty', charges <= 0);
   abilityButton.setAttribute('aria-label', S.skillCount(S.ability[actor], charges));
   abilityButton.classList.toggle('bloom', actor === 1);
-  abilityButton.querySelector('.skill-art').outerHTML = skillArt(actor === 1 ? 'bolt' : 'hourglass'); // a fresh icon, not a changed href
+  abilityButton.querySelector('.skill-art').outerHTML = skillArt(actor === 1 ? 'bolt' : 'hourglass');
   interactButton.classList.toggle('bloom', actor === 1);
   interactButton.classList.toggle('unavailable', !interaction.available);
   interactButton.dataset.kind = interaction.kind;

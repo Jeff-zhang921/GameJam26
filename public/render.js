@@ -97,11 +97,11 @@ export function createRenderer(canvas, S) {
   // tile next to the emblem is the one cut beside it, so those seams are seamless. Ends that touch the world
   // edge stay open.
   function groundCap(p, img) {
-    const GROUND = theme.ground.surface, k = GROUND.scale, h = GROUND.height * k, top = p.y - GROUND.walk * k;
+    const GROUND = theme.ground.surface, k = GROUND.scale, h = GROUND.height * k, top = p.y - GROUND.walk * k, sourceY = GROUND.y ?? 0;
     const width = ([from, to]) => (to - from) * k;
     const piece = ([from, to], x, w, mirror = false) => {
-      if (!mirror) return ctx.drawImage(img, from, 0, to - from, GROUND.height, x, top, w, h);
-      ctx.save(); ctx.translate(x + w, 0); ctx.scale(-1, 1); ctx.drawImage(img, from, 0, to - from, GROUND.height, 0, top, w, h); ctx.restore();
+      if (!mirror) return ctx.drawImage(img, from, sourceY, to - from, GROUND.height, x, top, w, h);
+      ctx.save(); ctx.translate(x + w, 0); ctx.scale(-1, 1); ctx.drawImage(img, from, sourceY, to - from, GROUND.height, 0, top, w, h); ctx.restore();
     };
     // Tiles fill x0..x1; the first one counted from `fromRight ? x1 : x0` is unmirrored.
     const run = (src, x0, x1, fromRight) => {
