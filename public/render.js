@@ -64,7 +64,7 @@ export function createRenderer(canvas, S) {
   }
   function actor(p, which, active, t, ghost = false) {
     const color = which === 0 ? cyan : gold;
-    ctx.save(); ctx.translate(p.x, p.y); ctx.globalAlpha = ghost ? .32 : 1;
+    ctx.save(); ctx.translate(p.x, p.y); ctx.globalAlpha *= ghost ? .32 : 1;
     if (!ghost) { ellipse(ctx, 0, 2, 23, 5, 0, '#001f2780'); if (active) { ellipse(ctx, 0, 2, 25, 7, 0, which === 0 ? '#a1e3e51b' : '#e1c68a1b'); ctx.beginPath(); ctx.ellipse(0, 2, 25, 7, 0, 0, Math.PI * 2); ctx.strokeStyle = color + '80'; ctx.lineWidth = 1; ctx.stroke(); } }
     const sway = p.grounded && p.move ? Math.sin(t * .018) * 2 : Math.sin(t * .003) * .7;
     line(ctx, [[-7, -9], [-8 + sway, -1]], '#c4d1c5', 5); line(ctx, [[7, -9], [7 - sway, -1]], '#9dafac', 5);
@@ -75,7 +75,7 @@ export function createRenderer(canvas, S) {
     ctx.fillStyle = color; ctx.fillRect(-12, -36, 25, 5); ctx.beginPath(); ctx.moveTo(7, -34); ctx.quadraticCurveTo(20 + sway, -29, 26 + sway * 2, -36); ctx.lineTo(23 + sway, -25); ctx.quadraticCurveTo(15, -23, 6, -29); ctx.fill();
     const side = p.facing; line(ctx, [[side * 16, -34], [side * 23, -25]], '#cbd8c7', 5); line(ctx, [[side * 24, -49], [side * 24, -1]], '#b7a171', 2.5);
     if (which === 0) { circle(ctx, side * 24, -53, 6, null, color, 2); circle(ctx, side * 27, -55, 4, '#21464b'); } else { line(ctx, [[side * 24, -48], [side * 19, -57]], color, 1.5); ellipse(ctx, side * 20, -57, 5, 2.5, .7, color); ellipse(ctx, side * 28, -54, 5, 2.5, -.7, color); }
-    if (active && !ghost) { ctx.globalAlpha = .8; star(ctx, 0, -78 + Math.sin(t * .003) * 2, 4, color); }
+    if (active && !ghost) { ctx.globalAlpha *= .8; star(ctx, 0, -78 + Math.sin(t * .003) * 2, 4, color); }
     ctx.restore();
   }
   function crate(c, targeted, t) {
