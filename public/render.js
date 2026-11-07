@@ -140,7 +140,7 @@ export function createRenderer(canvas, S) {
     const target = options.target;
     for (const p of state.pits) pit(p);
     for (const o of state.objects) if (o.kind === 'mover') mover(o, o.id === target, t);
-    for (const o of state.objects) if (o.kind === 'plant') plant(o, o.id === target && state.active === 1, t);
+    for (const o of state.objects) if (o.kind === 'plant') plant(o, o.id === target, t);
     door(state, t);
     for (const shard of state.shards) if (!shard.taken) { const yy = shard.y + Math.sin(t * .002 + shard.id) * 5; glow(ctx, shard.x, yy, 40, '#e7d2a51b'); ctx.save(); ctx.translate(shard.x, yy); ctx.rotate(Math.PI / 4); ctx.fillStyle = '#e2d194'; ctx.fillRect(-5, -5, 10, 10); ctx.strokeStyle = '#f4e7b477'; ctx.strokeRect(-10, -10, 20, 20); ctx.restore(); }
     for (const o of state.objects) if (o.kind === 'crate' && o.held === null) crate(o, o.id === target && state.active === 0, t);
