@@ -323,7 +323,7 @@ describe('strikes and slow freezing', () => {
     Object.assign(s.actors[0], { x: 200, y: 540, on: 'platform-0' });
     s = step(s, 20);
     expect(hitCount(s)).toBe(0);
-    expect(s.events.some(e => e.kind === 'strike')).toBe(true);
+    expect(get(s, 'g').attack).toBeLessThan(ENEMY.guard.attackEvery - 10);
   });
 
   test('a frozen guard takes twenty times longer to strike', () => {
@@ -363,6 +363,38 @@ describe('strikes and slow freezing', () => {
     expect(get(s, 'a').frozen).toBe(false);
     expect(get(s, 'b').frozen).toBe(true);
     expect(get(s, 'c').frozen).toBe(true);
+    expect(s.events.some(e => e.kind === 'unfreeze' && e.x === 400)).toBe(true);
+  });
+
+  test('a rider is stopped by a frozen crate above, not carried through it', () => {
+    let s = arena([{ kind: 'orb', id: 'o', x: 500, y: 400, dx: 0, dy: -1 }], [{ x: 500 }, { x: 1220 }]);
+    s = action(s, { type: 'ability', actor: 0, target: 'o' });
+    Object.assign(s.actors[0], { x: 500, y: enemyBox(get(s, 'o')).y - 1, vy: 0, grounded: false, on: null });
+    s = step(s, 3);
+    expect(s.actors[0].on).toBe('o');
+    const start = s.actors[0].y, bottom = start - 52 - 30;
+    s.platforms.push({ x: 522, y: bottom, w: 20, h: 10 });
+    s.objects.push({ kind: 'crate', id: 'c', x: 500, y: bottom - 27, vx: 0, vy: 0, frozen: true, held: null, spawnX: 500, spawnY: bottom - 27 });
+    let head = Infinity, top = start;
+    for (let i = 0; i < 400; i++) { s = step(s); head = Math.min(head, s.actors[0].y - 52); top = Math.min(top, s.actors[0].y); }
+    expect(head).toBeGreaterThanOrEqual(bottom - 0.01);
+    expect(start - top).toBeGreaterThan(20);
+  });
+
+  test('a dart stops at an unfrozen guard', () => {
+    let s = arena([{ kind: 'guard', id: 'g', x: 500, y: 540, minX: 499, maxX: 501 }, { kind: 'dart', id: 'd', x: 700, y: 520, dx: -1, dy: 0 }]);
+    s = step(s, 45);
+    expect(get(s, 'd')).toBeUndefined();
+    expect(get(s, 'g')).toBeDefined();
+    expect(s.events.some(e => e.kind === 'pop')).toBe(true);
+  });
+
+  test('a lantern does not chase the actor riding it', () => {
+    let s = arena([{ kind: 'lantern', id: 'l', x: 500, y: 400 }], [{ x: 500 }, { x: 1220 }]);
+    Object.assign(s.actors[0], { x: 500, y: enemyBox(get(s, 'l')).y - 1, vy: 0, grounded: false, on: null });
+    s = step(s, 3);
+    expect(s.actors[0].on).toBe('l');
+    for (let i = 0; i < 57; i++) { s = step(s); expect(Math.abs(get(s, 'l').y - 400)).toBeLessThanOrEqual(7); }
   });
 
   test('an actor standing on a frozen dart drifts along with it', () => {

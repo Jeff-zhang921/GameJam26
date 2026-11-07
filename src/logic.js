@@ -168,7 +168,7 @@ function ageObjects(state) {
 }
 
 function moveItems(state) {
-  const all = surfaces(state);
+  const all = surfaces(state), reset = new Set();
   for (const o of state.objects) {
     if (o.kind !== 'crate' && o.kind !== 'seed') continue;
     const crate = o.kind === 'crate', half = crate ? 27 : 10;
@@ -181,10 +181,11 @@ function moveItems(state) {
     o.vy += 0.3 * k; o.x += o.vx * k; o.y += o.vy * k;
     for (const f of all) if (f.id !== o.id) if (o.vy >= 0 && previous <= f.y + 3 && o.y + half >= f.y && o.x + half > f.x && o.x - half < f.x + f.w) {
       if (o.vy > 1) event(state, crate ? 'crateLand' : 'seedLand', o.x, f.y);
-      o.y = f.y - half; o.vy = 0; o.vx *= 0.88;
+      o.y = f.y - half; o.vy = 0; o.vx *= 0.88 ** k;
     }
-    if (o.y > 720 || o.x < 20 || o.x > 1260) { o.x = o.spawnX; o.y = o.spawnY; o.vx = 0; o.vy = 0; event(state, 'return', o.x, o.y); }
+    if (o.y > 720 || o.x < 20 || o.x > 1260) { o.x = o.spawnX; o.y = o.spawnY; o.vx = 0; o.vy = 0; reset.add(o.id); event(state, 'return', o.x, o.y); }
   }
+  return reset;
 }
 
 function moveActors(state) {
@@ -223,6 +224,8 @@ function moveActors(state) {
     p.grounded = false; p.on = null;
     for (const f of solid) {
       if (f.id === p.carrying) continue;
+      // A surface rising into a ceiling cannot lift you through it.
+      if (p.vy >= 0 && f.y < p.y && [...state.platforms, ...crates].some(c => c.id !== f.id && p.x + 15 > c.x && p.x - 15 < c.x + c.w && previousY - 52 >= c.y + c.h - 0.01 && f.y - 52 < c.y + c.h)) continue;
       if (p.vy >= 0 && previousY <= f.y + 5 && p.y >= f.y && p.x + 15 > f.x && p.x - 15 < f.x + f.w) {
         p.y = f.y; p.vy = 0; p.grounded = true; p.on = f.id;
         const o = find(state, f.id);
@@ -265,16 +268,19 @@ function respawn(state, p, kind) {
   event(state, 'return', p.x, p.y, { actor: p.id });
 }
 
-// Actors standing on a crate or enemy move with it, but are never pushed into a wall.
-function carryRiders(state, before) {
+// Actors standing on a crate or enemy move with it, but are never pushed into a wall or a ceiling.
+function carryRiders(state, before, skip) {
   for (const p of state.actors) {
     const o = p.grounded && find(state, p.on), from = o && before.get(o.id);
-    if (!from) continue;
+    if (!from || skip.has(o.id) || o.held != null) continue;
     const dx = o.x - from[0], dy = o.y - from[1];
-    p.y += dy;
     if (o.kind === 'mover' && dx) state.flags.moverRide = true;
+    const solids = [...state.platforms, ...state.objects.filter(s => s.id !== o.id && ((s.kind === 'crate' && s.held === null) || isSolidEnemy(s))).map(s => s.kind === 'crate' ? { x: s.x - 27, y: s.y - 27, w: 54, h: 54 } : enemyBox(s))];
+    const body = (x, y) => ({ x: x - 15, y: y - 52, w: 30, h: 51 });
+    if (dy < 0 && solids.some(f => rectOverlap(body(p.x, p.y + dy), f) && p.y - 52 >= f.y + f.h - 0.01)) { p.grounded = false; p.vy = 0; }
+    else p.y += dy;
     const x = Math.max(22, Math.min(1258, p.x + dx));
-    if (!state.platforms.some(f => rectOverlap({ x: x - 15, y: p.y - 52, w: 30, h: 51 }, f) && p.y > f.y + 9)) p.x = x;
+    if (!solids.some(f => rectOverlap(body(x, p.y), f) && p.y > f.y + 9)) p.x = x;
   }
 }
 
@@ -293,8 +299,7 @@ function tick(state) {
   const before = new Map(state.objects.filter(o => o.kind === 'crate' || o.kind === 'mover' || isEnemy(o)).map(o => [o.id, [o.x, o.y]]));
   ageObjects(state);
   const strikes = updateEnemies(state, { event, nextId: kind => `${kind}-${state.nextEnemy++}` });
-  moveItems(state);
-  carryRiders(state, before);
+  carryRiders(state, before, moveItems(state));
   moveActors(state);
   resolveStrikes(state, strikes);
   const done = state.needs.filter(key => state.flags[key]).length;

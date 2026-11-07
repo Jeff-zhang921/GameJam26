@@ -77,7 +77,7 @@ export function updateEnemies(state, { event, nextId }) {
   };
   const blockers = [
     ...state.platforms,
-    ...state.objects.filter(o => o.frozen && (o.kind === 'crate' || (isEnemy(o) && o.kind !== 'launcher'))).map(o => ({ ...(o.kind === 'crate' ? { x: o.x - 27, y: o.y - 27, w: 54, h: 54 } : enemyBox(o)), id: o.id })),
+    ...state.objects.filter(o => (o.frozen && o.kind === 'crate') || (isSolidEnemy(o) && o.kind !== 'launcher')).map(o => ({ ...(o.kind === 'crate' ? { x: o.x - 27, y: o.y - 27, w: 54, h: 54 } : enemyBox(o)), id: o.id })),
   ];
   const fly = (o, spec) => {
     o.x += o.dx * spec.fly * pace(o); o.y += o.dy * spec.fly * pace(o);
@@ -113,7 +113,7 @@ export function updateEnemies(state, { event, nextId }) {
       } else if (!walk(o, o.dir * spec.patrol * k, x => x >= o.minX && x <= o.maxX)) o.dir = -o.dir;
     }
     if (o.kind === 'lantern') {
-      const near = nearest(o);
+      const near = nearest(o, a => a.on !== o.id);
       if (o.chasing && (!near || near.d > spec.giveUp)) o.chasing = false;
       else if (!o.chasing && near && near.d < spec.notice) o.chasing = true;
       o.bob += k;

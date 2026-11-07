@@ -318,6 +318,17 @@ describe('movers', () => {
     expect(s.flags.moverRide).toBe(true);
   });
 
+  test('a mover never carries its rider into a crate', () => {
+    let s = moverLevel();
+    s.platforms.push({ x: 690, y: 317, w: 100, h: 20 });
+    s.objects.push({ kind: 'crate', id: 'wall', x: 727, y: 290, vx: 0, vy: 0, frozen: false, held: null, spawnX: 727, spawnY: 290 });
+    Object.assign(s.actors[0], { x: 650, y: 290, on: 'mover-0', grounded: true });
+    s = action(s, { type: 'ability', actor: 1, target: 'mover-0' });
+    s = step(s, 60);
+    expect(get(s, 'mover-0').x).toBeGreaterThanOrEqual(590);
+    expect(s.actors[0].x + 15).toBeLessThanOrEqual(700);
+  });
+
   test('blooming a moving mover speeds it up to a cap', () => {
     let s = moverLevel();
     for (let i = 0; i < meta.time.maxSpeed; i++) s = action(s, { type: 'ability', actor: 1, target: 'mover-0' });
@@ -468,5 +479,34 @@ describe('level data', () => {
       const lo = g.minX - ENEMY.guard.w / 2, hi = g.maxX + ENEMY.guard.w / 2;
       for (const x of [cp.x - 18, cp.x + 18]) expect(x + 15 <= lo || x - 15 >= hi).toBe(true);
     }
+  });
+});
+
+describe('carried riders', () => {
+  const stand = (s, id) => { Object.assign(s.actors[0], { x: 350, y: 466, on: id, grounded: true }); return s; };
+
+  test('grabbing the crate you stand on does not lift you with it', () => {
+    let s = stand(setup({ level: 0 }), 'crate-0');
+    s = action(s, { type: 'grab', actor: 0 });
+    s = step(s, 1);
+    expect(s.actors[0].y).toBeGreaterThanOrEqual(466 - 1);
+    expect(Math.abs(s.actors[0].x - 350)).toBeLessThanOrEqual(5);
+  });
+
+  test('a rider is not teleported when its crate is reset to spawn', () => {
+    let s = setup({ level: 0 });
+    Object.assign(get(s, 'crate-0'), { x: 1255, y: 300, vx: 10 });
+    Object.assign(s.actors[0], { x: 1255, y: 273, on: 'crate-0', grounded: true });
+    s = step(s, 1);
+    expect(get(s, 'crate-0').x).toBe(350);
+    expect(s.actors[0].x).toBeGreaterThan(1000);
+    expect(s.actors[0].y).toBeGreaterThanOrEqual(273);
+  });
+
+  test('a frozen crate keeps sliding at the slowed friction', () => {
+    let s = setup({ level: 0 });
+    Object.assign(get(s, 'crate-0'), { vx: 4, frozen: true });
+    s = step(s, 20);
+    expect(get(s, 'crate-0').vx).toBeCloseTo(4 * 0.88 ** (meta.time.frozenRate * 20), 3);
   });
 });
