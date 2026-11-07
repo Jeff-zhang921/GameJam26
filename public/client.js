@@ -55,6 +55,7 @@ app.innerHTML = `
       <div class="toast" role="status" id="toast"></div><div class="debug" id="debug" hidden></div>
     </main>
   </div><div id="modal-root"></div>`;
+let entering = false;
 const canvas = document.querySelector('#game');
 const renderer = createRenderer(canvas, S);
 const debug = new URLSearchParams(location.search).has('debug');
@@ -130,6 +131,7 @@ function setModal(type) {
 function resume() { modal = null; if (state.status === 'paused') dispatch({ type: 'pause' }, true); accumulator = 0; renderModal(); canvas.focus({ preventScroll: true }); }
 function renderModal() {
   const root = document.querySelector('#modal-root');
+  document.querySelector('.shell').classList.toggle('at-entry', modal === 'intro' || entering);
   if (!modal) { root.innerHTML = ''; return; }
   let contents = '';
   const close = `<button class="iconbutton close" data-action="close" aria-label="${S.close}">${icon('close')}</button>`;
@@ -138,16 +140,37 @@ function renderModal() {
   if (modal === 'settings') contents = `${close}<div class="intro-icon">${icon('settings')}</div><h2>${S.settings}</h2><div class="settings-row"><span>${S.sound}</span><button class="toggle" role="switch" aria-checked="${sound}" data-action="sound" aria-label="${S.sound}" data-testid="setting-sound"></button></div><div class="settings-row"><span>${S.motion}</span><button class="toggle" role="switch" aria-checked="${reduced}" data-action="motion" aria-label="${S.motion}" data-testid="setting-motion"></button></div><div class="mode-selector"><button data-mode="solo" class="${mode === 'solo' ? 'selected' : ''}">${S.solo}</button><button data-mode="coop" class="${mode === 'coop' ? 'selected' : ''}">${S.coop}</button></div><button class="primary" data-action="close">${S.continue}${icon('arrow')}</button>`;
   if (modal === 'pause') contents = `<div class="intro-icon">${icon('moon')}</div><div class="eyebrow">A MOMENT OF STILLNESS</div><h2>${S.focus}</h2><p>${S.levels[state.level].goal}</p><button class="primary" data-action="close" data-testid="resume">${S.resume}${icon('play')}</button><div class="modal-actions"><button class="text-button" data-action="help">${S.help}</button><button class="text-button" data-action="restart">${S.restart}</button></div>`;
   if (modal === 'win') contents = `<div class="intro-icon">${icon('leaf')}</div><div class="eyebrow">CHAMBER 0${state.level + 1} · RESTORED</div><h2>${state.level === 3 ? S.complete : S.chamberComplete}</h2><p>${state.level === 3 ? S.completeBody : S.chamberCompleteBody}</p><p>${S.clear} ${clock(state.elapsed)} · ${S.best} ${clock(best[state.level] ?? state.elapsed)}</p><div class="win-stars">✦ ${state.shards[0].taken ? '✦' : '◇'} ✦</div><p>${S.memory} ${state.shards.filter(s => s.taken).length} / ${state.shards.length}</p><button class="primary" data-action="next" data-testid="next">${state.level === 3 ? S.replay : S.next}${icon('arrow')}</button>`;
+  if (modal === 'intro') {
+    root.innerHTML = `<section class="entry-screen" role="dialog" aria-modal="true" aria-label="${S.title}"><div class="entry-content"><div class="entry-mark">${icon('moon')}</div><div class="eyebrow">${S.english}</div><h1>${S.title}</h1><p>${S.subtitle}</p><div class="mode-selector"><button data-mode="solo" class="${mode === 'solo' ? 'selected' : ''}" aria-pressed="${mode === 'solo'}">${S.solo}</button><button data-mode="coop" class="${mode === 'coop' ? 'selected' : ''}" aria-pressed="${mode === 'coop'}">${S.coop}</button></div><button class="primary" data-action="start" data-testid="start">${saved.unlocked ? S.continue : S.start}${icon('arrow')}</button></div><span class="entry-footer">A COOPERATIVE TIME TALE</span></section>`;
+    root.querySelector('.primary').focus({ preventScroll: true }); return;
+  }
   root.innerHTML = `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="${modal === 'intro' ? S.title : S[modal] || S.title}">${contents}</section></div>`;
   root.querySelector('.primary')?.focus({ preventScroll: true });
 }
 document.addEventListener('click', event => {
   const button = event.target.closest('[data-action], [data-level], [data-mode]'); if (!button) return;
+  if (entering) return;
   initAudio();
   if (button.dataset.mode) { mode = button.dataset.mode; clearInputs(); updateUI(); persist(); renderModal(); return; }
   if (button.dataset.level !== undefined) { if (!modal) { clearInputs(); dispatch({ type: 'level', level: Number(button.dataset.level) }); persist(); canvas.focus({ preventScroll: true }); } return; }
   const action = button.dataset.action;
-  if (action === 'start') { modal = null; initAudio(); renderModal(); canvas.focus({ preventScroll: true }); return; }
+  if (action === 'start') {
+    if (entering) return;
+    entering = true; clearInputs(); initAudio();
+    const entry = document.querySelector('.entry-screen');
+    entry.classList.add('departing');
+    const duration = reduced ? 200 : 2000;
+    let elapsed = 0, previous;
+    function advance(now) {
+      if (previous !== undefined && !document.hidden && document.hasFocus()) elapsed += Math.min(now - previous, 50);
+      previous = now;
+      renderer.setEntryProgress?.(Math.min(1, elapsed / duration));
+      if (elapsed < duration) { requestAnimationFrame(advance); return; }
+      entering = false; modal = null; accumulator = 0; persist(); renderModal();
+      canvas.focus({ preventScroll: true });
+    }
+    requestAnimationFrame(advance); return;
+  }
   if (action === 'sound') { sound = !sound; initAudio(); updateUI(); persist(); if (modal === 'settings') renderModal(); else if (!modal) canvas.focus({ preventScroll: true }); return; }
   if (action === 'motion') { reduced = !reduced; updateUI(); persist(); renderModal(); return; }
   if (action === 'close') { resume(); return; }
@@ -170,10 +193,11 @@ function movement() {
 }
 document.addEventListener('keydown', event => {
   const code = event.code;
+  if (entering) { event.preventDefault(); return; }
   if (code === 'Escape') { event.preventDefault(); if (modal && modal !== 'intro' && modal !== 'win') resume(); else if (!modal) setModal('pause'); return; }
   if (modal) {
     if (code === 'Tab') {
-      const buttons = [...document.querySelectorAll('.modal button:not(:disabled)')];
+      const buttons = [...document.querySelectorAll('#modal-root button:not(:disabled)')];
       const index = buttons.indexOf(document.activeElement);
       const next = (index + (event.shiftKey ? -1 : 1) + buttons.length) % buttons.length;
       event.preventDefault(); buttons[next]?.focus();
