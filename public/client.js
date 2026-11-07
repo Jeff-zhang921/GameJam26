@@ -1,4 +1,4 @@
-import { setup, applyAction, validateAction, viewFor, targetFor, hintLevel } from '../src/logic.js';
+import { setup, applyAction, validateAction, viewFor, targetFor, hintLevel, levelCount } from '../src/logic.js';
 import { S } from './strings.js';
 import { createRenderer } from './render.js';
 
@@ -22,11 +22,11 @@ const key = text => `<kbd class="key">${text}</kbd>`;
 let saved = {};
 try { saved = JSON.parse(localStorage.getItem('moonclock-v1') || '{}'); } catch { }
 let state = setup({ level: Number.isInteger(saved.level) ? saved.level : 0 });
-state.unlocked = Math.max(state.level, Math.min(3, saved.unlocked || 0));
+state.unlocked = Math.max(state.level, Math.min(levelCount - 1, saved.unlocked || 0));
 let mode = saved.mode === 'coop' ? 'coop' : 'solo';
 let sound = saved.sound !== false;
 let reduced = saved.reduced ?? window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-let best = Array.isArray(saved.best) ? [0, 1, 2, 3].map(i => Number.isFinite(saved.best[i]) ? saved.best[i] : null) : [null, null, null, null];
+let best = Array.from({ length: levelCount }, (_, i) => Array.isArray(saved.best) && Number.isFinite(saved.best[i]) ? saved.best[i] : null);
 let modal = 'intro', seenEvent = 0, shownHint = 0, toastTimer, audioContext;
 const clock = ticks => { const sec = Math.floor(ticks / 60); return `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`; };
 let lastTime = 0, accumulator = 0, frameCount = 0, sceneKey = 0, cameraReset = 0;
@@ -64,8 +64,8 @@ function persist() {
 function toast(text) { const el = document.querySelector('#toast'); el.textContent = text; el.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 3400); }
 function initAudio() { if (!audioContext && sound) { try { audioContext = new (window.AudioContext || window.webkitAudioContext)(); } catch { } } if (audioContext?.state === 'suspended' && sound) audioContext.resume(); }
 function chime(kind) {
-  if (!sound || !audioContext || !['freeze', 'unfreeze', 'grow', 'wake', 'plant', 'vanish', 'shard', 'win', 'throw', 'return', 'rewind'].includes(kind)) return;
-  const now = audioContext.currentTime; const notes = kind === 'win' ? [392, 493.88, 587.33, 783.99] : kind === 'grow' || kind === 'wake' ? [392, 587.33] : kind === 'freeze' ? [880, 1320] : kind === 'plant' ? [293.66, 440] : kind === 'vanish' ? [220] : [440];
+  if (!sound || !audioContext || !['freeze', 'unfreeze', 'grow', 'wake', 'plant', 'vanish', 'shard', 'win', 'throw', 'return', 'rewind', 'hit', 'checkpoint'].includes(kind)) return;
+  const now = audioContext.currentTime; const notes = kind === 'win' ? [392, 493.88, 587.33, 783.99] : kind === 'grow' || kind === 'wake' ? [392, 587.33] : kind === 'freeze' ? [880, 1320] : kind === 'plant' ? [293.66, 440] : kind === 'vanish' ? [220] : kind === 'hit' ? [196, 147] : kind === 'checkpoint' ? [523.25, 659.25] : [440];
   notes.forEach((frequency, i) => { const osc = audioContext.createOscillator(), gain = audioContext.createGain(); osc.type = 'sine'; osc.frequency.setValueAtTime(frequency, now + i * .075); gain.gain.setValueAtTime(0, now + i * .075); gain.gain.linearRampToValueAtTime(.025, now + i * .075 + .01); gain.gain.exponentialRampToValueAtTime(.0001, now + i * .075 + .55); osc.connect(gain); gain.connect(audioContext.destination); osc.start(now + i * .075); osc.stop(now + i * .075 + .6); });
 }
 function dispatch(action, quiet = false) {
@@ -95,10 +95,10 @@ function updateUI() {
   if (hint > shownHint) toast(S.hintReady);
   shownHint = hint;
   document.querySelector('#hud').textContent = `${S.memory} ${state.shards.filter(s => s.taken).length}/${state.shards.length} · ${S.rewinds} ${state.rewindsLeft} · ${clock(state.elapsed)}`;
-  document.querySelector('#stage-count').textContent = `0${state.level + 1} / 04`;
+  document.querySelector('#stage-count').textContent = `${String(state.level + 1).padStart(2, '0')} / ${String(levelCount).padStart(2, '0')}`;
   const chapterKey = `${state.level}:${state.unlocked}`;
   if (chapterKey !== uiChapter) {
-    document.querySelector('#chapter-nav').innerHTML = [0, 1, 2, 3].map(i => `<button class="chapter-button ${i < state.unlocked ? 'done' : ''}" data-level="${i}" aria-label="${S.levels[i].name}" ${i === state.level ? 'aria-current="step"' : ''}><span>${String(i + 1).padStart(2, '0')}</span></button>`).join('');
+    document.querySelector('#chapter-nav').innerHTML = Array.from({ length: levelCount }, (_, i) => i).map(i => `<button class="chapter-button ${i < state.unlocked ? 'done' : ''}" data-level="${i}" aria-label="${S.levels[i].name}" ${i === state.level ? 'aria-current="step"' : ''}><span>${String(i + 1).padStart(2, '0')}</span></button>`).join('');
     uiChapter = chapterKey;
   }
   const progress = `${state.level}:${state.needs.map(k => Number(state.flags[k])).join('')}`;
@@ -137,7 +137,7 @@ function renderModal() {
   if (modal === 'help') contents = `${close}<div class="intro-icon">${icon('help')}</div><h2>${S.helpTitle}</h2><p>${S.helpBody}</p><div class="help-grid">${S.keys.map(([k, v]) => `${key(k)}<span>${v}</span>`).join('')}</div><p>${S.coopKeys}</p><button class="primary" data-action="close">${S.continue}${icon('arrow')}</button>`;
   if (modal === 'settings') contents = `${close}<div class="intro-icon">${icon('settings')}</div><h2>${S.settings}</h2><div class="settings-row"><span>${S.sound}</span><button class="toggle" role="switch" aria-checked="${sound}" data-action="sound" aria-label="${S.sound}" data-testid="setting-sound"></button></div><div class="settings-row"><span>${S.motion}</span><button class="toggle" role="switch" aria-checked="${reduced}" data-action="motion" aria-label="${S.motion}" data-testid="setting-motion"></button></div><div class="mode-selector"><button data-mode="solo" class="${mode === 'solo' ? 'selected' : ''}">${S.solo}</button><button data-mode="coop" class="${mode === 'coop' ? 'selected' : ''}">${S.coop}</button></div><button class="primary" data-action="close">${S.continue}${icon('arrow')}</button>`;
   if (modal === 'pause') contents = `<div class="intro-icon">${icon('moon')}</div><div class="eyebrow">A MOMENT OF STILLNESS</div><h2>${S.focus}</h2><p>${S.levels[state.level].goal}</p><button class="primary" data-action="close" data-testid="resume">${S.resume}${icon('play')}</button><div class="modal-actions"><button class="text-button" data-action="help">${S.help}</button><button class="text-button" data-action="restart">${S.restart}</button></div>`;
-  if (modal === 'win') contents = `<div class="intro-icon">${icon('leaf')}</div><div class="eyebrow">CHAMBER 0${state.level + 1} · RESTORED</div><h2>${state.level === 3 ? S.complete : S.chamberComplete}</h2><p>${state.level === 3 ? S.completeBody : S.chamberCompleteBody}</p><p>${S.clear} ${clock(state.elapsed)} · ${S.best} ${clock(best[state.level] ?? state.elapsed)}</p><div class="win-stars">✦ ${state.shards[0].taken ? '✦' : '◇'} ✦</div><p>${S.memory} ${state.shards.filter(s => s.taken).length} / ${state.shards.length}</p><button class="primary" data-action="next" data-testid="next">${state.level === 3 ? S.replay : S.next}${icon('arrow')}</button>`;
+  if (modal === 'win') contents = `<div class="intro-icon">${icon('leaf')}</div><div class="eyebrow">CHAMBER 0${state.level + 1} · RESTORED</div><h2>${state.level === levelCount - 1 ? S.complete : S.chamberComplete}</h2><p>${state.level === levelCount - 1 ? S.completeBody : S.chamberCompleteBody}</p><p>${S.clear} ${clock(state.elapsed)} · ${S.best} ${clock(best[state.level] ?? state.elapsed)}</p><div class="win-stars">✦ ${state.shards[0].taken ? '✦' : '◇'} ✦</div><p>${S.memory} ${state.shards.filter(s => s.taken).length} / ${state.shards.length}</p><button class="primary" data-action="next" data-testid="next">${state.level === levelCount - 1 ? S.replay : S.next}${icon('arrow')}</button>`;
   root.innerHTML = `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="${modal === 'intro' ? S.title : S[modal] || S.title}">${contents}</section></div>`;
   root.querySelector('.primary')?.focus({ preventScroll: true });
 }

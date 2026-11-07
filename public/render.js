@@ -1,4 +1,5 @@
 import { canopyWidth, meta } from '../src/logic.js';
+import { enemyBox, lifeFraction, miteStage, isEnemy } from '../src/enemies.js';
 import { createCamera, createParticles, worldPoint } from './presentation.js';
 
 export function createRenderer(canvas, S) {
@@ -132,6 +133,53 @@ export function createRenderer(canvas, S) {
     line(ctx, [[o.x, o.y - 1], [o.x + o.w, o.y - 1]], '#e5ddba', 1.5); circle(ctx, o.x + o.w / 2, o.y + 10, 5, '#183e42', o.speed ? gold : '#8aa89b', 1.5);
     if (targeted) { const a = o.w / 2 + 6, cx = o.x + o.w / 2, cy = o.y + 10; for (const [x, y] of [[-a, -18], [a, -18], [-a, 18], [a, 18]]) line(ctx, [[cx + x, cy + y - Math.sign(y) * 8], [cx + x, cy + y], [cx + x - Math.sign(x) * 8, cy + y]], gold); }
   }
+  function checkpoint(cp, active, t) {
+    line(ctx, [[cp.x, cp.y], [cp.x, cp.y - 34]], '#b8ac71', 2);
+    if (cp.lit) glow(ctx, cp.x, cp.y - 38, 46 + Math.sin(t * .003) * 3, active ? '#f1dc9a66' : '#e1c68a33');
+    circle(ctx, cp.x, cp.y - 38, 7, cp.lit ? '#f4e2a6' : '#2c5050', cp.lit ? gold : '#8aa89b', 1.5);
+    circle(ctx, cp.x + 3, cp.y - 40, 5, cp.lit ? '#e9cf86' : '#3d6563');
+  }
+  function enemy(o, targeted, t) {
+    const b = enemyBox(o), cx = b.x + b.w / 2, cy = b.y + b.h / 2, f = lifeFraction(o);
+    timeRing(cx, cy, Math.max(b.w, b.h) / 2 + 12, o, t);
+    ctx.save(); ctx.globalAlpha = f > .75 ? 1 - (f - .75) / .25 * .8 : 1;
+    const ice = o.frozen ? '#bceef0' : null;
+    if (o.kind === 'guard') {
+      ctx.fillStyle = '#3d4f58'; ctx.beginPath(); ctx.roundRect(b.x, b.y + 6, b.w, b.h - 6, 8); ctx.fill();
+      for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.moveTo(b.x + 8 + i * 12, b.y + 7); ctx.lineTo(b.x + 12 + i * 12, b.y); ctx.lineTo(b.x + 16 + i * 12, b.y + 7); ctx.fill(); }
+      const eye = cx + o.dir * 9; if (!o.frozen) glow(ctx, eye, b.y + 20, o.chasing ? 22 : 14, '#ef8a5a55'); circle(ctx, eye, b.y + 20, 4, o.frozen ? '#9fc8c8' : o.chasing ? '#ffb27a' : '#e8875a');
+    }
+    if (o.kind === 'lantern') {
+      line(ctx, [[cx, b.y - 8], [cx, b.y + 2]], '#8a7a52', 1.5); if (!o.frozen) glow(ctx, cx, cy, 40, '#f2c46a44');
+      ellipse(ctx, cx, cy, b.w / 2, b.h / 2, 0, o.frozen ? '#c9d9c8' : '#e6b25a'); for (const dx of [-8, 8]) line(ctx, [[cx + dx, b.y + 4], [cx + dx * 1.3, cy], [cx + dx, b.y + b.h - 4]], '#b5853f88', 1);
+      circle(ctx, cx - 7, cy - 2, 3, '#3b2a1c'); circle(ctx, cx + 7, cy - 2, 3, '#3b2a1c'); ellipse(ctx, cx, cy + 9, 5, o.chasing ? 4 : 2, 0, '#3b2a1c');
+    }
+    if (o.kind === 'launcher') {
+      ctx.fillStyle = '#56656a'; ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, 6); ctx.fill(); circle(ctx, cx, cy, 13, null, '#b8ac7188', 1.5);
+      circle(ctx, cx + o.dx * 12, cy + o.dy * 12, 6, '#1c2b2c'); circle(ctx, cx, cy, 3, o.speed ? gold : '#8aa89b');
+    }
+    if (o.kind === 'dart') {
+      const len = 18, hx = cx + o.dx * len, hy = cy + o.dy * len, tx = cx - o.dx * len, ty = cy - o.dy * len;
+      line(ctx, [[tx, ty], [hx, hy]], o.frozen ? '#bceef0' : '#d9c27a', 3);
+      ctx.fillStyle = o.frozen ? '#bceef0' : '#f0dc96'; ctx.beginPath(); ctx.moveTo(hx + o.dx * 6, hy + o.dy * 6); ctx.lineTo(hx - o.dy * 5, hy + o.dx * 5); ctx.lineTo(hx + o.dy * 5, hy - o.dx * 5); ctx.fill();
+      line(ctx, [[tx, ty], [tx - o.dx * 6 - o.dy * 5, ty - o.dy * 6 + o.dx * 5]], '#c98f6b', 2); line(ctx, [[tx, ty], [tx - o.dx * 6 + o.dy * 5, ty - o.dy * 6 - o.dx * 5]], '#c98f6b', 2);
+    }
+    if (o.kind === 'orb') { if (!o.frozen) glow(ctx, cx, cy, 30, '#e3b8ff55'); circle(ctx, cx, cy, b.w / 2, o.frozen ? '#cfeaf0' : '#f2d6ff', '#b98be0', 1.5); circle(ctx, cx - 3, cy - 3, 3, '#ffffffcc'); }
+    if (o.kind === 'nest') {
+      ellipse(ctx, cx, b.y + b.h * .6, b.w / 2, b.h / 2, 0, '#6b5a45'); ellipse(ctx, cx, b.y + b.h * .45, b.w / 2.6, b.h / 2.6, 0, '#7d6a50');
+      for (const dx of [-14, 0, 14]) ellipse(ctx, cx + dx, b.y + b.h * .5, 4, 3, 0, '#2b2219');
+    }
+    if (o.kind === 'mite') {
+      const stage = miteStage(o), color = o.frozen ? '#c9d9c8' : ['#8fae7a', '#c9604a', '#9a9a8a'][stage];
+      for (const dx of [-.3, 0, .3]) line(ctx, [[cx + b.w * dx, b.y + b.h * .7], [cx + b.w * dx * 1.4, b.y + b.h]], '#3b3a2e', 2);
+      ellipse(ctx, cx, b.y + b.h * .55, b.w / 2, b.h * .45, 0, color);
+      if (stage === 1) for (let i = 0; i < 4; i++) { ctx.fillStyle = color; ctx.beginPath(); ctx.moveTo(b.x + 8 + i * 9, b.y + 10); ctx.lineTo(b.x + 12 + i * 9, b.y); ctx.lineTo(b.x + 16 + i * 9, b.y + 10); ctx.fill(); }
+      circle(ctx, cx + o.dir * b.w * .3, b.y + b.h * .45, 2.5, '#1f1a14');
+    }
+    if (ice) { ctx.strokeStyle = ice; ctx.lineWidth = 1.5; ctx.strokeRect(b.x - 2, b.y - 2, b.w + 4, b.h + 4); for (let i = 0; i < 4; i++) star(ctx, b.x + (i % 2 ? b.w + 4 : -4), b.y + (i < 2 ? -4 : b.h + 4), 2, '#c9f3ef'); }
+    ctx.restore();
+    if (targeted) { const a = Math.max(b.w, b.h) / 2 + 8; ctx.strokeStyle = cyan; ctx.lineWidth = 1.5; for (const [x, y] of [[-a, -a], [a, -a], [-a, a], [a, a]]) line(ctx, [[cx + x, cy + y - Math.sign(y) * 8], [cx + x, cy + y], [cx + x - Math.sign(x) * 8, cy + y]], gold); }
+  }
   function door(state, t) {
     const x = state.exit.x, y = state.exit.y; const ready = state.needs.every(k => state.flags[k]);
     glow(ctx, x, y - 60, 110, ready ? '#dce2b73c' : '#a7c4ba11'); arch(ctx, x - 38, y - 107, 76, 107, '#d2c89c', 7); arch(ctx, x - 30, y - 99, 60, 99, '#a8b6a281', 1); line(ctx, [[x - 43, y], [x + 43, y]], '#e7d8a8', 3);
@@ -161,13 +209,15 @@ export function createRenderer(canvas, S) {
     for (const p of state.platforms) platform(p);
     const target = options.target;
     for (const p of state.pits) pit(p);
+    for (const cp of state.checkpoints ?? []) checkpoint(cp, cp.id === state.checkpoint, t);
     for (const o of state.objects) if (o.kind === 'mover') mover(o, o.id === target, t);
     for (const o of state.objects) if (o.kind === 'plant') plant(o, o.id === target, t);
     door(state, t);
     for (const shard of state.shards) if (!shard.taken) { const yy = shard.y + Math.sin(t * .002 + shard.id) * 5; glow(ctx, shard.x, yy, 40, '#e7d2a51b'); ctx.save(); ctx.translate(shard.x, yy); ctx.rotate(Math.PI / 4); ctx.fillStyle = '#e2d194'; ctx.fillRect(-5, -5, 10, 10); ctx.strokeStyle = '#f4e7b477'; ctx.strokeRect(-10, -10, 20, 20); ctx.restore(); }
     for (const o of state.objects) if (o.kind === 'crate' && o.held === null) crate(o, o.id === target && state.active === 0, t);
     for (const o of state.objects) if (o.kind === 'seed' && o.held === null) seed(o, t);
-    for (const actorState of state.actors) actor(actorState, actorState.id, actorState.id === state.active, t);
+    for (const o of state.objects) if (isEnemy(o)) enemy(o, o.id === target, t);
+    for (const actorState of state.actors) if (!(actorState.invuln > 0 && Math.floor(state.tick / 4) % 2)) actor(actorState, actorState.id, actorState.id === state.active, t);
     for (const o of state.objects) if (o.held !== undefined && o.held !== null) o.kind === 'crate' ? crate(o, false, t) : seed(o, t);
     for (const kind of ['ambient', 'dust', 'crystal', 'leaf', 'spark']) {
       ctx.beginPath();
@@ -188,7 +238,7 @@ export function createRenderer(canvas, S) {
     }
     const selected = state.objects.find(o => o.id === target);
     if (state.status === 'playing' && selected) {
-      const top = selected.kind === 'plant' ? selected.base - selected.height - 53 : selected.kind === 'mover' ? selected.y - 30 : selected.y - 62;
+      const top = isEnemy(selected) ? enemyBox(selected).y - 26 : selected.kind === 'plant' ? selected.base - selected.height - 53 : selected.kind === 'mover' ? selected.y - 30 : selected.y - 62;
       const x = selected.kind === 'mover' ? selected.x + selected.w / 2 : selected.x;
       if (state.active === 0) label(x, top, selected.frozen ? S.targetRelease : S.targetFreeze);
       else if (selected.frozen) label(x, top, S.targetRelease, gold);
