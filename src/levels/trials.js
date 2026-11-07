@@ -5,7 +5,7 @@ export default {
   crates: [], seeds: [], pits: [], plants: [], movers: [],
   checkpoints: [{ x: 520, y: 520 }, { x: 840, y: 520 }],
   enemies: [
-    { kind: 'guard', x: 330, y: 520, minX: 200, maxX: 480 },
+    { kind: 'guard', x: 330, y: 520, minX: 200, maxX: 430 },
     { kind: 'lantern', x: 680, y: 330 },
     { kind: 'launcher', x: 1250, y: 520, dir: [-1, 0], every: 150, shot: 'dart' },
     { kind: 'launcher', x: 1000, y: 260, dir: [-1, 0], every: 240, shot: 'orb' },

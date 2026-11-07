@@ -52,10 +52,10 @@ const center = o => { const b = enemyBox(o); return { x: b.x + b.w / 2, y: b.y +
 export function updateEnemies(state, { event, nextId }) {
   const remove = o => { state.objects = state.objects.filter(x => x !== o); };
   const spawn = (kind, data) => { const o = makeEnemy(kind, data, nextId(kind)); state.objects.push(o); return o; };
-  const nearest = o => {
+  const nearest = (o, ok = () => true) => {
     const c = center(o);
     let best = null, bestD = Infinity;
-    for (const p of state.actors) { const d = Math.hypot(p.x - c.x, p.y - 26 - c.y); if (d < bestD) { best = p; bestD = d; } }
+    for (const p of state.actors) if (ok(p)) { const d = Math.hypot(p.x - c.x, p.y - 26 - c.y); if (d < bestD) { best = p; bestD = d; } }
     return best && { p: best, d: bestD };
   };
   const supported = (o, x) => state.platforms.some(f => Math.abs(f.y - o.y) < 2 && x >= f.x && x <= f.x + f.w);
@@ -88,10 +88,9 @@ export function updateEnemies(state, { event, nextId }) {
       }
     }
     if (o.kind === 'guard') {
-      const near = nearest(o), p = near?.p;
-      const sees = p && Math.abs(p.y - o.y) <= spec.seeHeight && Math.abs(p.x - o.x) <= spec.see && (o.chasing || Math.sign(p.x - o.x) === o.dir);
-      o.chasing = !!sees;
-      if (sees) {
+      const p = state.actors.filter(a => Math.abs(a.y - o.y) <= spec.seeHeight && Math.abs(a.x - o.x) <= spec.see && (o.chasing || Math.sign(a.x - o.x) === o.dir)).sort((a, b) => Math.abs(a.x - o.x) - Math.abs(b.x - o.x))[0];
+      o.chasing = !!p;
+      if (p) {
         if (Math.abs(p.x - o.x) > 2) { o.dir = Math.sign(p.x - o.x); walk(o, o.dir * spec.chase * k, x => x >= o.minX && x <= o.maxX); }
       } else if (!walk(o, o.dir * spec.patrol * k, x => x >= o.minX && x <= o.maxX)) o.dir = -o.dir;
     }
@@ -109,8 +108,8 @@ export function updateEnemies(state, { event, nextId }) {
       o.timer += k;
       if (o.timer >= o.every) {
         o.timer -= o.every;
-        const c = center(o), shot = ENEMY[o.shot];
-        spawn(o.shot, { x: c.x + o.dx * 40, y: c.y + o.dy * 40 + shot.h / 2, dx: o.dx, dy: o.dy });
+        const c = center(o), shot = ENEMY[o.shot], h = o.shot === 'dart' && Math.abs(o.dy) > Math.abs(o.dx) ? shot.w : shot.h;
+        spawn(o.shot, { x: c.x + o.dx * 40, y: c.y + o.dy * 40 + h / 2, dx: o.dx, dy: o.dy });
         event(state, 'fire', c.x + o.dx * 30, c.y + o.dy * 30);
       }
     }
@@ -127,7 +126,7 @@ export function updateEnemies(state, { event, nextId }) {
     if (o.kind === 'nest') {
       o.timer += k;
       if (o.timer >= o.every) {
-        o.timer = 0;
+        o.timer -= o.every;
         if (state.objects.filter(m => m.kind === 'mite' && m.nest === o.id).length < o.max) {
           const side = o.spawned++ % 2 ? -1 : 1;
           spawn('mite', { x: o.x + side * 45, y: o.y, nest: o.id, homeX: o.x, dir: side });
@@ -139,8 +138,8 @@ export function updateEnemies(state, { event, nextId }) {
       const stage = miteStage(o);
       if (stage === 2) continue;
       const inRoam = x => Math.abs(x - o.homeX) <= spec.roam;
-      const near = stage === 1 ? nearest(o) : null;
-      if (near && Math.abs(near.p.y - o.y) <= spec.see && Math.abs(near.p.x - o.x) > 2) { o.dir = Math.sign(near.p.x - o.x); walk(o, o.dir * spec.walk[1] * k, inRoam); }
+      const near = stage === 1 ? nearest(o, a => Math.abs(a.y - o.y) <= spec.see) : null;
+      if (near && Math.abs(near.p.x - o.x) > 2) { o.dir = Math.sign(near.p.x - o.x); walk(o, o.dir * spec.walk[1] * k, inRoam); }
       else if (!walk(o, o.dir * spec.walk[stage] * k, inRoam)) o.dir = -o.dir;
     }
   }

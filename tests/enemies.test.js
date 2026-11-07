@@ -133,6 +133,14 @@ describe('launchers and projectiles', () => {
     expect(get(s, id).dx).toBe(frozen.dx);
   });
 
+  test('a vertical launcher spawns its dart 40 below its centre', () => {
+    let s = arena([{ kind: 'launcher', id: 'm', x: 1000, y: 300, dir: [0, 1], every: 1000, shot: 'dart' }]);
+    s.objects[0].timer = 999;
+    s = step(s);
+    const box = enemyBox(ofKind(s, 'dart')[0]), lb = enemyBox(get(s, 'm'));
+    expect(box.y + box.h / 2).toBeCloseTo(lb.y + lb.h / 2 + 40, 5);
+  });
+
   test('orbs steer toward the nearest actor and fade after six seconds', () => {
     let s = arena([{ kind: 'launcher', id: 'm', x: 1000, y: 300, dir: [-1, 0], every: 1000, shot: 'orb' }], [{ x: 800, y: 540 }, { x: 60 }]);
     s.objects[0].timer = 999;
@@ -146,6 +154,15 @@ describe('launchers and projectiles', () => {
   });
 });
 
+describe('sight', () => {
+  test('a guard chases the nearest actor it can see, not a nearer one behind it', () => {
+    let s = arena([{ kind: 'guard', id: 'g', x: 500, y: 540, minX: 0, maxX: 1280 }], [{ x: 460 }, { x: 650 }]);
+    s = step(s);
+    expect(get(s, 'g')).toMatchObject({ chasing: true, dir: 1 });
+    expect(get(s, 'g').x).toBeGreaterThan(500);
+  });
+});
+
 describe('nests and mites', () => {
   const nestAt = () => arena([{ kind: 'nest', id: 'n', x: 700, y: 540, every: 60, max: 3 }], [{ x: 60 }, { x: 120 }]);
 
@@ -154,6 +171,12 @@ describe('nests and mites', () => {
     expect(ofKind(s, 'mite')).toHaveLength(2);
     s = step(s, 60 * 5);
     expect(ofKind(s, 'mite')).toHaveLength(3);
+  });
+
+  test('the spawn timer carries its remainder, so a hastened nest keeps an exact rhythm', () => {
+    const s = arena([{ kind: 'nest', id: 'n', x: 700, y: 540, every: 50, max: 3 }], [{ x: 60 }, { x: 120 }]);
+    s.objects[0].speed = 1;
+    expect(ofKind(step(s, 100), 'mite')).toHaveLength(3);
   });
 
   test('a mite is harmless young, dangerous adult, harmless old, and only ages once hastened', () => {
@@ -190,21 +213,28 @@ describe('nests and mites', () => {
 });
 
 describe('checkpoints and hits', () => {
+  const withCheckpoint = (enemies, actors) => {
+    const s = arena(enemies, actors);
+    s.checkpoints = [{ id: 'cp-0', x: 520, y: 540, lit: false }]; s.checkpoint = null;
+    return s;
+  };
+  const hitsOver = (s, n, each = x => x) => {
+    let seen = s.eventSeq, hits = 0;
+    for (let i = 0; i < n; i++) { s = step(each(s)); hits += s.events.filter(e => e.id > seen && e.kind === 'hit').length; seen = s.eventSeq; }
+    return { s, hits };
+  };
+
   test('an actor touching a checkpoint lights it for both, and hits and falls return there', () => {
-    let s = setup({ level: 4 });
-    const cp = s.checkpoints[0];
-    s.objects = [];
-    Object.assign(s.actors[0], { x: cp.x, y: cp.y });
+    let s = withCheckpoint([{ kind: 'guard', id: 'g', x: 300, y: 540, minX: 250, maxX: 350 }], [{ x: 520 }, { x: 60 }]);
     s = step(s);
-    expect(s.checkpoint).toBe(cp.id);
+    expect(s.checkpoint).toBe('cp-0');
     expect(s.checkpoints[0].lit).toBe(true);
-    s.objects.push(makeEnemy('guard', { x: 300, y: 520, minX: 250, maxX: 350 }, 'g'));
-    Object.assign(s.actors[1], { x: 300, y: 520 });
+    Object.assign(s.actors[1], { x: 300, y: 540 });
     s = step(s);
-    expect(s.actors[1]).toMatchObject({ x: cp.x + 18, y: cp.y });
+    expect(s.actors[1]).toMatchObject({ x: 538, y: 540 });
     Object.assign(s.actors[0], { x: 680, y: 720 });
     s = step(s);
-    expect(s.actors[0]).toMatchObject({ x: cp.x - 18, y: cp.y });
+    expect(s.actors[0]).toMatchObject({ x: 502, y: 540 });
   });
 
   test('a hit drops what the actor was carrying and grants a moment of invulnerability', () => {
@@ -223,14 +253,44 @@ describe('checkpoints and hits', () => {
     expect(s.events.filter(e => e.kind === 'hit')).toHaveLength(1);
   });
 
-  test('restart puts checkpoints out, rewind leaves them lit', () => {
-    let s = setup({ level: 4 });
-    const cp = s.checkpoints[0];
-    s.objects = [];
-    Object.assign(s.actors[0], { x: cp.x, y: cp.y });
+  test('once invulnerability runs out, a hazard hits again', () => {
+    const s = arena([{ kind: 'guard', id: 'g', x: 300, y: 540, minX: 0, maxX: 1280 }], [{ x: 300 }, { x: 1220 }]);
+    const stay = st => { Object.assign(get(st, 'g'), { x: st.actors[0].x }); return st; };
+    expect(hitsOver(s, 59, stay).hits).toBe(1);
+    expect(hitsOver(s, 70, stay).hits).toBe(2);
+  });
+
+  test('two actors on one dart in the same tick cost one hit event and the dart', () => {
+    let s = arena([{ kind: 'dart', id: 'd', x: 400, y: 540, dx: 1, dy: 0 }], [{ x: 400 }, { x: 405 }]);
+    s = step(s);
+    expect(s.events.filter(e => e.kind === 'hit')).toHaveLength(1);
+    expect(get(s, 'd')).toBeUndefined();
+  });
+
+  test('a fall keeps the invulnerability a hit just gave', () => {
+    let s = arena([{ kind: 'guard', id: 'g', x: 300, y: 540, minX: 250, maxX: 350 }], [{ x: 300 }, { x: 1220 }]);
+    s = step(s);
+    expect(s.actors[0].invuln).toBeGreaterThan(0);
+    s.actors[0].y = 720;
+    s = step(s);
+    expect(s.actors[0].invuln).toBeGreaterThan(0);
+  });
+
+  test('rewind gives both actors a moment of grace and enemy ids stay unique afterwards', () => {
+    let s = arena([{ kind: 'nest', id: 'n', x: 700, y: 540, every: 20, max: 9 }], [{ x: 60 }, { x: 120 }]);
+    s = step(s, 50);
+    s = action(s, { type: 'rewind' });
+    expect(s.actors.map(p => p.invuln)).toEqual([meta.time.invulnTicks, meta.time.invulnTicks]);
+    s = step(s, 100);
+    const ids = s.objects.map(o => o.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  test('rewind leaves checkpoints lit and restart puts them out', () => {
+    let s = withCheckpoint([], [{ x: 520 }, { x: 60 }]);
     s = step(s, 30);
     s = action(s, { type: 'rewind' });
-    expect(s.checkpoint).toBe(cp.id);
+    expect(s.checkpoint).toBe('cp-0');
     s = action(s, { type: 'restart' });
     expect(s.checkpoint).toBe(null);
     expect(s.checkpoints.every(c => !c.lit)).toBe(true);

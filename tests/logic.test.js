@@ -1,4 +1,6 @@
 import { describe, test, expect } from 'bun:test';
+import { LEVELS } from '../src/levels/index.js';
+import { ENEMY } from '../src/enemies.js';
 import { setup, validateAction, applyAction, isGameOver, viewFor, hintLevel, meta, targetFor, levelCount } from '../src/logic.js';
 
 function step(state, n = 1) { for (let i = 0; i < n; i++) state = applyAction(state, 'local', { type: 'tick' }); return state; }
@@ -438,5 +440,14 @@ describe('review fixes', () => {
     s = step(s, 120);
     expect(plantOf(s).height).toBeGreaterThan(100);
     expect(get(s, 'seed-0').y).toBeCloseTo(540 - plantOf(s).height - 10, 0);
+  });
+});
+
+describe('level data', () => {
+  test('no checkpoint respawns an actor inside a guard patrol', () => {
+    for (const level of LEVELS) for (const cp of level.checkpoints ?? []) for (const g of (level.enemies ?? []).filter(e => e.kind === 'guard' && e.y === cp.y)) {
+      const lo = g.minX - ENEMY.guard.w / 2, hi = g.maxX + ENEMY.guard.w / 2;
+      for (const x of [cp.x - 18, cp.x + 18]) expect(x + 15 <= lo || x - 15 >= hi).toBe(true);
+    }
   });
 });

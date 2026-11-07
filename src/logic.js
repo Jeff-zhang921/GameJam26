@@ -258,7 +258,7 @@ function respawn(state, p, kind) {
   const cp = state.checkpoints.find(c => c.id === state.checkpoint);
   p.x = cp ? cp.x + (p.id ? 18 : -18) : p.spawnX; p.y = cp ? cp.y : p.spawnY;
   p.vx = 0; p.vy = 0; p.grounded = true; p.on = 'ground'; p.jumpHeld = false; p.jumpCut = true; p.jumpBuffer = 0;
-  p.invuln = kind === 'hit' ? meta.time.invulnTicks : 0;
+  p.invuln = kind === 'hit' ? meta.time.invulnTicks : p.invuln;
   event(state, 'return', p.x, p.y, { actor: p.id });
 }
 
@@ -293,7 +293,7 @@ export function applyAction(state, playerId, action) {
   if (action.type === 'rewind') {
     const frame = s.history[0];
     s.objects = clone(frame.objects); s.pits = clone(frame.pits); s.history = []; s.rewindsLeft--;
-    for (const p of s.actors) { p.carrying = null; p.move = 0; p.jumpHeld = false; p.jumpCut = true; p.jumpBuffer = 0; }
+    for (const p of s.actors) { p.carrying = null; p.invuln = meta.time.invulnTicks; p.move = 0; p.jumpHeld = false; p.jumpCut = true; p.jumpBuffer = 0; }
     for (const o of s.objects) if (!free(o)) {
       const p = s.actors[o.held];
       o.held = null; o.x = p.x + p.facing * 30; o.y = p.y - (o.kind === 'crate' ? 27 : 10); o.vx = 0; o.vy = 0;
