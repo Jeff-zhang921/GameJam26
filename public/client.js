@@ -359,7 +359,7 @@ function startCelebration() {
   resetTouchState(); freezePreview = tapEffect = null;
   document.querySelector('#toast').classList.remove('show');
   const finale = state.level === levelCount - 1;
-  celebration = { start: performance.now(), duration: reduced ? 350 : finale ? 2500 : 1600, finale };
+  celebration = { start: performance.now(), duration: state.level === 0 ? 8200 : reduced ? 350 : finale ? 2500 : 1600, finale };
   modal = 'celebration'; syncStage(); renderModal();
 }
 function advanceStage(time) {
