@@ -1,7 +1,7 @@
 export default {
   id: 'afterbloom',
   // Art and music by name, from public/themes.js (GROUNDS, BACKGROUNDS, MUSIC).
-  theme: { ground: 'cobbleMoss', background: 'skyCastles', music: 'deathKnell' },
+  theme: { ground: 'cobbleMoss', background: 'chamber3', music: 'deathKnell' },
   platforms: [{ x: 0, y: 520, w: 1280, h: 140 }, { x: 1000, y: 265, w: 280, h: 400 }],
   spawn: [{ x: 190, y: 520 }, { x: 265, y: 520 }],
   crates: [], seeds: [{ x: 330, y: 510 }], pits: [{ x: 600, y: 520 }, { x: 880, y: 520 }],

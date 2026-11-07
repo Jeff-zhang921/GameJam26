@@ -30,7 +30,12 @@ export const BACKGROUNDS = {
   greenhouse: { draw: 'greenhouse' },
   // Floating castles over a lilac sea of clouds (picture/background/1.png).
   skyCastles: { image: '/art/sky-castles.jpg' },
-  moonlitClocktower: { image: '/art/backgrounds/stillwater-5.png' },
+  moonlitClocktower: { image: '/art/backgrounds/chamber-1.png' },
+  chamber1: { image: '/art/backgrounds/chamber-1.png' },
+  chamber2: { image: '/art/backgrounds/chamber-2.png' },
+  chamber3: { image: '/art/backgrounds/chamber-3.png' },
+  chamber4: { image: '/art/backgrounds/chamber-4.png' },
+  chamber5: { image: '/art/backgrounds/chamber-5.png' },
 };
 
 // Music: `length` is how many seconds of the file are used (default: all of it); the last `fade` seconds are

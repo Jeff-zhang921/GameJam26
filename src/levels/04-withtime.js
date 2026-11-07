@@ -1,7 +1,7 @@
 export default {
   id: 'withtime',
   // Art and music by name, from public/themes.js (GROUNDS, BACKGROUNDS, MUSIC).
-  theme: { ground: 'cobbleMoss', background: 'skyCastles', music: 'lordOfDream' },
+  theme: { ground: 'cobbleMoss', background: 'chamber4', music: 'lordOfDream' },
   platforms: [{ x: 0, y: 520, w: 520, h: 160 }, { x: 1040, y: 300, w: 240, h: 400 }],
   spawn: [{ x: 250, y: 520 }, { x: 170, y: 520 }],
   crates: [{ x: 300, y: 493 }], seeds: [{ x: 110, y: 510 }, { x: 150, y: 510 }, { x: 480, y: 510 }],
