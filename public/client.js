@@ -71,6 +71,7 @@ let viewport;
 const held = new Set();
 const touchPointers = new Map();
 let touchJumpActor = null, uiChapter = '', uiProgress = '', uiMode = '', touchKey = '';
+const uiValues = { actor: null, sound: null, hud: null, charges: null, seeds: null };
 let skillAim = null;
 // Aiming a throw: drag the interact button while carrying a crate (touch). Shares the cancel button with skill aim.
 let throwAim = null;
@@ -228,6 +229,8 @@ const entrance = createEntrance({
   onCancel() { lobby.setEntering(false); syncStage(); },
 });
 const pwa = createPWA({ isBusy: () => onlineMode || stageBusy() || modal !== 'intro' });
+document.addEventListener('pointerdown', unlockAudioOnGesture, { capture: true });
+document.addEventListener('keydown', unlockAudioOnGesture, { capture: true });
 viewport = createViewport({
   isMobile: touchDevice,
   onResize: measureControls,
@@ -268,8 +271,12 @@ function persist() {
 }
 function toast(text) { const el = document.querySelector('#toast'); el.textContent = text; el.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 3400); }
 function initAudio() {
+  if (!sound) return;
+  try { if (navigator.audioSession && navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback'; } catch { }
   music.unlock();
- if (!audioContext && sound) { try { audioContext = new (window.AudioContext || window.webkitAudioContext)(); } catch { } } if (audioContext?.state === 'suspended' && sound) audioContext.resume(); }
+  if (!audioContext) { try { audioContext = new (window.AudioContext || window.webkitAudioContext)(); } catch { } }
+  if (audioContext && !['running', 'closed'].includes(audioContext.state)) audioContext.resume().catch(() => {});
+}
 function chime(event) {
   if (event.kind === 'growth' || (['wake', 'grow'].includes(event.kind) && state.objects.some(o => o.id === event.target && o.kind === 'plant'))) return;
   if (sound && audioContext) playEffect(audioContext, event);
@@ -306,17 +313,18 @@ function dispatch(action, quiet = false) {
 }
 function updateUI() {
   const chapter = S.levels[state.level];
-  document.querySelector('#chapter-en').textContent = `${S.chapter} 0${state.level + 1} / ${chapter.en}`;
-  document.querySelector('#chapter-name').textContent = chapter.name;
-  document.querySelector('#objective').textContent = chapter.goal;
   const hint = hintLevel(state);
   for (const button of document.querySelectorAll('.shell [data-action="pause"]')) button.classList.toggle('new-hint', hint > 0);
   if (hint > shownHint) toast(S.hintReady);
   shownHint = hint;
-  document.querySelector('#hud').innerHTML = `<span class="hud-label">${S.memory} </span>${state.shards.filter(s => s.taken).length}/${state.shards.length} · ${clock(state.elapsed)}`;
-  document.querySelector('#stage-count').textContent = `${String(state.level + 1).padStart(2, '0')} / ${String(levelCount).padStart(2, '0')}`;
+  const hud = `<span class="hud-label">${S.memory} </span>${state.shards.filter(s => s.taken).length}/${state.shards.length} · ${clock(state.elapsed)}`;
+  if (hud !== uiValues.hud) { document.querySelector('#hud').innerHTML = hud; uiValues.hud = hud; }
   const chapterKey = `${state.level}:${state.unlocked}:${onlineMode}`;
   if (chapterKey !== uiChapter) {
+    document.querySelector('#chapter-en').textContent = `${S.chapter} 0${state.level + 1} / ${chapter.en}`;
+    document.querySelector('#chapter-name').textContent = chapter.name;
+    document.querySelector('#objective').textContent = chapter.goal;
+    document.querySelector('#stage-count').textContent = `${String(state.level + 1).padStart(2, '0')} / ${String(levelCount).padStart(2, '0')}`;
     document.querySelector('#chapter-nav').innerHTML = Array.from({ length: levelCount }, (_, i) => i).map(i => `<button class="chapter-button ${i < state.unlocked ? 'done' : ''}" data-level="${i}" ${onlineMode ? 'disabled' : ''} aria-label="${S.levels[i].name}" ${i === state.level ? 'aria-current="step"' : ''}><span>${String(i + 1).padStart(2, '0')}</span></button>`).join('');
     uiChapter = chapterKey;
   }
@@ -331,10 +339,16 @@ function updateUI() {
     document.querySelector('#controls').innerHTML = `<span>${key('A D')}${S.move}</span><span>${key('Space')}${S.jump}</span><span>${key('E')}${S.touchGrab}</span>`;
     uiMode = String(onlineMode);
   }
-  document.querySelector('#ability-label').textContent = `${S.roleLabels[state.active]} · ${S.ability[state.active]}`;
-  document.querySelector('#ability').classList.toggle('bloom', state.active === 1);
-  document.querySelector('#ability svg').innerHTML = icons[state.active ? 'leaf' : 'hourglass'];
-  document.querySelector('[data-testid="sound"]').innerHTML = icon(sound ? 'sound' : 'mute');
+  if (uiValues.actor !== state.active) {
+    document.querySelector('#ability-label').textContent = `${S.roleLabels[state.active]} · ${S.ability[state.active]}`;
+    document.querySelector('#ability').classList.toggle('bloom', state.active === 1);
+    document.querySelector('#ability svg').innerHTML = icons[state.active ? 'leaf' : 'hourglass'];
+    uiValues.actor = state.active;
+  }
+  if (uiValues.sound !== sound) {
+    document.querySelector('[data-testid="sound"]').innerHTML = icon(sound ? 'sound' : 'mute');
+    uiValues.sound = sound;
+  }
   document.body.classList.toggle('reduced-motion', reduced);
   document.body.classList.toggle('touch-enabled', touchControls);
   document.body.classList.toggle('touch-device', touchDevice());
@@ -343,14 +357,21 @@ function updateUI() {
   if (layoutChanged) viewport?.refresh();
   noticeWaiting();
   const charges = state.freezeCharges ?? 0, freezeCount = document.querySelector('#freeze-count');
-  freezeCount.textContent = S.freezeCount(charges); freezeCount.classList.toggle('empty', charges <= 0);
+  if (uiValues.charges !== charges) {
+    freezeCount.textContent = S.freezeCount(charges); freezeCount.classList.toggle('empty', charges <= 0);
+    uiValues.charges = charges;
+  }
   const seeds = state.seeds ?? 0;
   const showSeeds = (onlineMode ? network.actor : state.active) === 1 && !!state.pits?.length;
-  for (const chip of document.querySelectorAll('.seed-chip')) {
-    chip.hidden = !showSeeds;
-    chip.classList.toggle('empty', seeds <= 0);
-    chip.querySelector('b').textContent = S.seedCount(seeds);
-    chip.setAttribute('aria-label', `${S.seedsLabel} ${seeds}`); chip.title = S.seedsLabel;
+  const seedKey = `${seeds}:${showSeeds}`;
+  if (uiValues.seeds !== seedKey) {
+    for (const chip of document.querySelectorAll('.seed-chip')) {
+      chip.hidden = !showSeeds;
+      chip.classList.toggle('empty', seeds <= 0);
+      chip.querySelector('b').textContent = S.seedCount(seeds);
+      chip.setAttribute('aria-label', `${S.seedsLabel} ${seeds}`); chip.title = S.seedsLabel;
+    }
+    uiValues.seeds = seedKey;
   }
   checkWarning();
   document.body.classList.toggle('in-session', modal !== 'intro');
@@ -524,15 +545,11 @@ function renderModal() {
   }
   root.querySelector('button.primary:not(:disabled), button:not(:disabled)')?.focus({ preventScroll: true });
 }
-// Unlock entry music on the first gesture, including clicks on the backdrop.
-function unlockEntryMusic() {
-  if (modal === 'intro' && sound) {
-    music.select(currentTrack()); music.sync(!document.hidden);
-    music.unlock();
-  }
+function unlockAudioOnGesture(event) {
+  if (!event.isTrusted || !sound) return;
+  music.select(currentTrack());
+  initAudio();
 }
-document.addEventListener('pointerdown', unlockEntryMusic, { capture: true });
-document.addEventListener('keydown', unlockEntryMusic, { capture: true });
 document.addEventListener('click', event => {
   const button = event.target.closest('[data-action], [data-level]'); if (!button) return;
   if (viewport.blocked) return;
@@ -892,13 +909,18 @@ function updateTouchControls(view) {
   chargeBadge.textContent = charges;
   abilityButton.classList.toggle('empty', charges <= 0);
   abilityButton.setAttribute('aria-label', S.skillCount(S.ability[actor], charges));
-  abilityButton.classList.toggle('bloom', actor === 1);
-  abilityButton.querySelector('.skill-art').outerHTML = skillArt(actor === 1 ? 'bolt' : 'hourglass');
+  if (abilityButton.dataset.actor !== String(actor)) {
+    abilityButton.classList.toggle('bloom', actor === 1);
+    abilityButton.querySelector('.skill-art').outerHTML = skillArt(actor === 1 ? 'bolt' : 'hourglass');
+    abilityButton.dataset.actor = actor;
+  }
   interactButton.classList.toggle('bloom', actor === 1);
   interactButton.classList.toggle('unavailable', !interaction.available);
-  interactButton.dataset.kind = interaction.kind;
-  interactButton.innerHTML = `${itemArt(interaction.kind === 'plant' ? 'seed' : 'crate')}<span>${S.interact[interaction.kind]}</span>`;
-  interactButton.setAttribute('aria-label', S.interact[interaction.kind]);
+  if (interactButton.dataset.kind !== interaction.kind) {
+    interactButton.dataset.kind = interaction.kind;
+    interactButton.innerHTML = `${itemArt(interaction.kind === 'plant' ? 'seed' : 'crate')}<span>${S.interact[interaction.kind]}</span>`;
+    interactButton.setAttribute('aria-label', S.interact[interaction.kind]);
+  }
 }
 
 // ---- Keep the browser's own long-press / selection / drag / pinch behaviour off the game surface only. ----
@@ -958,6 +980,7 @@ canvas.addEventListener('pointermove', event => {
 window.addEventListener('pointermove', event => { if (event.pointerType === 'mouse') mouseClient = { x: event.clientX, y: event.clientY }; });
 canvas.addEventListener('pointerleave', () => { freezePreview = null; });
 window.addEventListener('blur', () => { clearInputs(); if (!viewport.blocked && !onlineMode && !modal && state.status === 'playing') setModal('pause'); audioContext?.suspend(); });
+window.addEventListener('focus', () => { if (sound && audioContext) initAudio(); });
 window.addEventListener('orientationchange', () => clearInputs());
 // A hidden tab stops drawing frames. A local rewind picks up where it left off; an online one follows the
 // server's clock, so it simply catches up (the server has already installed the start).
@@ -966,9 +989,10 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) { hiddenAt = performance.now(); clearInputs(); if (!viewport.blocked && !onlineMode && !modal && state.status === 'playing') setModal('pause'); audioContext?.suspend(); return; }
   if (rewind && !rewind.online && hiddenAt !== null) rewind.start += performance.now() - hiddenAt;
   hiddenAt = null;
+  if (sound && audioContext) initAudio();
   if (onlineMode) network.wake();
 });
-window.addEventListener('pageshow', () => { if (onlineMode) network.wake(); });
+window.addEventListener('pageshow', () => { if (sound && audioContext) initAudio(); if (onlineMode) network.wake(); });
 touchMedia.addEventListener('change', () => { updateUI(); viewport.refresh(); });
 window.__moonclock = {
   snapshot: () => ({ ...viewFor(state, onlineMode ? network.playerId : 'local'), phase: modal || state.status, players: structuredClone(state.actors) }),
@@ -1069,10 +1093,8 @@ function runFrame(time) {
   if (debug) { const el = document.querySelector('#debug'); el.hidden = false; el.textContent = `tick ${state.tick} | phase ${modal || state.status}\nentities ${state.actors.length + state.objects.length}\nactor ${state.active} | ${Math.round(state.actors[state.active].x)},${Math.round(state.actors[state.active].y)}`; }
 }
 updateUI(); renderModal();
-// Try immediately; trusted gestures remain a fallback for autoplay restrictions.
 if (sound) {
   music.select(currentTrack()); music.sync(!document.hidden);
-  music.unlock();
 }
 requestAnimationFrame(frame);
 if (network.restore()) enterOnline();

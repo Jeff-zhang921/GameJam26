@@ -31,16 +31,19 @@ export function createMusic() {
       .then(r => { if (!r.ok) throw new Error('Music unavailable'); return r.arrayBuffer(); })
       .then(data => context.decodeAudioData(data))
       .then(decoded => {
-        const seconds = t.length ?? decoded.duration;
-        if (decoded.duration < seconds) throw new Error('Music too short');
-        const length = Math.round(decoded.sampleRate * seconds), overlap = Math.round(decoded.sampleRate * (t.fade ?? 0));
-        const buffer = context.createBuffer(decoded.numberOfChannels, length, decoded.sampleRate);
-        for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
-          const original = decoded.getChannelData(channel), samples = buffer.getChannelData(channel);
-          samples.set(original.subarray(0, length));
-          for (let i = 0; i < overlap; i++) {
-            const mix = i / overlap, tail = length - overlap + i;
-            samples[tail] = original[tail] * (1 - mix) + original[i] * mix;
+        let buffer = decoded;
+        if (t.length != null || t.fade) {
+          const seconds = t.length ?? decoded.duration;
+          if (decoded.duration < seconds) throw new Error('Music too short');
+          const length = Math.round(decoded.sampleRate * seconds), overlap = Math.round(decoded.sampleRate * (t.fade ?? 0));
+          buffer = context.createBuffer(decoded.numberOfChannels, length, decoded.sampleRate);
+          for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+            const original = decoded.getChannelData(channel), samples = buffer.getChannelData(channel);
+            samples.set(original.subarray(0, length));
+            for (let i = 0; i < overlap; i++) {
+              const mix = i / overlap, tail = length - overlap + i;
+              samples[tail] = original[tail] * (1 - mix) + original[i] * mix;
+            }
           }
         }
         buffers.set(t.src, buffer);

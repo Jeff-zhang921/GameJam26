@@ -9,6 +9,22 @@ export function createRenderer(canvas, S) {
   const background = document.createElement('canvas'); background.width = 1280; background.height = 640;
   const b = background.getContext('2d');
   let currentDpr = 1, frameWidth = 1, frameHeight = 1, lastTime = null, visualTime = 0, lastReset = -1;
+  const renderLevels = [1.75, 1.5, 1.25, 1];
+  const budget = { level: 0, previous: null, elapsed: 0, frames: 0, slow: 0, scene: null };
+  function sampleFrame(time, state, options) {
+    if (options.paused || document.hidden || state.status !== 'playing' || budget.scene !== options.sceneKey) {
+      budget.previous = null; budget.elapsed = budget.frames = budget.slow = 0; budget.scene = options.sceneKey;
+      return;
+    }
+    const gap = budget.previous === null ? 0 : time - budget.previous;
+    budget.previous = time;
+    if (gap <= 0 || gap >= 120) { budget.elapsed = budget.frames = budget.slow = 0; return; }
+    budget.elapsed += gap; budget.frames++; if (gap > 22) budget.slow++;
+    if (budget.elapsed < 1000) return;
+    // Sustained missed 60 Hz frames lower only rendering cost. Keep the tier for this session to avoid resize churn.
+    if (budget.slow >= 8 && budget.slow / budget.frames >= .25) budget.level = Math.min(renderLevels.length - 1, budget.level + 1);
+    budget.elapsed = budget.frames = budget.slow = 0;
+  }
   const camera = createCamera(), effects = createParticles();
   let transform, towerScene, towerReversed = false;
   const cyan = '#a1e3e5', gold = '#e1c68a', muted = '#8aa89b';
@@ -87,7 +103,7 @@ export function createRenderer(canvas, S) {
   function resize() {
     const { width, height } = canvas.getBoundingClientRect();
     frameWidth = Math.max(1, width); frameHeight = Math.max(1, height);
-    currentDpr = Math.min(window.devicePixelRatio || 1, 1.75);
+    currentDpr = Math.min(window.devicePixelRatio || 1, renderLevels[budget.level]);
     if (canvas.width !== Math.round(width * currentDpr) || canvas.height !== Math.round(height * currentDpr)) {
       canvas.width = Math.round(width * currentDpr); canvas.height = Math.round(height * currentDpr);
     }
@@ -138,6 +154,13 @@ export function createRenderer(canvas, S) {
 
   function platform(p) {
     const surface = art(theme.ground.surface.src);
+    if (theme.ground.kind === 'bridge') {
+      if (surface) {
+        const ground = theme.ground.surface, scale = p.w / ground.width;
+        ctx.drawImage(surface, ground.x, ground.y, ground.width, ground.height, p.x, p.y - ground.walk * scale, p.w, ground.height * scale);
+      }
+      return;
+    }
     if (surface && art(theme.ground.fill.src)) {
       // The fill sits a little inside the ledge's ends, which step inward below the moss.
       const x0 = p.x <= 0 ? p.x : p.x + 12, x1 = p.x + p.w >= 1280 ? p.x + p.w : p.x + p.w - 12;
@@ -332,6 +355,14 @@ export function createRenderer(canvas, S) {
       const deep = ctx.createLinearGradient(0, H, 0, Math.max(H + 1, bottom)); deep.addColorStop(0, edge.bottom); deep.addColorStop(1, '#16131f');
       ctx.fillStyle = deep; ctx.fillRect(left, H - 2, right - left, bottom - H + 2);
     }
+    if (theme.ground.kind === 'bridge') {
+      if (bottom > H) {
+        ctx.save(); ctx.beginPath(); ctx.rect(left, H, right - left, bottom - H); ctx.clip();
+        state.platforms.forEach(platform);
+        ctx.restore();
+      }
+      return;
+    }
     for (const p of state.platforms) {
       const x0 = p.x <= 0 && left < 0 ? left : p.x, x1 = p.x + p.w >= W && right > W ? right : p.x + p.w;
       if (x0 !== p.x || x1 !== p.x + p.w) platform({ ...p, x: x0, w: x1 - x0 });
@@ -347,6 +378,7 @@ export function createRenderer(canvas, S) {
   // easing back to normal colour toward the edge. When cast it spreads out from the centre over FREEZE_SPREAD
   // ticks with a soft wave at its front; it fades out at the end and pulses gently in its last two seconds.
   const FREEZE_SPREAD = 36, SEPIA = [178, 162, 112];
+  let freezeWash;
   const easeOut = u => 1 - (1 - u) ** 3;
   function freezeLook(a, t) {
     const age = a.duration - a.ticksLeft, spread = easeOut(Math.min(1, Math.max(0, age) / FREEZE_SPREAD));
@@ -357,6 +389,18 @@ export function createRenderer(canvas, S) {
   function freezeTint(a, t) {
     const { r, alpha } = freezeLook(a, t);
     if (alpha <= 0) return;
+    if (budget.level > 0) {
+      if (!freezeWash) {
+        freezeWash = document.createElement('canvas'); freezeWash.width = freezeWash.height = 256;
+        const wash = freezeWash.getContext('2d'), gradient = wash.createRadialGradient(128, 128, 0, 128, 128, 128);
+        gradient.addColorStop(0, 'rgba(178,168,130,.42)'); gradient.addColorStop(.45, 'rgba(178,168,130,.315)'); gradient.addColorStop(1, 'rgba(178,168,130,0)');
+        wash.fillStyle = gradient; wash.fillRect(0, 0, 256, 256);
+      }
+      ctx.save(); ctx.globalAlpha *= alpha;
+      ctx.drawImage(freezeWash, a.x - r, a.y - r, 2 * r, 2 * r);
+      ctx.restore();
+      return;
+    }
     const ramp = (rgb, strength) => {
       const g = ctx.createRadialGradient(a.x, a.y, 0, a.x, a.y, r);
       g.addColorStop(0, `rgba(${rgb},${strength * alpha})`); g.addColorStop(.45, `rgba(${rgb},${strength * .75 * alpha})`); g.addColorStop(1, `rgba(${rgb},0)`);
@@ -542,6 +586,7 @@ export function createRenderer(canvas, S) {
     ctx.font = '10px "Segoe UI",sans-serif'; const w = ctx.measureText(text).width + 24; ctx.fillStyle = '#0a3037e8'; ctx.beginPath(); ctx.roundRect(x - w / 2, y - 12, w, 25, 5); ctx.fill(); ctx.strokeStyle = color + '55'; ctx.lineWidth = 1; ctx.stroke(); ctx.textAlign = 'center'; ctx.fillStyle = color; ctx.fillText(text, x, y + 4);
   }
   function draw(state, time, options = {}) {
+    sampleFrame(time, state, options);
     resize();
     theme = themeFor(state.level); updateBackground();
     const dt = lastTime === null ? 0 : Math.min(.05, Math.max(0, (time - lastTime) / 1000));
@@ -722,7 +767,7 @@ export function createRenderer(canvas, S) {
       const rect = canvas.getBoundingClientRect();
       return transform ? worldPoint(transform, clientX - rect.left, clientY - rect.top) : null;
     },
-    inspect: () => ({ camera: transform && { ...transform }, particles: effects.count, visualTime }),
+    inspect: () => ({ camera: transform && { ...transform }, particles: effects.count, visualTime, pixelRatio: currentDpr, effectQuality: budget.level === 0 ? 'full' : 'light' }),
     // After a failed frame: drop any clip / transform / save it left behind (resizing a canvas resets its state).
     resetContext: () => { const w = canvas.width; canvas.width = 0; canvas.width = w; },
   };
