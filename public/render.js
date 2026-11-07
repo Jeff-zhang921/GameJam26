@@ -114,7 +114,7 @@ export function createRenderer(canvas, S) {
   function crate(c, targeted, t) {
     ctx.save(); ctx.translate(c.x, c.y); const size = 24;
     if (c.frozen) { glow(ctx, 0, 0, 70, '#9de3e527'); circle(ctx, 0, 0, 41 + Math.sin(t * .002) * 2, null, '#a1e3e570'); circle(ctx, 0, 0, 34, null, '#a1e3e52e'); }
-    if (loaded('crate')) { const w = 62, h = w * sprites.crate.naturalHeight / sprites.crate.naturalWidth; ctx.drawImage(sprites.crate, -w / 2, 27 - h, w, h); }
+    if (loaded('crate')) { const h = 55, w = h * sprites.crate.naturalWidth / sprites.crate.naturalHeight; ctx.drawImage(sprites.crate, -w / 2, 27.5 - h, w, h); } // fills the 54x54 collision box
     else {
       ctx.fillStyle = '#61736a'; ctx.fillRect(-size, -size, 48, 48); ctx.strokeStyle = '#d4c99e'; ctx.lineWidth = 3; ctx.strokeRect(-size, -size, 48, 48); ctx.strokeStyle = '#243f3d'; ctx.lineWidth = 2; ctx.strokeRect(-18, -18, 36, 36); line(ctx, [[-20, -20], [20, 20]], '#c7b887', 3); line(ctx, [[20, -20], [-20, 20]], '#c7b887', 3);
       circle(ctx, 0, 0, 11, '#183e42', c.frozen ? cyan : '#d6bc82', 2); circle(ctx, 0, 0, 7, null, '#b6d7cd7a'); line(ctx, [[0, -5], [0, 0], [4, 2]], cyan);

@@ -13,7 +13,7 @@ export function createMusic() {
     source.loop = true; source.loopStart = 2; source.loopEnd = 50;
     source.connect(gain); startedAt = context.currentTime;
     gain.gain.setValueAtTime(0, startedAt);
-    gain.gain.linearRampToValueAtTime(.25, startedAt + .8);
+    gain.gain.linearRampToValueAtTime(1.5, startedAt + .8);
     source.start(0, offset);
   }
   return {
@@ -21,7 +21,7 @@ export function createMusic() {
       try {
         context ??= new (window.AudioContext || window.webkitAudioContext)();
         if (!gain) { gain = context.createGain(); gain.connect(context.destination); }
-        context.resume().then(play).catch(() => {});
+        context.resume().then(play).catch(() => { });
         if (!buffer && !loading) {
           loading = fetch('/audio/gymnopedie-no-1.mp3')
             .then(r => { if (!r.ok) throw new Error('Music unavailable'); return r.arrayBuffer(); })
