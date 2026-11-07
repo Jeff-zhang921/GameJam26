@@ -3,6 +3,8 @@ import { createMusic } from './music.js';
 import { setup, applyAction, validateAction, viewFor, targetFor, hintLevel, levelCount } from '../src/logic.js';
 import { S } from './strings.js';
 import { createRenderer } from './render.js';
+import { createNetwork } from './network.js';
+import { createLobby } from './lobby.js';
 
 const music = createMusic();
 const icons = {
@@ -33,6 +35,7 @@ let best = Array.from({ length: levelCount }, (_, i) => Array.isArray(saved.best
 let modal = 'intro', seenEvent = 0, shownHint = 0, toastTimer, audioContext;
 const clock = ticks => { const sec = Math.floor(ticks / 60); return `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`; };
 let lastTime = 0, accumulator = 0, frameCount = 0, sceneKey = 0, cameraReset = 0;
+let onlineMode = false, networkEpoch = null, networkStatus = 'offline';
 const held = new Set();
 const touchMoves = new Map();
 let touchJumpActor = null, uiChapter = '', uiProgress = '', uiMode = '';
@@ -62,6 +65,62 @@ let entering = false;
 const canvas = document.querySelector('#game');
 const renderer = createRenderer(canvas, S);
 const debug = new URLSearchParams(location.search).has('debug');
+const network = createNetwork({
+  onRoom(room, playerId, serverTime) {
+    lobby.update(room, playerId, serverTime);
+    if (['WAITING', 'READY', 'STARTING'].includes(room.status) || room.canReturnLobby) {
+      modal = 'online'; renderModal();
+    } else if (room.status === 'PLAYING' && network.latest && modal === 'online' && !room.suspended) {
+      modal = null; renderModal(); canvas.focus({ preventScroll: true });
+    }
+  },
+  onState(game, info) {
+    const previousStatus = state.status;
+    state = { ...game, active: network.actor };
+    if (game.status === 'paused' && previousStatus !== 'paused') { held.clear(); touchMoves.clear(); touchJumpActor = null; }
+    if (networkEpoch !== info.epoch) {
+      networkEpoch = info.epoch; sceneKey++; cameraReset++; seenEvent = state.eventSeq;
+      shownHint = 0; uiChapter = ''; held.clear(); touchMoves.clear(); touchJumpActor = null;
+      modal = network.room.status === 'STARTING' ? 'online' : null;
+    }
+    const seenBefore = seenEvent;
+    for (const e of state.events) if (e.id > seenEvent) {
+      if (!(e.kind === 'return' && state.events.some(h => h.kind === 'hit' && h.actor === e.actor && h.id > seenBefore))) chime(e);
+      if (e.kind === 'return' && e.actor === network.actor) cameraReset++; seenEvent = e.id;
+    }
+    if (game.status === 'won') modal = 'win';
+    else if (game.status === 'paused' && (!modal || modal === 'online')) modal = 'pause';
+    else if (game.status === 'playing' && modal === 'pause' && previousStatus === 'paused') modal = null;
+    if (network.room.status === 'STARTING') modal = 'online';
+    updateUI();
+    const root = document.querySelector('#modal-root');
+    if (root.dataset.phase !== String(modal)) { renderModal(); if (!modal) canvas.focus({ preventScroll: true }); }
+  },
+  onConnection(status) { networkStatus = status; lobby.setConnection(status); if (status !== 'connected') { held.clear(); touchMoves.clear(); touchJumpActor = null; } },
+  onError(message) { lobby.setError(message); toast(message); },
+});
+const lobby = createLobby({
+  createRoom() { enterOnline(); network.create(); },
+  joinRoom(code) { enterOnline(); network.join(code); },
+  selectCharacter(character) { network.selectCharacter(character); },
+  setReady(ready) { network.setReady(ready); },
+  startGame() { network.start(); },
+  leaveRoom() { leaveOnline(); },
+  returnToLobby() { network.returnToLobby(); },
+  retry() { network.retry(); },
+});
+function enterOnline() {
+  clearInputs(); onlineMode = true; modal = 'online'; entering = false;
+  renderer.setEntryProgress?.(1); document.body.classList.add('online-mode'); renderModal();
+}
+function leaveOnline() {
+  network.leave(); lobby.hide(); onlineMode = false; networkEpoch = null;
+  document.body.classList.remove('online-mode');
+  state = setup({ level: Number.isInteger(saved.level) ? saved.level : 0 });
+  sceneKey++; seenEvent = 0; uiChapter = ''; uiMode = ''; modal = 'intro';
+  renderer.setEntryProgress?.(0); updateUI(); renderModal();
+}
+
 function persist() {
   try { localStorage.setItem('moonclock-v1', JSON.stringify({ level: state.level, unlocked: state.unlocked, mode, sound, reduced, best })); } catch { }
 }
@@ -73,6 +132,11 @@ function chime(event) {
   if (sound && audioContext) playEffect(audioContext, event);
 }
 function dispatch(action, quiet = false) {
+  if (onlineMode) {
+    if (action.actor !== undefined && action.actor !== network.actor) return { valid: false };
+    if (['switch', 'level', 'tick'].includes(action.type)) return { valid: false };
+    return { valid: network.action(action) };
+  }
   if (action.actor === undefined && ['move', 'jump', 'jumpRelease', 'grab', 'ability'].includes(action.type)) action = { ...action, actor: state.active };
   const result = validateAction(state, 'local', action);
   if (!result.valid) { if (!quiet) toast(S.errors[result.error]); return result; }
@@ -102,9 +166,9 @@ function updateUI() {
   shownHint = hint;
   document.querySelector('#hud').textContent = `${S.memory} ${state.shards.filter(s => s.taken).length}/${state.shards.length} · ${S.rewinds} ${state.rewindsLeft} · ${clock(state.elapsed)}`;
   document.querySelector('#stage-count').textContent = `${String(state.level + 1).padStart(2, '0')} / ${String(levelCount).padStart(2, '0')}`;
-  const chapterKey = `${state.level}:${state.unlocked}`;
+  const chapterKey = `${state.level}:${state.unlocked}:${onlineMode}`;
   if (chapterKey !== uiChapter) {
-    document.querySelector('#chapter-nav').innerHTML = Array.from({ length: levelCount }, (_, i) => i).map(i => `<button class="chapter-button ${i < state.unlocked ? 'done' : ''}" data-level="${i}" aria-label="${S.levels[i].name}" ${i === state.level ? 'aria-current="step"' : ''}><span>${String(i + 1).padStart(2, '0')}</span></button>`).join('');
+    document.querySelector('#chapter-nav').innerHTML = Array.from({ length: levelCount }, (_, i) => i).map(i => `<button class="chapter-button ${i < state.unlocked ? 'done' : ''}" data-level="${i}" ${onlineMode ? 'disabled' : ''} aria-label="${S.levels[i].name}" ${i === state.level ? 'aria-current="step"' : ''}><span>${String(i + 1).padStart(2, '0')}</span></button>`).join('');
     uiChapter = chapterKey;
   }
   const progress = `${state.level}:${state.needs.map(k => Number(state.flags[k])).join('')}`;
@@ -114,9 +178,9 @@ function updateUI() {
     if (uiProgress && !reduced) document.querySelector('.goal-panel').animate([{ borderColor: '#dcba63', background: '#fffce9' }, {}], { duration: 900 });
     uiProgress = progress;
   }
-  if (uiMode !== mode) {
-    document.querySelector('#controls').innerHTML = mode === 'coop' ? `<span>${key('A D / ← →')}${S.move}</span><span>${key('W / ↑')}${S.jump}</span><span>${key('E / Enter')}${S.touchGrab}</span><span>${key('F / L')}${S.skills}</span>` : `<span>${key('A D')}${S.move}</span><span>${key('Space')}${S.jump}</span><span>${key('E')}${S.touchGrab}</span>`;
-    uiMode = mode;
+  if (uiMode !== `${mode}:${onlineMode}`) {
+    document.querySelector('#controls').innerHTML = mode === 'coop' && !onlineMode ? `<span>${key('A D / ← →')}${S.move}</span><span>${key('W / ↑')}${S.jump}</span><span>${key('E / Enter')}${S.touchGrab}</span><span>${key('F / L')}${S.skills}</span>` : `<span>${key('A D')}${S.move}</span><span>${key('Space')}${S.jump}</span><span>${key('E')}${S.touchGrab}</span>`;
+    uiMode = `${mode}:${onlineMode}`;
   }
   document.querySelector('#ability-label').textContent = `${S.roleLabels[state.active]} · ${S.ability[state.active]}`;
   document.querySelector('#ability').classList.toggle('bloom', state.active === 1);
@@ -127,15 +191,17 @@ function updateUI() {
 }
 function clearInputs() {
   held.clear(); touchMoves.clear(); touchJumpActor = null;
-  for (let i = 0; i < 2; i++) { dispatch({ type: 'move', actor: i, dir: 0 }, true); dispatch({ type: 'jumpRelease', actor: i }, true); }
+  for (let i = 0; i < 2; i++) { if (onlineMode && i !== network.actor) continue; dispatch({ type: 'move', actor: i, dir: 0 }, true); dispatch({ type: 'jumpRelease', actor: i }, true); }
 }
 function setModal(type) {
-  if (type && modal === null && state.status === 'playing') { clearInputs(); dispatch({ type: 'pause' }, true); }
+  if (type && modal === null && state.status === 'playing') { clearInputs(); if (onlineMode) network.pause(true); else dispatch({ type: 'pause' }, true); }
   modal = type; renderModal();
 }
-function resume() { modal = null; if (state.status === 'paused') dispatch({ type: 'pause' }, true); accumulator = 0; renderModal(); canvas.focus({ preventScroll: true }); }
+function resume() { modal = null; if (state.status === 'paused') { if (onlineMode) network.pause(false); else dispatch({ type: 'pause' }, true); } accumulator = 0; renderModal(); canvas.focus({ preventScroll: true }); }
 function renderModal() {
   const root = document.querySelector('#modal-root');
+  root.dataset.phase = String(modal);
+  if (modal === 'online') { root.innerHTML = ''; document.querySelector('.shell').classList.remove('at-entry'); return; }
   document.querySelector('.shell').classList.toggle('at-entry', modal === 'intro' || entering);
   if (!modal) { root.innerHTML = ''; return; }
   let contents = '';
@@ -146,11 +212,17 @@ function renderModal() {
   if (modal === 'pause') contents = `<div class="intro-icon">${icon('moon')}</div><div class="eyebrow">A MOMENT OF STILLNESS</div><h2>${S.focus}</h2><p>${S.levels[state.level].goal}</p><button class="primary" data-action="close" data-testid="resume">${S.resume}${icon('play')}</button><div class="modal-actions"><button class="text-button" data-action="help">${S.help}</button><button class="text-button" data-action="restart">${S.restart}</button></div>`;
   if (modal === 'win') contents = `<div class="intro-icon">${icon('leaf')}</div><div class="eyebrow">CHAMBER 0${state.level + 1} · RESTORED</div><h2>${state.level === levelCount - 1 ? S.complete : S.chamberComplete}</h2><p>${state.level === levelCount - 1 ? S.completeBody : S.chamberCompleteBody}</p><p>${S.clear} ${clock(state.elapsed)} · ${S.best} ${clock(best[state.level] ?? state.elapsed)}</p><div class="win-stars">✦ ${state.shards[0].taken ? '✦' : '◇'} ✦</div><p>${S.memory} ${state.shards.filter(s => s.taken).length} / ${state.shards.length}</p><button class="primary" data-action="next" data-testid="next">${state.level === levelCount - 1 ? S.replay : S.next}${icon('arrow')}</button>`;
   if (modal === 'intro') {
-    root.innerHTML = `<section class="entry-screen" role="dialog" aria-modal="true" aria-label="${S.title}"><div class="entry-content"><div class="entry-mark">${icon('moon')}</div><div class="eyebrow">${S.english}</div><h1>${S.title}</h1><p>${S.subtitle}</p><div class="mode-selector"><button data-mode="solo" class="${mode === 'solo' ? 'selected' : ''}" aria-pressed="${mode === 'solo'}">${S.solo}</button><button data-mode="coop" class="${mode === 'coop' ? 'selected' : ''}" aria-pressed="${mode === 'coop'}">${S.coop}</button></div><button class="primary" data-action="start" data-testid="start">${saved.unlocked ? S.continue : S.start}${icon('arrow')}</button></div><span class="entry-footer"><button class="text-button" data-action="sound" aria-pressed="${sound}">${icon(sound ? 'sound' : 'mute')} Music ${sound ? 'On' : 'Off'}</button> · A COOPERATIVE TIME TALE</span></section>`;
+    root.innerHTML = `<section class="entry-screen" role="dialog" aria-modal="true" aria-label="${S.title}"><div class="entry-content"><div class="entry-mark">${icon('moon')}</div><div class="eyebrow">${S.english}</div><h1>${S.title}</h1><p>${S.subtitle}</p><div class="mode-selector"><button data-mode="solo" class="${mode === 'solo' ? 'selected' : ''}" aria-pressed="${mode === 'solo'}">${S.solo}</button><button data-mode="coop" class="${mode === 'coop' ? 'selected' : ''}" aria-pressed="${mode === 'coop'}">${S.coop}</button></div><button class="primary" data-action="start" data-testid="start">${saved.unlocked ? S.continue : S.start}${icon('arrow')}</button><div class="online-entry-actions"><button data-action="create-room" data-testid="create-room">${S.createRoom}</button><button data-action="join-room" data-testid="join-room">${S.joinRoom}</button></div></div><span class="entry-footer"><button class="text-button" data-action="sound" aria-pressed="${sound}">${icon(sound ? 'sound' : 'mute')} Music ${sound ? 'On' : 'Off'}</button> · A COOPERATIVE TIME TALE</span></section>`;
     root.querySelector('.primary').focus({ preventScroll: true }); return;
   }
   root.innerHTML = `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="${modal === 'intro' ? S.title : S[modal] || S.title}">${contents}</section></div>`;
-  root.querySelector('.primary')?.focus({ preventScroll: true });
+  if (onlineMode) {
+    if (!network.host) root.querySelectorAll('[data-action="next"],[data-action="restart"]').forEach(button => { button.disabled = true; button.title = S.hostControls; });
+    if (modal === 'win') {
+      const back = document.createElement('button'); back.className = 'text-button'; back.dataset.action = 'return-lobby'; back.textContent = S.returnLobby; root.querySelector('.modal').append(back);
+    }
+  }
+  root.querySelector('button.primary:not(:disabled), button:not(:disabled)')?.focus({ preventScroll: true });
 }
 // Unlock entry music on the first gesture, including clicks on the backdrop.
 function unlockEntryMusic() {
@@ -164,9 +236,12 @@ document.addEventListener('keydown', unlockEntryMusic, { capture: true });
 document.addEventListener('click', event => {
   const button = event.target.closest('[data-action], [data-level], [data-mode]'); if (!button) return;
   if (entering) return;
+  if (button.dataset.action === 'create-room') { enterOnline(); network.create(); return; }
+  if (button.dataset.action === 'join-room') { enterOnline(); lobby.showJoin(); return; }
+  if (button.dataset.action === 'return-lobby') { clearInputs(); network.returnToLobby(); return; }
   initAudio();
-  if (button.dataset.mode) { mode = button.dataset.mode; clearInputs(); updateUI(); persist(); renderModal(); return; }
-  if (button.dataset.level !== undefined) { if (!modal) { clearInputs(); dispatch({ type: 'level', level: Number(button.dataset.level) }); persist(); canvas.focus({ preventScroll: true }); } return; }
+  if (button.dataset.mode) { if (onlineMode) return; mode = button.dataset.mode; clearInputs(); updateUI(); persist(); renderModal(); return; }
+  if (button.dataset.level !== undefined) { if (!modal && !onlineMode) { clearInputs(); dispatch({ type: 'level', level: Number(button.dataset.level) }); persist(); canvas.focus({ preventScroll: true }); } return; }
   const action = button.dataset.action;
   if (action === 'start') {
     if (entering) return;
@@ -189,8 +264,8 @@ document.addEventListener('click', event => {
   if (action === 'motion') { reduced = !reduced; updateUI(); persist(); renderModal(); return; }
   if (action === 'close') { resume(); return; }
   if (['help', 'settings', 'pause'].includes(action)) { setModal(action); return; }
-  if (action === 'restart') { dispatch({ type: 'restart' }); modal = null; renderModal(); clearInputs(); return; }
-  if (action === 'next') { dispatch({ type: 'next' }); modal = null; renderModal(); persist(); return; }
+  if (action === 'restart') { if (onlineMode && !network.host) return; dispatch({ type: 'restart' }); modal = null; renderModal(); clearInputs(); return; }
+  if (action === 'next') { if (onlineMode && !network.host) return; dispatch({ type: 'next' }); modal = null; renderModal(); persist(); return; }
   if (modal) return;
   canvas.focus({ preventScroll: true });
   if (action === 'switch') { clearInputs(); dispatch({ type: 'switch' }); return; }
@@ -200,7 +275,7 @@ document.addEventListener('click', event => {
 function movement() {
   if (modal || state.status !== 'playing') return;
   const touching = (actor, dir) => [...touchMoves.values()].some(touch => touch.actor === actor && touch.dir === dir);
-  if (mode === 'coop') {
+  if (mode === 'coop' && !onlineMode) {
     dispatch({ type: 'move', actor: 0, dir: Number(held.has('KeyD') || touching(0, 1)) - Number(held.has('KeyA') || touching(0, -1)) }, true);
     dispatch({ type: 'move', actor: 1, dir: Number(held.has('ArrowRight') || touching(1, 1)) - Number(held.has('ArrowLeft') || touching(1, -1)) }, true);
   } else dispatch({ type: 'move', dir: Number(held.has('KeyD') || held.has('ArrowRight') || touching(state.active, 1)) - Number(held.has('KeyA') || held.has('ArrowLeft') || touching(state.active, -1)) }, true);
@@ -222,23 +297,23 @@ document.addEventListener('keydown', event => {
   if ((code === 'Tab' && event.shiftKey) || (event.target.closest('button,summary') && ['Space', 'Enter', 'Tab'].includes(code))) return;
   const controls = ['KeyA', 'KeyD', 'KeyW', 'Space', 'KeyE', 'KeyF', 'KeyR', 'Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'Enter', 'KeyL'];
   if (!controls.includes(code)) return;
-  const actor = mode === 'coop' ? ['ArrowUp', 'Enter', 'KeyL'].includes(code) ? 1 : 0 : state.active;
+  const actor = onlineMode ? network.actor : mode === 'coop' ? ['ArrowUp', 'Enter', 'KeyL'].includes(code) ? 1 : 0 : state.active;
   const alreadyJumping = keyboardJumpHeld(actor) || touchJumpActor === actor;
   event.preventDefault(); initAudio(); held.add(code); movement(); if (event.repeat) return;
-  if (code === 'Tab') { clearInputs(); dispatch({ type: 'switch' }); }
+  if (code === 'Tab' && !onlineMode) { clearInputs(); dispatch({ type: 'switch' }); }
   if (code === 'KeyR') { clearInputs(); dispatch({ type: 'rewind' }); }
   if (['KeyW', 'Space', 'ArrowUp'].includes(code) && !alreadyJumping) dispatch({ type: 'jump', actor });
   if (['KeyE', 'Enter'].includes(code)) dispatch({ type: 'grab', actor });
   if (['KeyF', 'KeyL'].includes(code)) dispatch({ type: 'ability', actor });
 });
 function keyboardJumpHeld(actor) {
-  const keys = mode === 'coop' ? actor === 0 ? ['KeyW', 'Space'] : ['ArrowUp'] : ['KeyW', 'Space', 'ArrowUp'];
+  const keys = mode === 'coop' && !onlineMode ? actor === 0 ? ['KeyW', 'Space'] : ['ArrowUp'] : ['KeyW', 'Space', 'ArrowUp'];
   return keys.some(code => held.has(code));
 }
 document.addEventListener('keyup', event => {
   held.delete(event.code);
   if (['KeyW', 'Space', 'ArrowUp'].includes(event.code) && !modal) {
-    const actor = mode === 'coop' ? event.code === 'ArrowUp' ? 1 : 0 : state.active;
+    const actor = onlineMode ? network.actor : mode === 'coop' ? event.code === 'ArrowUp' ? 1 : 0 : state.active;
     if (!keyboardJumpHeld(actor) && touchJumpActor !== actor) dispatch({ type: 'jumpRelease', actor }, true);
   }
   movement();
@@ -263,19 +338,22 @@ for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) touchJu
 touchJump.addEventListener('click', event => { if (event.detail === 0 && !modal) { dispatch({ type: 'jump' }); dispatch({ type: 'jumpRelease' }); } });
 canvas.addEventListener('pointerdown', () => canvas.focus({ preventScroll: true }));
 document.querySelector('.hint-panel summary').addEventListener('click', event => { if (event.detail > 0) canvas.focus({ preventScroll: true }); });
-window.addEventListener('blur', () => { clearInputs(); if (!modal && state.status === 'playing') setModal('pause'); audioContext?.suspend(); });
-document.addEventListener('visibilitychange', () => { if (document.hidden) { clearInputs(); if (!modal && state.status === 'playing') setModal('pause'); audioContext?.suspend(); } });
+window.addEventListener('blur', () => { clearInputs(); if (!onlineMode && !modal && state.status === 'playing') setModal('pause'); audioContext?.suspend(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { clearInputs(); if (!onlineMode && !modal && state.status === 'playing') setModal('pause'); audioContext?.suspend(); } });
 window.__moonclock = {
-  snapshot: () => ({ ...viewFor(state, 'local'), phase: modal || state.status, players: structuredClone(state.actors) }),
+  snapshot: () => ({ ...viewFor(state, onlineMode ? network.playerId : 'local'), phase: modal || state.status, players: structuredClone(state.actors) }),
   presentation: () => renderer.inspect(),
+  connection: () => ({ online: onlineMode, status: networkStatus, room: network.room, playerId: network.playerId, actor: network.actor }),
   dispatch: action => { if (action.type === 'tick' && action.count) { for (let i = 0; i < Math.min(1800, action.count); i++) dispatch({ type: 'tick' }, true); } else dispatch(action); return window.__moonclock.snapshot(); },
 };
 function frame(time) {
   music.sync(sound && !document.hidden && (modal === 'intro' || entering || !modal || modal === 'win'));
   if (lastTime === 0) lastTime = time;
   accumulator += Math.min(100, time - lastTime); lastTime = time;
-  if (!modal && state.status === 'playing') { while (accumulator >= 1000 / 60) { dispatch({ type: 'tick' }, true); accumulator -= 1000 / 60; } } else accumulator = 0;
-  renderer.draw(state, time, { reduced, mode, paused: !!modal || state.status !== 'playing', sceneKey, cameraReset, target: targetFor(state, state.active)?.id });
+  if (!onlineMode && !modal && state.status === 'playing') { while (accumulator >= 1000 / 60) { dispatch({ type: 'tick' }, true); accumulator -= 1000 / 60; } } else accumulator = 0;
+  const displayState = onlineMode ? network.render(Math.min(.1, (time - (frame.previous ?? time)) / 1000), time) || state : state;
+  frame.previous = time;
+  renderer.draw(displayState, time, { reduced, mode: onlineMode ? 'solo' : mode, paused: !!modal || state.status !== 'playing' || (onlineMode && (!network.connected || network.room?.suspended)), sceneKey, cameraReset, target: targetFor(state, state.active)?.id });
   frameCount++; if (frameCount % 10 === 0) updateUI();
   if (debug) { const el = document.querySelector('#debug'); el.hidden = false; el.textContent = `tick ${state.tick} | phase ${modal || state.status}\nentities ${state.actors.length + state.objects.length}\nactor ${state.active} | ${Math.round(state.actors[state.active].x)},${Math.round(state.actors[state.active].y)}`; }
   requestAnimationFrame(frame);
@@ -287,3 +365,4 @@ if (sound) {
   music.unlock();
 }
 requestAnimationFrame(frame);
+if (network.restore()) enterOnline();

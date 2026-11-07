@@ -1,4 +1,5 @@
 export const S = {
+  createRoom: 'Create Room', joinRoom: 'Join Room', returnLobby: 'Return to Lobby', hostControls: 'The host controls the next courtyard and resets.',
   title: 'Moonclock', english: 'CLOCKBLOOM', subtitle: 'Two travelers, one borrowed moment.', studio: 'A cooperative adventure in time',
   start: 'Let Time Bloom', continue: 'Continue Journey', chapter: 'CHAMBER', chapters: 'Courtyards',
   intro: 'In a forgotten greenhouse, nothing moves until you touch it.', introBody: 'Bloom sets time flowing and hurries it along. Still holds any moment in place. One clock, two hands.',

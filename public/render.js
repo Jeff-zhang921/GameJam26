@@ -64,6 +64,7 @@ export function createRenderer(canvas, S) {
     line(ctx, [[p.x, p.y + 30], [p.x, 640]], '#b7bd8e32'); line(ctx, [[p.x + p.w, p.y + 30], [p.x + p.w, 640]], '#b7bd8e32');
   }
   function actor(p, which, active, t, ghost = false) {
+    if (p.animation) t = Math.max(0, t - p.animation.startTick * 1000 / 60);
     const color = which === 0 ? cyan : gold;
     ctx.save(); ctx.translate(p.x, p.y); ctx.globalAlpha *= ghost ? .32 : 1;
     if (!ghost) { ellipse(ctx, 0, 2, 23, 5, 0, '#001f2780'); if (active) { ellipse(ctx, 0, 2, 25, 7, 0, which === 0 ? '#a1e3e51b' : '#e1c68a1b'); ctx.beginPath(); ctx.ellipse(0, 2, 25, 7, 0, 0, Math.PI * 2); ctx.strokeStyle = color + '80'; ctx.lineWidth = 1; ctx.stroke(); } }
@@ -74,8 +75,13 @@ export function createRenderer(canvas, S) {
     ctx.beginPath(); ctx.moveTo(-13, -36); ctx.quadraticCurveTo(-16, -58, -1, -62); ctx.quadraticCurveTo(15, -59, 14, -38); ctx.quadraticCurveTo(1, -31, -13, -36); ctx.fillStyle = '#e6e8cd'; ctx.fill();
     ellipse(ctx, p.facing * 2, -46, 9, 11, 0, '#284e51'); circle(ctx, p.facing * 4 - 2, -47, 1.1, '#f2e9bc'); circle(ctx, p.facing * 4 + 3, -47, 1.1, '#f2e9bc');
     ctx.fillStyle = color; ctx.fillRect(-12, -36, 25, 5); ctx.beginPath(); ctx.moveTo(7, -34); ctx.quadraticCurveTo(20 + sway, -29, 26 + sway * 2, -36); ctx.lineTo(23 + sway, -25); ctx.quadraticCurveTo(15, -23, 6, -29); ctx.fill();
-    const side = p.facing; line(ctx, [[side * 16, -34], [side * 23, -25]], '#cbd8c7', 5); line(ctx, [[side * 24, -49], [side * 24, -1]], '#b7a171', 2.5);
+    const side = p.facing;
+    const cast = p.animation?.name === 'cast' ? Math.sin(Math.min(1, t / 300) * Math.PI) : 0;
+    ctx.save(); ctx.translate(0, -cast * 12);
+    line(ctx, [[side * 16, -34], [side * 23, -25]], '#cbd8c7', 5); line(ctx, [[side * 24, -49], [side * 24, -1]], '#b7a171', 2.5);
     if (which === 0) { circle(ctx, side * 24, -53, 6, null, color, 2); circle(ctx, side * 27, -55, 4, '#21464b'); } else { line(ctx, [[side * 24, -48], [side * 19, -57]], color, 1.5); ellipse(ctx, side * 20, -57, 5, 2.5, .7, color); ellipse(ctx, side * 28, -54, 5, 2.5, -.7, color); }
+    if (cast) circle(ctx, side * 24, -53, 9 + cast * 13, null, color, 1.5);
+    ctx.restore();
     if (active && !ghost) { ctx.globalAlpha *= .8; star(ctx, 0, -78 + Math.sin(t * .003) * 2, 4, color); }
     ctx.restore();
   }
@@ -230,7 +236,7 @@ export function createRenderer(canvas, S) {
       const inv = actorState.invuln > 0;
       if (inv && !options.reduced && !options.paused && Math.floor(state.tick / 4) % 2) continue;
       if (inv && options.reduced) ctx.globalAlpha = .5;
-      actor(actorState, actorState.id, actorState.id === state.active, t); ctx.globalAlpha = 1;
+      actor(actorState, actorState.id, actorState.id === state.active, actorState.animation && !options.reduced ? state.tick * 1000 / 60 : t); ctx.globalAlpha = 1;
     }
     for (const o of state.objects) if (o.held !== undefined && o.held !== null) o.kind === 'crate' ? crate(o, false, t) : seed(o, t);
     for (const o of state.objects) if (isEnemy(o) && flying(o)) enemy(o, o.id === target, t);
@@ -263,6 +269,13 @@ export function createRenderer(canvas, S) {
     ctx.restore();
   }
   return { setEntryProgress(value) { entryProgress = value; },
+    portrait(which) {
+      const width = canvas.clientWidth || canvas.width || 120, height = canvas.clientHeight || canvas.height || 120;
+      canvas.width = Math.round(width * Math.min(window.devicePixelRatio || 1, 2)); canvas.height = Math.round(height * Math.min(window.devicePixelRatio || 1, 2));
+      const ratio = Math.min(canvas.width / 100, canvas.height / 110);
+      ctx.setTransform(ratio, 0, 0, ratio, canvas.width / 2, canvas.height * .88); ctx.clearRect(-100, -150, 200, 200);
+      actor({ x: 0, y: 0, facing: 1, grounded: true, move: 0 }, which, false, 0);
+    },
     draw,
     worldPoint(clientX, clientY) {
       const rect = canvas.getBoundingClientRect();
@@ -270,4 +283,8 @@ export function createRenderer(canvas, S) {
     },
     inspect: () => ({ camera: transform && { ...transform }, particles: effects.count, visualTime }),
   };
+}
+
+export function drawCharacterPortrait(canvas, which) {
+  createRenderer(canvas, {}).portrait(which);
 }
