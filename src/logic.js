@@ -97,7 +97,8 @@ export function targetFor(state, actor, action = {}) {
   const kinds = actor === STILL ? ['plant', 'mover', 'crate'] : ['plant', 'mover'];
   const candidates = state.objects.filter(o => kinds.includes(o.kind) && free(o) && dist(p, anchor(o)) <= meta.controls.range);
   if (action.target) return candidates.find(o => o.id === action.target);
-  return candidates.sort((a, b) => dist(p, anchor(a)) - dist(p, anchor(b)))[0];
+  const sorted = candidates.sort((a, b) => dist(p, anchor(a)) - dist(p, anchor(b)));
+  return actor === STILL ? sorted[0] : sorted.find(o => !o.frozen && !(o.kind === 'mover' && o.speed >= meta.time.maxGear)) || sorted[0];
 }
 
 function pickable(state, p) {
@@ -113,6 +114,7 @@ export function validateAction(state, playerId, action) {
     if (action.type === 'tick' && playerId !== state.playerIds[0]) return no('host');
     if (action.type === 'next' && state.status !== 'won') return no('unfinished');
     if (action.type === 'level' && (!Number.isInteger(action.level) || action.level < 0 || action.level > state.unlocked || action.level > 3)) return no('locked');
+    if (action.type === 'rewind' && state.status !== 'playing') return no('paused');
     if (action.type === 'rewind' && state.rewindsLeft <= 0) return no('noRewinds');
     if (action.type === 'rewind' && !state.history.length) return no('history');
     return { valid: true };
@@ -194,7 +196,7 @@ function ageObjects(state) {
 }
 
 function moveItems(state) {
-  const floors = [...state.platforms, ...state.objects.filter(o => o.kind === 'mover')];
+  const all = surfaces(state);
   for (const o of state.objects) {
     if (o.kind !== 'crate' && o.kind !== 'seed') continue;
     const crate = o.kind === 'crate', half = crate ? 27 : 10;
@@ -206,7 +208,7 @@ function moveItems(state) {
     if (o.frozen) continue;
     const previous = o.y + half;
     o.vy += 0.3; o.x += o.vx; o.y += o.vy;
-    for (const f of floors) if (o.vy >= 0 && previous <= f.y + 1 && o.y + half >= f.y && o.x + half > f.x && o.x - half < f.x + f.w) {
+    for (const f of all) if (f.id !== o.id) if (o.vy >= 0 && previous <= f.y + 1 && o.y + half >= f.y && o.x + half > f.x && o.x - half < f.x + f.w) {
       o.y = f.y - half; o.vy = 0; o.vx *= 0.88;
     }
     if (o.y > 720 || o.x < 20 || o.x > 1260) { o.x = o.spawnX; o.y = o.spawnY; o.vx = 0; o.vy = 0; event(state, 'return', o.x, o.y); }
@@ -256,7 +258,6 @@ function moveActors(state) {
 function tick(state) {
   remember(state);
   state.tick++;
-  if (!state.started && state.actors.some(p => p.move || p.jumpBuffer)) state.started = true;
   if (state.started) state.elapsed++;
   ageObjects(state);
   moveItems(state);
@@ -283,7 +284,7 @@ export function applyAction(state, playerId, action) {
   if (action.type === 'switch') { s.active = 1 - s.active; return s; }
   if (action.type === 'rewind') {
     const frame = s.history[0];
-    s.objects = clone(frame.objects); s.pits = clone(frame.pits); s.history = []; s.rewindsLeft--; s.status = 'playing';
+    s.objects = clone(frame.objects); s.pits = clone(frame.pits); s.history = []; s.rewindsLeft--;
     for (const p of s.actors) { p.carrying = null; p.move = 0; }
     for (const o of s.objects) if (!free(o)) {
       const p = s.actors[o.held];
@@ -293,6 +294,7 @@ export function applyAction(state, playerId, action) {
     return s;
   }
   const p = s.actors[action.actor];
+  if (action.type === 'jump' || action.type === 'grab' || action.type === 'ability' || (action.type === 'move' && action.dir !== 0)) s.started = true;
   if (action.type === 'move') p.move = action.dir;
   if (action.type === 'jump') p.jumpBuffer = meta.controls.jumpBuffer;
   if (action.type === 'grab') {

@@ -242,3 +242,44 @@ describe('room rules', () => {
     s = step(s); expect(s.totalShards).toBe(1); expect(s.collected).toEqual([true, false, false, false]);
   });
 });
+
+describe('review fixes', () => {
+  test('bloom auto-target skips frozen plants and picks the nearest usable one', () => {
+    let s = setup({ level: 3 });
+    s.actors[1].x = 480; s = action(s, { type: 'grab', actor: 1 });
+    s.actors[1].x = 400; s = action(s, { type: 'grab', actor: 1 });
+    s.actors[1].x = 110; s = action(s, { type: 'grab', actor: 1 });
+    s.actors[1].x = 60; s = action(s, { type: 'grab', actor: 1 });
+    s = action(s, { type: 'ability', actor: 0, target: 'plant-1' });
+    expect(get(s, 'plant-1').frozen).toBe(true);
+    s.actors[1].x = 70;
+    s = action(s, { type: 'ability', actor: 1 });
+    expect(get(s, 'plant-0').speed).toBe(1);
+    expect(get(s, 'plant-1').speed).toBe(0);
+    expect(validateAction(s, 'local', { type: 'ability', actor: 1, target: 'plant-1' })).toEqual({ valid: false, error: 'heldByStill' });
+  });
+
+  test('a seed dropped on a crate rests on it', () => {
+    let s = setup();
+    s.objects.push({ kind: 'seed', id: 'seed-9', x: 0, y: 0, vx: 0, vy: 0, held: 1, spawnX: 100, spawnY: 100 });
+    Object.assign(s.actors[1], { x: 350, y: 466, on: 'crate-0', carrying: 'seed-9' });
+    s = action(s, { type: 'grab', actor: 1 });
+    s = step(s, 40);
+    const seed = get(s, 'seed-9'), crate = get(s, 'crate-0');
+    expect(seed.y).toBeCloseTo(crate.y - 27 - 10, 0);
+    expect(crate.y).toBe(493);
+  });
+
+  test('rewind is rejected while paused', () => {
+    let s = step(setup(), 12);
+    s = action(s, { type: 'pause' });
+    expect(validateAction(s, 'local', { type: 'rewind' })).toEqual({ valid: false, error: 'paused' });
+  });
+
+  test('the clock starts on a first grab', () => {
+    let s = setup({ level: 1 });
+    s = step(s, 5); expect(s.elapsed).toBe(0);
+    s.actors[0].x = 90; s = action(s, { type: 'grab', actor: 0 });
+    s = step(s, 5); expect(s.elapsed).toBe(5);
+  });
+});
