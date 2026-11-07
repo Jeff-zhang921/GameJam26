@@ -1,12 +1,22 @@
 // Short, synthesized foley and magical accents; no external audio assets.
+const outputs = new WeakMap();
+function effectsOutput(context) {
+  if (outputs.has(context)) return outputs.get(context);
+  const volume = context.createGain(), compressor = context.createDynamicsCompressor();
+  volume.gain.value = 6;
+  compressor.threshold.value = -10;
+  compressor.knee.value = 6;
+  compressor.ratio.value = 12;
+  compressor.attack.value = .003;
+  compressor.release.value = .15;
+  volume.connect(compressor); compressor.connect(context.destination);
+  outputs.set(context, volume);
+  return volume;
+}
 export function playEffect(context, event) {
   if (context.state !== 'running') return;
   const kind = event.kind, now = context.currentTime;
-  const master = context.createGain();
-  master.gain.value = 1.5;
-  master.connect(context.destination);
-  // Release the shared output after the longest effect finishes.
-  setTimeout(() => master.disconnect(), 1500);
+  const master = effectsOutput(context);
   // Filtered noise adds physical texture instead of a pitched UI beep.
   function texture(duration, volume, from, to, type = 'bandpass', delay = 0) {
     const start = now + delay;
@@ -42,8 +52,16 @@ export function playEffect(context, event) {
     return;
   }
   if (kind === 'jump') {
-    texture(.17, .045, 550, 2100);
-    tone(180, 320, .11, .012);
+    // A rounded, fixed-pitch pluck without noise or frequency sweeps.
+    const duration = .14;
+    const oscillator = context.createOscillator(), envelope = context.createGain();
+    oscillator.type = 'sine'; oscillator.frequency.value = 294;
+    envelope.gain.setValueAtTime(0, now);
+    envelope.gain.linearRampToValueAtTime(.035, now + .018);
+    envelope.gain.exponentialRampToValueAtTime(.0001, now + duration);
+    oscillator.connect(envelope); envelope.connect(master);
+    oscillator.onended = () => { oscillator.disconnect(); envelope.disconnect(); };
+    oscillator.start(now); oscillator.stop(now + duration + .01);
     return;
   }
   if (['growth', 'grow', 'wake'].includes(kind)) {
@@ -55,7 +73,7 @@ export function playEffect(context, event) {
     const source = context.createBufferSource(), filter = context.createBiquadFilter(), envelope = context.createGain();
     source.buffer = buffer;
     filter.type = 'lowpass'; filter.frequency.value = 950; filter.Q.value = .4;
-    const peak = kind === 'growth' ? .014 : .022;
+    const peak = kind === 'growth' ? .055 : .075;
     const curve = new Float32Array(128);
     for (let i = 0; i < curve.length; i++) curve[i] = peak * Math.sin(Math.PI * i / (curve.length - 1)) ** 2;
     envelope.gain.setValueCurveAtTime(curve, now, duration);
