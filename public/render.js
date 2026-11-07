@@ -1,10 +1,13 @@
 import { canopyWidth, meta } from '../src/logic.js';
+import { createCamera, createParticles, worldPoint } from './presentation.js';
 
 export function createRenderer(canvas, S) {
   const ctx = canvas.getContext('2d');
   const background = document.createElement('canvas'); background.width = 1280; background.height = 640;
   const b = background.getContext('2d');
-  let scale = 1, offsetX = 0, offsetY = 0, currentDpr = 1;
+  let currentDpr = 1, frameWidth = 1, frameHeight = 1, lastTime = null, visualTime = 0, lastReset = -1;
+  const camera = createCamera(), effects = createParticles();
+  let transform;
   const cyan = '#a1e3e5', gold = '#e1c68a', muted = '#8aa89b';
   function line(c, points, color, width = 1) { c.beginPath(); c.moveTo(points[0][0], points[0][1]); for (let i = 1; i < points.length; i++) c.lineTo(points[i][0], points[i][1]); c.strokeStyle = color; c.lineWidth = width; c.stroke(); }
   function circle(c, x, y, r, fill, stroke, width = 1) { c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); if (fill) { c.fillStyle = fill; c.fill(); } if (stroke) { c.strokeStyle = stroke; c.lineWidth = width; c.stroke(); } }
@@ -13,36 +16,38 @@ export function createRenderer(canvas, S) {
   function star(c, x, y, size, color) { c.beginPath(); c.moveTo(x, y - size); c.quadraticCurveTo(x + 1, y - 1, x + size, y); c.quadraticCurveTo(x + 1, y + 1, x, y + size); c.quadraticCurveTo(x - 1, y + 1, x - size, y); c.quadraticCurveTo(x - 1, y - 1, x, y - size); c.fillStyle = color; c.fill(); }
   function glow(c, x, y, r, color) { const g = c.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, color); g.addColorStop(1, '#a4dfdf00'); c.fillStyle = g; c.fillRect(x - r, y - r, r * 2, r * 2); }
   function buildBackground() {
-    const sky = b.createLinearGradient(0, 0, 0, 640); sky.addColorStop(0, '#12333c'); sky.addColorStop(.6, '#286065'); sky.addColorStop(1, '#0b3a42'); b.fillStyle = sky; b.fillRect(0, 0, 1280, 640);
+    const sky = b.createLinearGradient(0, 0, 0, 640); sky.addColorStop(0, '#86b4b0'); sky.addColorStop(.6, '#a5c9b5'); sky.addColorStop(1, '#609d91'); b.fillStyle = sky; b.fillRect(0, 0, 1280, 640);
     glow(b, 780, 130, 390, '#bbd2ad28');
     for (let i = 0; i < 80; i++) { const x = (i * 193.7) % 1280, y = (i * 87.9) % 380; circle(b, x, y, i % 4 === 0 ? 1.2 : .6, '#cad4b461'); }
-    b.fillStyle = '#1a494f'; b.beginPath(); b.moveTo(0, 460); for (let x = 0; x <= 1300; x += 30) b.lineTo(x, 370 + Math.sin(x * .008) * 34 + Math.cos(x * .019) * 16); b.lineTo(1280, 640); b.lineTo(0, 640); b.fill();
+    b.fillStyle = '#679b8c'; b.beginPath(); b.moveTo(0, 460); for (let x = 0; x <= 1300; x += 30) b.lineTo(x, 370 + Math.sin(x * .008) * 34 + Math.cos(x * .019) * 16); b.lineTo(1280, 640); b.lineTo(0, 640); b.fill();
     for (let i = 0; i < 8; i++) {
-      const x = i * 180 - 50; arch(b, x, 135 + (i % 2) * 25, 150, 410, '#a2baaa17', 11); arch(b, x + 9, 144 + (i % 2) * 25, 132, 400, '#d6d9bb19', 1); line(b, [[x + 74, 151], [x + 74, 470]], '#d3d6b510');
+      const x = i * 180 - 50; arch(b, x, 135 + (i % 2) * 25, 150, 410, '#e8efd535', 11); arch(b, x + 9, 144 + (i % 2) * 25, 132, 400, '#f5f4da66', 1); line(b, [[x + 74, 151], [x + 74, 470]], '#d3d6b510');
     }
     b.save(); b.translate(780, 158);
-    circle(b, 0, 0, 116, '#93bbae10', '#c6c8a25a', 1.3); circle(b, 0, 0, 108, null, '#d5cda63b'); circle(b, 0, 0, 92, null, '#c5d0af3f'); circle(b, 0, 0, 75, '#9bb4a80c', '#cfcea53d');
+    circle(b, 0, 0, 116, '#e3ecd51c', '#e7e6bfa6', 1.3); circle(b, 0, 0, 108, null, '#e4e7b777'); circle(b, 0, 0, 92, null, '#edf1d077'); circle(b, 0, 0, 75, '#9bb4a80c', '#cfcea53d');
     for (let i = 0; i < 60; i++) { const a = i / 60 * Math.PI * 2; const r = i % 5 === 0 ? 97 : 102; line(b, [[Math.sin(a) * r, -Math.cos(a) * r], [Math.sin(a) * 107, -Math.cos(a) * 107]], '#c9c99a7a', i % 5 === 0 ? 1.5 : .7); }
     b.font = '12px Georgia'; b.textAlign = 'center'; b.fillStyle = '#d3d2b693';['XII', 'III', 'VI', 'IX'].forEach((s, i) => b.fillText(s, Math.sin(i * Math.PI / 2) * 84, -Math.cos(i * Math.PI / 2) * 84 + 4));
-    circle(b, -22, -14, 47, '#dddcc395'); circle(b, -3, -25, 43, '#31595c'); star(b, 26, 26, 7, '#ddd4a8b0'); circle(b, 0, 0, 17, null, '#d5cba15a');
+    circle(b, -22, -14, 47, '#dddcc395'); circle(b, -3, -25, 43, '#83b1a8'); star(b, 26, 26, 7, '#ddd4a8b0'); circle(b, 0, 0, 17, null, '#d5cba15a');
     b.restore();
     for (let i = 0; i < 5; i++) { const x = 80 + i * 265; line(b, [[x, 0], [x, 230 + i % 2 * 50]], '#bdbf9227'); const y = 240 + i % 2 * 50; glow(b, x, y, 45, '#d8bc7d22'); b.strokeStyle = '#b8ac714a'; b.strokeRect(x - 8, y - 13, 16, 27); circle(b, x, y, 4, '#d1bc7b87'); line(b, [[x - 10, y - 13], [x, y - 22], [x + 10, y - 13]], '#b8ac714a'); }
     for (let side = 0; side < 2; side++) {
       b.save(); if (side) { b.translate(1280, 0); b.scale(-1, 1); }
-      b.fillStyle = '#0b343baa'; b.fillRect(0, 0, 33, 640); line(b, [[31, 0], [31, 640]], '#b6bea136', 2);
+      b.fillStyle = '#3f766d80'; b.fillRect(0, 0, 33, 640); line(b, [[31, 0], [31, 640]], '#b6bea136', 2);
       b.beginPath(); b.moveTo(23, 0); b.bezierCurveTo(55, 150, 8, 340, 86, 460); b.strokeStyle = '#76937a77'; b.lineWidth = 3; b.stroke();
       for (let i = 0; i < 16; i++) { const y = i * 29 + 25, x = 28 + Math.sin(i * .5) * 14 + i * 1.5; ellipse(b, x + (i % 2 ? 15 : -12), y, 17, 6, i % 2 ? -.5 : .6, '#456f5d99'); }
       b.restore();
     }
-    b.fillStyle = '#09333d5a'; b.fillRect(0, 570, 1280, 70);
+    b.fillStyle = '#386f6644'; b.fillRect(0, 570, 1280, 70);
     for (let i = 0; i < 60; i++) { const x = (i * 139.1) % 1280, y = 570 + (i * 23.3) % 70; line(b, [[x, y], [x + 15 + i % 5 * 9, y]], '#97bcb126', .7); }
   }
   buildBackground();
   function resize() {
-    const { width, height } = canvas.getBoundingClientRect(); currentDpr = Math.min(window.devicePixelRatio || 1, 1.75);
-    if (canvas.width !== Math.round(width * currentDpr) || canvas.height !== Math.round(height * currentDpr)) { canvas.width = Math.round(width * currentDpr); canvas.height = Math.round(height * currentDpr); }
-    scale = Math.min(width / 1280, height / 640); offsetX = (width - 1280 * scale) / 2; offsetY = (height - 640 * scale) / 2;
-    ctx.setTransform(currentDpr * scale, 0, 0, currentDpr * scale, currentDpr * offsetX, currentDpr * offsetY);
+    const { width, height } = canvas.getBoundingClientRect();
+    frameWidth = Math.max(1, width); frameHeight = Math.max(1, height);
+    currentDpr = Math.min(window.devicePixelRatio || 1, 1.75);
+    if (canvas.width !== Math.round(width * currentDpr) || canvas.height !== Math.round(height * currentDpr)) {
+      canvas.width = Math.round(width * currentDpr); canvas.height = Math.round(height * currentDpr);
+    }
   }
   function platform(p) {
     const g = ctx.createLinearGradient(0, p.y, 0, 650); g.addColorStop(0, '#35534c'); g.addColorStop(1, '#123239'); ctx.fillStyle = g; ctx.fillRect(p.x, p.y, p.w, p.h);
@@ -139,9 +144,20 @@ export function createRenderer(canvas, S) {
     ctx.font = '10px "Segoe UI",sans-serif'; const w = ctx.measureText(text).width + 24; ctx.fillStyle = '#0a3037e8'; ctx.beginPath(); ctx.roundRect(x - w / 2, y - 12, w, 25, 5); ctx.fill(); ctx.strokeStyle = color + '55'; ctx.lineWidth = 1; ctx.stroke(); ctx.textAlign = 'center'; ctx.fillStyle = color; ctx.fillText(text, x, y + 4);
   }
   function draw(state, time, options = {}) {
-    resize(); const t = options.reduced ? 0 : time; ctx.clearRect(-100, -100, 1480, 840); ctx.drawImage(background, 0, 0);
+    resize();
+    const dt = lastTime === null ? 0 : Math.min(.05, Math.max(0, (time - lastTime) / 1000));
+    lastTime = time;
+    if (!options.paused && !options.reduced) visualTime += dt * 1000;
+    const t = options.reduced ? 0 : visualTime;
+    transform = camera.update(state, { width: frameWidth, height: frameHeight, dt, mode: options.mode, reduced: options.reduced, paused: options.paused, sceneKey: options.sceneKey, resetCamera: lastReset !== options.cameraReset });
+    lastReset = options.cameraReset;
+    effects.update(state, { dt, reduced: options.reduced, paused: options.paused && state.status !== 'won', sceneKey: options.sceneKey });
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#8cb7a7'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.setTransform(currentDpr * transform.scale, 0, 0, currentDpr * transform.scale, currentDpr * transform.offsetX, currentDpr * transform.offsetY);
+    ctx.save(); ctx.beginPath(); ctx.rect(0, 0, state.width, state.height); ctx.clip();
+    ctx.drawImage(background, 0, 0);
     ctx.save(); ctx.translate(780, 158); ctx.rotate(t * .00003); line(ctx, [[0, 9], [0, -62]], '#d8c99777', 2); line(ctx, [[-28, 0], [8, 0]], '#d8c99777', 2); circle(ctx, 0, 0, 3, '#cfc7a1'); ctx.restore();
-    for (let i = 0; i < 22; i++) { const x = ((i * 137.5 + t * .006 * (i % 3 + 1)) % 1240) + 20; const y = 350 + Math.sin(i * 6 + t * .0006) * 145; circle(ctx, x, y, i % 4 === 0 ? 1.5 : .8, i % 4 === 0 ? '#d4d8a28c' : '#b6d4bf4d'); }
     for (const p of state.platforms) platform(p);
     const target = options.target;
     for (const p of state.pits) pit(p);
@@ -153,7 +169,23 @@ export function createRenderer(canvas, S) {
     for (const o of state.objects) if (o.kind === 'seed' && o.held === null) seed(o, t);
     for (const actorState of state.actors) actor(actorState, actorState.id, actorState.id === state.active, t);
     for (const o of state.objects) if (o.held !== undefined && o.held !== null) o.kind === 'crate' ? crate(o, false, t) : seed(o, t);
-    for (const e of state.events) { const age = state.tick - e.tick; if (age > 45 || age < 0 || options.reduced) continue; const color = ['grow', 'wake', 'plant', 'shard', 'win'].includes(e.kind) ? gold : cyan; ctx.globalAlpha = Math.max(0, 1 - age / 45); circle(ctx, e.x, e.y, 12 + age * 1.8, null, color, 1); for (let i = 0; i < 6; i++) star(ctx, e.x + Math.sin(i * 1.05) * (12 + age), e.y + Math.cos(i * 1.05) * (12 + age), 2, color); ctx.globalAlpha = 1; }
+    for (const kind of ['ambient', 'dust', 'crystal', 'leaf', 'spark']) {
+      ctx.beginPath();
+      for (const p of effects.particles) {
+        if (p.life <= 0 || p.kind !== kind) continue;
+        const size = p.size * (kind === 'ambient' ? 1 : Math.min(1, p.life / p.maxLife * 2));
+        if (kind === 'crystal' || kind === 'spark') {
+          ctx.moveTo(p.x, p.y - size * 1.8); ctx.lineTo(p.x + size, p.y); ctx.lineTo(p.x, p.y + size * 1.8); ctx.lineTo(p.x - size, p.y); ctx.closePath();
+        } else if (kind === 'leaf') {
+          ctx.moveTo(p.x + size, p.y); ctx.ellipse(p.x, p.y, size, size * .45, p.angle, 0, Math.PI * 2);
+        } else { ctx.moveTo(p.x + size, p.y); ctx.arc(p.x, p.y, size, 0, Math.PI * 2); }
+      }
+      ctx.fillStyle = { ambient: '#eef5d4a6', dust: '#f8ebc8a6', crystal: '#c8fcff', leaf: '#e6dc9f', spark: '#fff4b5' }[kind];
+      ctx.fill();
+    }
+    if (options.reduced) for (const e of state.events) {
+      if (state.tick - e.tick < 12 && ['freeze', 'unfreeze', 'wake', 'grow', 'plant', 'shard', 'win'].includes(e.kind)) circle(ctx, e.x, e.y, 22, null, ['freeze', 'unfreeze'].includes(e.kind) ? cyan : gold, 2);
+    }
     const selected = state.objects.find(o => o.id === target);
     if (state.status === 'playing' && selected) {
       const top = selected.kind === 'plant' ? selected.base - selected.height - 53 : selected.kind === 'mover' ? selected.y - 30 : selected.y - 62;
@@ -163,6 +195,14 @@ export function createRenderer(canvas, S) {
       else if (selected.speed >= meta.time.maxSpeed) label(x, top, S.targetMax, muted);
       else label(x, top, selected.speed ? S.targetHasten : S.targetWake, gold);
     }
+    ctx.restore();
   }
-  return { draw, worldPoint(clientX, clientY) { const rect = canvas.getBoundingClientRect(); return { x: (clientX - rect.left - offsetX) / scale, y: (clientY - rect.top - offsetY) / scale }; } };
+  return {
+    draw,
+    worldPoint(clientX, clientY) {
+      const rect = canvas.getBoundingClientRect();
+      return transform ? worldPoint(transform, clientX - rect.left, clientY - rect.top) : null;
+    },
+    inspect: () => ({ camera: transform && { ...transform }, particles: effects.count, visualTime }),
+  };
 }

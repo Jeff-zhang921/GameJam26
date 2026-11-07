@@ -1,6 +1,6 @@
 export const meta = {
   name: 'CLOCKBLOOM', minPlayers: 1, maxPlayers: 2, tickRate: 60,
-  controls: { speed: 4.2, jump: -12.5, springJump: -15.3, gravity: 0.48, coyote: 7, jumpBuffer: 7, range: 420, reach: 95, pitReach: 50 },
+  controls: { speed: 4.2, airSpeed: 4.8, jump: -12.5, springJump: -15.3, gravity: 0.48, fallGravity: 0.8, maxFall: 16, jumpCut: 0.45, coyote: 7, jumpBuffer: 7, range: 420, reach: 95, pitReach: 50 },
   time: { moverSpeed: 1, maxSpeed: 3, rewinds: 3, hintTicks: 90 * 60 },
   plant: { maxHeight: 235, springHeight: 45, growTicks: 960, matureTicks: 480, witherTicks: 480 },
 };
@@ -73,7 +73,7 @@ function makeLevel(index, players, unlocked, totalShards, collected = [false, fa
   return {
     level: index, levelId: level.id, unlocked, totalShards, collected: clone(collected), tick: 0, status: 'playing', active: 0,
     playerIds: players, width: 1280, height: 640,
-    actors: level.spawn.map((p, i) => ({ id: i, x: p.x, y: p.y, vx: 0, vy: 0, facing: 1, grounded: true, on: 'ground', coyote: 7, jumpBuffer: 0, move: 0, carrying: null, spawnX: p.x, spawnY: p.y })),
+    actors: level.spawn.map((p, i) => ({ id: i, x: p.x, y: p.y, vx: 0, vy: 0, facing: 1, grounded: true, on: 'ground', coyote: meta.controls.coyote, jumpBuffer: 0, jumpHeld: false, jumpCut: true, move: 0, carrying: null, spawnX: p.x, spawnY: p.y })),
     platforms: clone(level.platforms), objects, pits, nextPlant: level.plants.length,
     exit: clone(level.exit), shards: level.shards.map((p, i) => ({ ...p, id: i, taken: false })),
     flags: { frozenTouched: false, treeLifted: false, withered: false, sproutJump: false, moverRide: false },
@@ -123,7 +123,7 @@ export function validateAction(state, playerId, action) {
   if (state.status !== 'playing') return no('paused');
   if (!Number.isInteger(action.actor) || action.actor < 0 || action.actor > 1 || !actorAllowed(state, playerId, action.actor)) return no('role');
   if (action.type === 'move') return [-1, 0, 1].includes(action.dir) ? { valid: true } : no('invalid');
-  if (action.type === 'jump') return { valid: true };
+  if (action.type === 'jump' || action.type === 'jumpRelease') return { valid: true };
   if (action.type === 'grab') {
     const p = state.actors[action.actor];
     return p.carrying !== null || pickable(state, p).length ? { valid: true } : no('grabRange');
@@ -138,8 +138,8 @@ export function validateAction(state, playerId, action) {
   return no('invalid');
 }
 
-function event(state, kind, x, y) {
-  state.events.push({ id: ++state.eventSeq, kind, x, y, tick: state.tick });
+function event(state, kind, x, y, details = {}) {
+  state.events.push({ id: ++state.eventSeq, kind, x, y, tick: state.tick, ...details });
   if (state.events.length > 10) state.events.shift();
 }
 
@@ -211,15 +211,17 @@ function moveItems(state) {
 function moveActors(state) {
   const solid = surfaces(state);
   for (const p of state.actors) {
-    if (p.grounded) p.coyote = meta.controls.coyote; else p.coyote--;
-    if (p.jumpBuffer > 0) p.jumpBuffer--;
-    if (p.jumpBuffer > 0 && p.coyote > 0) {
+    const wasGrounded = p.grounded;
+    if (p.grounded) p.coyote = meta.controls.coyote;
+    const launch = () => {
       const spring = p.grounded && solid.find(f => f.id === p.on)?.spring;
-      p.vy = spring ? meta.controls.springJump : meta.controls.jump; p.grounded = false; p.coyote = 0; p.jumpBuffer = 0;
+      p.vy = spring ? meta.controls.springJump : meta.controls.jump; p.grounded = false; p.coyote = 0; p.jumpBuffer = 0; p.jumpCut = false;
       if (spring) state.flags.sproutJump = true;
-      event(state, 'jump', p.x, p.y);
-    }
-    p.vx = p.move * meta.controls.speed;
+      event(state, 'jump', p.x, p.y, { actor: p.id });
+    };
+    if (p.jumpBuffer > 0 && p.coyote > 0) launch();
+    if (!p.jumpHeld && !p.jumpCut && p.vy < 0) { p.vy *= meta.controls.jumpCut; p.jumpCut = true; }
+    p.vx = p.move * (p.grounded ? meta.controls.speed : meta.controls.airSpeed);
     if (p.move) p.facing = p.move;
     const oldX = p.x;
     p.x = Math.max(22, Math.min(1258, p.x + p.vx));
@@ -227,7 +229,9 @@ function moveActors(state) {
     for (const f of state.platforms) if (rectOverlap(body(), f) && p.y > f.y + 9) p.x = oldX;
     for (const o of state.objects) if (o.kind === 'plant' && o.barrier && !o.withered && rectOverlap(body(), { x: o.x - 42, y: o.base - o.height, w: 84, h: o.height })) p.x = oldX;
     const previousY = p.y;
-    p.vy += meta.controls.gravity;
+    p.vy = Math.min(meta.controls.maxFall, p.vy + (p.vy < 0 ? meta.controls.gravity : meta.controls.fallGravity));
+    const impact = p.vy;
+    const airborne = !p.grounded;
     p.y += p.vy;
     p.grounded = false; p.on = null;
     for (const f of solid) {
@@ -238,9 +242,13 @@ function moveActors(state) {
         if (o?.kind === 'crate' && o.frozen) state.flags.frozenTouched = true;
       }
     }
+    if (p.grounded && airborne) event(state, 'land', p.x, p.y, { actor: p.id, strength: Math.min(1, impact / meta.controls.maxFall) });
+    if (p.grounded && p.jumpBuffer > 0) launch();
+    if (p.jumpBuffer > 0) p.jumpBuffer--;
+    if (!p.grounded && !wasGrounded && p.coyote > 0) p.coyote--;
     if (p.y > 710) {
-      p.x = p.spawnX; p.y = p.spawnY; p.vy = 0; p.grounded = true; p.on = 'ground'; state.falls++;
-      event(state, 'return', p.x, p.y);
+      p.x = p.spawnX; p.y = p.spawnY; p.vx = 0; p.vy = 0; p.grounded = true; p.on = 'ground'; p.jumpHeld = false; p.jumpCut = true; p.jumpBuffer = 0; state.falls++;
+      event(state, 'return', p.x, p.y, { actor: p.id });
     }
     for (const shard of state.shards) if (!shard.taken && dist({ x: p.x, y: p.y - 28 }, shard) < 42) {
       shard.taken = true; event(state, 'shard', shard.x, shard.y);
@@ -273,12 +281,12 @@ export function applyAction(state, playerId, action) {
   if (action.type === 'next') return makeLevel((state.level + 1) % 4, state.playerIds, state.unlocked, state.totalShards, state.collected);
   const s = clone(state);
   if (action.type === 'tick') { if (s.status === 'playing') tick(s); return s; }
-  if (action.type === 'pause') { if (s.status !== 'won') s.status = s.status === 'paused' ? 'playing' : 'paused'; for (const p of s.actors) p.move = 0; return s; }
-  if (action.type === 'switch') { s.active = 1 - s.active; return s; }
+  if (action.type === 'pause') { if (s.status !== 'won') s.status = s.status === 'paused' ? 'playing' : 'paused'; for (const p of s.actors) { p.move = 0; p.jumpHeld = false; p.jumpCut = true; p.jumpBuffer = 0; } return s; }
+  if (action.type === 'switch') { for (const p of s.actors) { p.move = 0; p.jumpHeld = false; p.jumpCut = true; p.jumpBuffer = 0; } s.active = 1 - s.active; return s; }
   if (action.type === 'rewind') {
     const frame = s.history[0];
     s.objects = clone(frame.objects); s.pits = clone(frame.pits); s.history = []; s.rewindsLeft--;
-    for (const p of s.actors) { p.carrying = null; p.move = 0; }
+    for (const p of s.actors) { p.carrying = null; p.move = 0; p.jumpHeld = false; p.jumpCut = true; p.jumpBuffer = 0; }
     for (const o of s.objects) if (!free(o)) {
       const p = s.actors[o.held];
       o.held = null; o.x = p.x + p.facing * 30; o.y = p.y - (o.kind === 'crate' ? 27 : 10); o.vx = 0; o.vy = 0;
@@ -289,7 +297,8 @@ export function applyAction(state, playerId, action) {
   const p = s.actors[action.actor];
   if (action.type === 'jump' || action.type === 'grab' || action.type === 'ability' || (action.type === 'move' && action.dir !== 0)) s.started = true;
   if (action.type === 'move') p.move = action.dir;
-  if (action.type === 'jump') p.jumpBuffer = meta.controls.jumpBuffer;
+  if (action.type === 'jump' && !p.jumpHeld) { p.jumpHeld = true; p.jumpBuffer = meta.controls.jumpBuffer; }
+  if (action.type === 'jumpRelease') p.jumpHeld = false;
   if (action.type === 'grab') {
     if (p.carrying !== null) {
       const o = find(s, p.carrying);
