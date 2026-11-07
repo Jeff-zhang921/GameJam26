@@ -71,8 +71,8 @@ const noise = seed => { const value = Math.sin(seed * 12.9898) * 43758.5453; ret
 const effects = {
   jump: { kind: 'dust', color: '#efe6c3', count: 10, speed: 42, life: .42 },
   land: { kind: 'dust', color: '#e8deb6', count: 14, speed: 65, life: .48 },
-  freeze: { kind: 'crystal', color: '#b8f8ff', count: 20, speed: 95, life: .8 },
-  unfreeze: { kind: 'crystal', color: '#8ce6ed', count: 18, speed: 85, life: .65 },
+  freeze: { kind: 'crystal', color: '#efe0b0', count: 20, speed: 95, life: .8 },
+  unfreeze: { kind: 'crystal', color: '#d9c896', count: 18, speed: 85, life: .65 },
   plant: { kind: 'leaf', color: '#c9dc91', count: 14, speed: 58, life: .95 },
   grow: { kind: 'leaf', color: '#cbdc91', count: 16, speed: 65, life: .95 },
   wake: { kind: 'leaf', color: '#e3d590', count: 20, speed: 76, life: 1.1 },

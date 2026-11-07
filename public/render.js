@@ -342,28 +342,50 @@ export function createRenderer(canvas, S) {
       }
     }
   }
-  // Still's Freeze Area: an icy disc with a slow inner ring, drifting specks and an arc counting down its time.
-  // It fades in when cast and blinks gently in its last two seconds.
+  // Still's Freeze Area: time inside fades to a grey-yellow, like an old photograph, strongest at the centre and
+  // easing back to normal colour toward the edge. When cast it spreads out from the centre over FREEZE_SPREAD
+  // ticks with a soft wave at its front; it fades out at the end and pulses gently in its last two seconds.
+  const FREEZE_SPREAD = 36, SEPIA = [178, 162, 112];
+  const easeOut = u => 1 - (1 - u) ** 3;
+  function freezeLook(a, t) {
+    const age = a.duration - a.ticksLeft, spread = easeOut(Math.min(1, Math.max(0, age) / FREEZE_SPREAD));
+    const alpha = Math.min(1, a.ticksLeft / 30) * (a.ticksLeft < 120 ? .65 + .35 * Math.abs(Math.cos(t * .006)) : 1);
+    return { r: Math.max(1, a.radius * spread), spread, alpha };
+  }
+  // The colour change itself, drawn over the world (below the travellers): desaturate, then tint grey-yellow.
+  function freezeTint(a, t) {
+    const { r, alpha } = freezeLook(a, t);
+    if (alpha <= 0) return;
+    const ramp = (rgb, strength) => {
+      const g = ctx.createRadialGradient(a.x, a.y, 0, a.x, a.y, r);
+      g.addColorStop(0, `rgba(${rgb},${strength * alpha})`); g.addColorStop(.45, `rgba(${rgb},${strength * .75 * alpha})`); g.addColorStop(1, `rgba(${rgb},0)`);
+      return g;
+    };
+    ctx.save(); ctx.beginPath(); ctx.arc(a.x, a.y, r, 0, Math.PI * 2);
+    ctx.globalCompositeOperation = 'saturation'; ctx.fillStyle = ramp('128,128,128', .9); ctx.fill();
+    ctx.globalCompositeOperation = 'color'; ctx.fillStyle = ramp(SEPIA.join(','), .75); ctx.fill();
+    ctx.globalCompositeOperation = 'source-over'; ctx.fillStyle = ramp('214,200,150', .12); ctx.fill();
+    ctx.restore();
+  }
+  // Its marks, drawn first (under everything): a faint dashed reach, the wave while it spreads, its remaining time
+  // as an arc, and a few drifting motes of dust.
   function freezeArea(a, t) {
-    const life = Math.max(0, a.ticksLeft / a.duration), age = a.duration - a.ticksLeft;
-    const alpha = Math.min(1, age / 12, a.ticksLeft / 30) * (a.ticksLeft < 120 ? .55 + .45 * Math.abs(Math.cos(t * .006)) : 1);
+    const { r, spread, alpha } = freezeLook(a, t), life = Math.max(0, a.ticksLeft / a.duration);
     ctx.save(); ctx.globalAlpha *= alpha;
-    const fill = ctx.createRadialGradient(a.x, a.y, a.radius * .15, a.x, a.y, a.radius);
-    fill.addColorStop(0, '#e4f8fa1c'); fill.addColorStop(.75, '#b6e8ee30'); fill.addColorStop(1, '#a1e3e566');
-    circle(ctx, a.x, a.y, a.radius, fill, '#d4f4f6c0', 2);
-    ctx.setLineDash([5, 11]); ctx.lineDashOffset = -t * .012; circle(ctx, a.x, a.y, a.radius - 9, null, '#effcfd80', 1.2); ctx.setLineDash([]);
-    ctx.beginPath(); ctx.arc(a.x, a.y, a.radius + 5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * life); ctx.strokeStyle = '#f1fcfdb0'; ctx.lineWidth = 2.5; ctx.stroke();
-    for (let i = 0; i < 12; i++) {
-      const turn = i * 2.39996 + t * .00035 * (i % 2 ? 1 : -1), r = a.radius * (.2 + ((i * 37) % 70) / 100);
-      star(ctx, a.x + Math.cos(turn) * r, a.y + Math.sin(turn) * r, 2 + (i % 3), '#f4fdfecc');
+    if (spread < 1) { ctx.globalAlpha *= 1 - spread; circle(ctx, a.x, a.y, r, null, '#efe3bb', 3); ctx.globalAlpha /= 1 - spread; }
+    ctx.setLineDash([5, 12]); ctx.lineDashOffset = -t * .012; circle(ctx, a.x, a.y, r - 2, null, '#e9dcb042', 1.2); ctx.setLineDash([]);
+    ctx.beginPath(); ctx.arc(a.x, a.y, r + 5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * life); ctx.strokeStyle = '#efe3bb88'; ctx.lineWidth = 2; ctx.stroke();
+    for (let i = 0; i < 10; i++) {
+      const turn = i * 2.39996 + t * .00025 * (i % 2 ? 1 : -1), d = r * (.15 + ((i * 37) % 70) / 100);
+      circle(ctx, a.x + Math.cos(turn) * d, a.y + Math.sin(turn) * d, 1 + (i % 3) * .6, '#f3e8c4aa');
     }
     ctx.restore();
   }
-  // Slowed objects carry a small frost mark so it is clear what the area is holding.
+  // Slowed objects carry a small mark so it is clear what the area is holding.
   function frostMark(o, t) {
     const b = isEnemy(o) ? enemyBox(o) : o.kind === 'plant' ? { x: o.x - 10, y: o.base - o.height - 4, w: 20, h: 0 } : o.kind === 'mover' ? { x: o.x, y: o.y, w: o.w, h: 0 } : { x: o.x - 10, y: o.y - (o.kind === 'crate' ? 30 : 14), w: 20, h: 0 };
     const x = b.x + b.w / 2 + Math.sin(t * .003 + b.x) * 3, y = b.y - 10;
-    ctx.save(); ctx.globalAlpha *= .85; glow(ctx, x, y, 12, '#c8f4f866'); star(ctx, x, y, 4, '#f0fdff'); ctx.restore();
+    ctx.save(); ctx.globalAlpha *= .85; glow(ctx, x, y, 12, '#e6d6a366'); star(ctx, x, y, 4, '#f6ecc8'); ctx.restore();
   }
   // Still's pickup (an extra Freeze charge): a small hourglass that bobs and slowly rocks, its sand trickling.
   function frostCrystal(c, t) {
@@ -390,7 +412,7 @@ export function createRenderer(canvas, S) {
     ctx.restore();
   }
   function aimedCast({ actor, origin, point, range, radius, target, reason }) {
-    const color = reason === 'ok' || reason === 'aim' ? actor === 0 ? '#bff8ff' : '#ffe293' : '#f4a58a';
+    const color = reason === 'ok' || reason === 'aim' ? actor === 0 ? '#e9dcae' : '#ffe293' : '#f4a58a'; // Still: the Freeze Area's grey-yellow
     ctx.save(); ctx.setLineDash([8, 9]);
     circle(ctx, origin.x, origin.y, range, null, `${color}64`, 1.5);
     if (!point) { ctx.restore(); return; } // not aimed yet: just the reach
@@ -420,8 +442,8 @@ export function createRenderer(canvas, S) {
       return;
     }
     ctx.save(); ctx.setLineDash([8, 8]);
-    circle(ctx, p.x, p.y, p.radius, p.valid ? '#bfeef414' : '#f1a58f10', p.valid ? '#d4f4f6aa' : '#f1a58faa', 1.5);
-    ctx.setLineDash([]); star(ctx, p.x, p.y, 5, p.valid ? '#effcfd' : '#f6c3b5'); ctx.restore();
+    circle(ctx, p.x, p.y, p.radius, p.valid ? '#e9dcae14' : '#f1a58f10', p.valid ? '#e9dcaeaa' : '#f1a58faa', 1.5);
+    ctx.setLineDash([]); star(ctx, p.x, p.y, 5, p.valid ? '#f6ecc8' : '#f6c3b5'); ctx.restore();
   }
   // Rewind: a cool wash with a vignette, a clock hand sweeping backwards and streaks of time running right to left.
   function rewindOverlay(u, t) {
@@ -496,7 +518,8 @@ export function createRenderer(canvas, S) {
     const age = state.tick - e.tick, caster = state.actors[e.caster];
     if (!caster || age < 0 || age > FLIGHT + BURST) return;
     if (e.kind === 'freeze' && !state.freezeAreas.some(area => area.id === e.area)) return;
-    const color = e.caster === 0 ? cyan : gold, [sx, sy] = handOf(caster, e.caster);
+    // Still's spell is the Freeze Area's grey-yellow; Bloom's stays gold.
+    const color = e.caster === 0 ? '#e9dcae' : gold, [sx, sy] = handOf(caster, e.caster);
     const target = state.objects.find(o => o.id === e.target), { x: tx, y: ty } = target ? anchor(target) : e;
     const lift = Math.min(40, Math.hypot(tx - sx, ty - sy) * .2), cx = (sx + tx) / 2, cy = Math.min(sy, ty) - lift;
     const at = u => [(1 - u) * (1 - u) * sx + 2 * (1 - u) * u * cx + u * u * tx, (1 - u) * (1 - u) * sy + 2 * (1 - u) * u * cy + u * u * ty];
@@ -609,6 +632,7 @@ export function createRenderer(canvas, S) {
     for (const o of state.objects) if (o.kind === 'seed' && o.held === null) seed(o, t);
     const flying = o => !o.frozen && ['dart', 'orb', 'lantern'].includes(o.kind);
     for (const o of state.objects) if (isEnemy(o) && !flying(o)) enemy(o, marked(o), t, options.reduced);
+    for (const a of state.freezeAreas ?? []) freezeTint(a, t);
     for (const actorState of state.actors) {
       const inv = actorState.invuln > 0;
       if (inv && !options.reduced && !options.paused && Math.floor(state.tick / 4) % 2) continue;
@@ -632,7 +656,7 @@ export function createRenderer(canvas, S) {
           ctx.moveTo(p.x + size, p.y); ctx.ellipse(p.x, p.y, size, size * .45, p.angle, 0, Math.PI * 2);
         } else { ctx.moveTo(p.x + size, p.y); ctx.arc(p.x, p.y, size, 0, Math.PI * 2); }
       }
-      ctx.fillStyle = { ambient: '#eef5d4a6', dust: '#f8ebc8a6', crystal: '#c8fcff', leaf: '#e6dc9f', spark: '#fff4b5' }[kind];
+      ctx.fillStyle = { ambient: '#eef5d4a6', dust: '#f8ebc8a6', crystal: '#efe0b0', leaf: '#e6dc9f', spark: '#fff4b5' }[kind];
       ctx.fill();
     }
     if (options.reduced) for (const e of state.events) {
@@ -642,7 +666,7 @@ export function createRenderer(canvas, S) {
     if (options.tap && options.tap.age < 1) {
       const { x, y, ok, ring, age } = options.tap;
       ctx.save(); ctx.globalAlpha = 1 - age;
-      circle(ctx, x, y, options.tap.area && ok ? 20 + age * (meta.freeze.radius - 20) : 18 + age * 28, null, ok ? (options.tap.area || !state.active ? cyan : gold) : '#f1a58f', 2.5);
+      circle(ctx, x, y, options.tap.area && ok ? 20 + age * (meta.freeze.radius - 20) : 18 + age * 28, null, ok ? (options.tap.area || !state.active ? '#e9dcae' : gold) : '#f1a58f', 2.5);
       const carrier = ring !== null && state.actors[ring];
       if (carrier) { ctx.setLineDash([12, 9]); circle(ctx, carrier.x, carrier.y - (options.tap.area ? 30 : 0), options.tap.ringRadius ?? meta.controls.range, '#f4e7b40c', '#f4e7b4c0', 2); ctx.setLineDash([]); }
       ctx.restore();

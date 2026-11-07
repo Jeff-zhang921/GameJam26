@@ -42,9 +42,9 @@ body.touch-layout .touch-controls{position:absolute;inset:0;display:block;z-inde
 .touch-skill .skill-art{width:56%;height:56%;object-fit:contain;pointer-events:none;filter:drop-shadow(0 2px 2px #102a3540)}
 .touch-controls .touch-jump,.touch-controls .touch-jump:hover{right:0;bottom:0;width:var(--jump-size);height:var(--jump-size);color:#263f42;border-color:#fff4c7;background:radial-gradient(circle at 44% 35%,#fff1c7e8,#a9c5b8c7 72%,#6a9b93e0)}
 .touch-ability{right:calc((var(--jump-size) - var(--skill-size)) / 2);bottom:calc(var(--jump-size) + var(--control-gap))}
-.touch-controls .touch-ability,.touch-controls .touch-ability:hover{background:radial-gradient(circle at 50% 36%,#edfcffed,#99c9cba6 68%,#75aaaeb8);color:#164856;border-color:#dcf6f5e6}
+.touch-controls .touch-ability,.touch-controls .touch-ability:hover{background:radial-gradient(circle at 50% 36%,#f3efe2ed,#bfb697a6 68%,#8f8768b8);color:#4a4129;border-color:#ece3c4e6}
 .touch-controls .touch-ability.bloom,.touch-controls .touch-ability.bloom:hover{background:radial-gradient(circle at 50% 36%,#fff4d6ed,#e4cc87ac 68%,#b59c54b8);color:#5e461a;border-color:#fff3bce6}
-.touch-ability .skill-charges{position:absolute;right:-3px;bottom:-3px;display:grid;place-items:center;min-width:24px;height:24px;padding:0 5px;border:1px solid #f7f0c8;border-radius:14px;background:#123b43;color:#fff3c7;font-variant-numeric:tabular-nums}
+.touch-ability .skill-charges{position:absolute;right:-3px;bottom:-3px;display:grid;place-items:center;min-width:24px;height:24px;padding:0 5px;border:1px solid #f7f0c8;border-radius:14px;background:#463d29;color:#fff3c7;font-variant-numeric:tabular-nums}
 .touch-ability.empty .skill-art{opacity:.45}
 .touch-ability.empty .skill-charges{color:#ffd3bd;background:#603d35}
 .touch-interact{right:calc(var(--jump-size) + var(--control-gap));bottom:calc((var(--jump-size) - var(--skill-size)) / 2 + 10px)}
@@ -91,7 +91,7 @@ body.touch-layout .modal button,body.touch-layout .modal .toggle{min-height:44px
 .modal-actions .text-button svg{width:15px;height:15px}
 @media(max-height:560px){.pause-whisper{margin-top:10px;padding:9px 12px}.pause-whisper p{font-size:11px;line-height:1.5}.pause-actions{margin-top:10px}}
 .pause-levels{margin-top:12px}.pause-levels .goal-heading{justify-content:center}.pause-chapters .chapter-button:disabled{opacity:.45}
-.freeze-count{margin-left:10px;padding:2px 8px;border-radius:999px;background:#bfeef42b;color:#e3fbfd;letter-spacing:.5px;white-space:nowrap}.freeze-count.empty{background:#f1a58f33;color:#ffd7cb}body.rewinding .touch-controls,body.rewinding .touch-controls button,body.rewinding .touch-controls .joystick,body.rewinding .touch-pause{pointer-events:none}body.rewinding .touch-controls,body.rewinding .touch-pause{opacity:.35}
+.freeze-count{margin-left:10px;padding:2px 8px;border-radius:999px;background:#e6dcb82e;color:#f3ecd2;letter-spacing:.5px;white-space:nowrap}.freeze-count.empty{background:#f1a58f33;color:#ffd7cb}body.rewinding .touch-controls,body.rewinding .touch-controls button,body.rewinding .touch-controls .joystick,body.rewinding .touch-pause{pointer-events:none}body.rewinding .touch-controls,body.rewinding .touch-pause{opacity:.35}
 body.touch-layout .hud-label{display:none}
 body.rewinding .toast{opacity:0!important}
 /* Bloom's seed count: a small seed and a number, bottom right (status bar on desktop, above the interact button on touch). */
