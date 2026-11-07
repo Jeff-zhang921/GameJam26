@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { setup, applyAction, validateAction, heldPosition, interactionFor, throwPath, meta } from '../src/logic.js';
+import { setup, applyAction, validateAction, heldPosition, interactionFor, aimedThrowVelocity, throwPath, meta } from '../src/logic.js';
 import { attachCarried } from '../public/network.js';
 
 const send = (state, type, actor = 0, extra = {}) => {
@@ -139,6 +139,21 @@ describe('online rendering of carried boxes', () => {
 });
 
 describe('aimed throws', () => {
+  test('full power is accepted at every sampled angle, with proportional power below the rim', () => {
+    const state = carrying(), fullPowerDistance = 360;
+    const rejected = [];
+    for (let sample = 0; sample < 3600; sample++) {
+      const angle = sample * Math.PI / 1800;
+      const aim = aimedThrowVelocity(400 * Math.cos(angle), 400 * Math.sin(angle), fullPowerDistance);
+      if (!validateAction(state, 'local', { type: 'grab', actor: 0, aim }).valid) rejected.push(sample / 10);
+    }
+    expect(rejected).toEqual([]);
+    const full = aimedThrowVelocity(-360, -360, fullPowerDistance);
+    expect(full.vx).toBeCloseTo(-meta.throw.maxSpeed / Math.sqrt(2), 10);
+    expect(full.vy).toBeCloseTo(full.vx, 10);
+    expect(aimedThrowVelocity(-90, 0, fullPowerDistance)).toEqual({ vx: -meta.throw.maxSpeed / 4, vy: 0 });
+  });
+
   test('without an aim the crate goes the default way; with one it leaves along the aim and the thrower turns to face it', () => {
     let state = send(carrying(), 'grab');
     expect(crate(state)).toMatchObject({ held: null, vx: meta.throw.default.vx, vy: meta.throw.default.vy });
