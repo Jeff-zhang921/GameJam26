@@ -1,3 +1,5 @@
+import { LEVELS } from './levels/index.js';
+
 export const meta = {
   name: 'CLOCKBLOOM', minPlayers: 1, maxPlayers: 2, tickRate: 60,
   controls: { speed: 4.2, airSpeed: 4.8, jump: -12.5, springJump: -15.3, gravity: 0.48, fallGravity: 0.8, maxFall: 16, jumpCut: 0.45, coyote: 7, jumpBuffer: 7, range: 420, reach: 95, pitReach: 50 },
@@ -5,40 +7,6 @@ export const meta = {
   plant: { maxHeight: 235, springHeight: 45, growTicks: 960, matureTicks: 480, witherTicks: 480 },
 };
 const STILL = 0, BLOOM = 1;
-
-const LEVELS = [
-  {
-    id: 'stillwater',
-    platforms: [{ x: 0, y: 520, w: 435, h: 160 }, { x: 795, y: 430, w: 485, h: 220 }],
-    spawn: [{ x: 180, y: 520 }, { x: 250, y: 520 }],
-    crates: [{ x: 350, y: 493 }], seeds: [], pits: [], plants: [], movers: [],
-    exit: { x: 1160, y: 430 }, shards: [{ x: 620, y: 300 }], need: ['frozenTouched'],
-  },
-  {
-    id: 'rootrise',
-    platforms: [{ x: 0, y: 540, w: 1280, h: 120 }, { x: 760, y: 290, w: 520, h: 360 }],
-    spawn: [{ x: 195, y: 540 }, { x: 270, y: 540 }],
-    crates: [], seeds: [{ x: 90, y: 530 }, { x: 380, y: 530 }], pits: [{ x: 600, y: 540 }], plants: [], movers: [],
-    exit: { x: 1160, y: 290 }, shards: [{ x: 600, y: 250 }], need: ['treeLifted'],
-  },
-  {
-    id: 'afterbloom',
-    platforms: [{ x: 0, y: 520, w: 1280, h: 140 }, { x: 1000, y: 265, w: 280, h: 400 }],
-    spawn: [{ x: 190, y: 520 }, { x: 265, y: 520 }],
-    crates: [], seeds: [{ x: 330, y: 510 }], pits: [{ x: 600, y: 520 }, { x: 880, y: 520 }],
-    plants: [{ pit: 0, grown: 1, barrier: true }], movers: [],
-    exit: { x: 1160, y: 265 }, shards: [{ x: 880, y: 300 }], need: ['withered', 'sproutJump'],
-  },
-  {
-    id: 'withtime',
-    platforms: [{ x: 0, y: 520, w: 520, h: 160 }, { x: 1040, y: 300, w: 240, h: 400 }],
-    spawn: [{ x: 250, y: 520 }, { x: 170, y: 520 }],
-    crates: [{ x: 300, y: 493 }], seeds: [{ x: 110, y: 510 }, { x: 150, y: 510 }, { x: 480, y: 510 }],
-    pits: [{ x: 400, y: 520 }, { x: 60, y: 520 }], plants: [],
-    movers: [{ x1: 540, x2: 640, y: 290, w: 120 }],
-    exit: { x: 1160, y: 300 }, shards: [{ x: 400, y: 240 }], need: ['treeLifted', 'moverRide', 'frozenTouched'],
-  },
-];
 
 const clone = value => JSON.parse(JSON.stringify(value));
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
