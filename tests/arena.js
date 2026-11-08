@@ -1,4 +1,5 @@
 import { setup, meta, plantSize } from '../src/logic.js';
+import { makeEnemy } from '../src/enemies.js';
 
 // The original first courtyard, kept as a fixed test arena so mechanics tests do not depend on how level 1 is
 // laid out: a start ledge (x 0-435, y 520) with one crate at (350, 493), a broken bridge, and the far ledge
@@ -95,5 +96,32 @@ export function afterbloomArena(options = {}) {
   s.pickups = [{ x: 760, y: 430, id: 'frost-0', kind: 'frost', taken: false }, { x: 450, y: 494, id: 'bolt-0', kind: 'bolt', taken: false }];
   s.exit = { x: 1160, y: 265 }; s.shards = [{ x: 880, y: 300, id: 0, taken: false }];
   s.needs = ['withered', 'sproutJump']; s.freezeCharges = 1; s.seeds = 1;
+  return s;
+}
+
+// The original fifth courtyard (the creature trials), kept as a fixed test arena on level index 4: two grounds
+// (y 520) either side of a jumpable rift (x 560-800), a guard patrolling the left ground, a lantern over the rift,
+// a dart launcher on the far right, an orb launcher above it and a nest; two lamps, two Freeze charges plus two
+// hourglasses, and spare bolts.
+export function trialsArena(options = {}) {
+  const s = setup({ ...options, level: 4 });
+  s.width = 1280; s.walkingTime = false;
+  s.platforms = [{ x: 0, y: 520, w: 560, h: 160 }, { x: 800, y: 520, w: 480, h: 160 }];
+  s.objects = [
+    { kind: 'guard', x: 330, y: 520, minX: 200, maxX: 430 },
+    { kind: 'lantern', x: 680, y: 330 },
+    { kind: 'launcher', x: 1250, y: 520, dir: [-1, 0], every: 150, shot: 'dart' },
+    { kind: 'launcher', x: 1000, y: 260, dir: [-1, 0], every: 240, shot: 'orb' },
+    { kind: 'nest', x: 1040, y: 520 },
+  ].map((e, i) => makeEnemy(e.kind, e, `${e.kind}-${i}`));
+  s.pits = []; s.nextPlant = 0; s.nextEnemy = s.objects.length;
+  s.actors.forEach((p, i) => Object.assign(p, { x: [60, 100][i], y: 520, spawnX: [60, 100][i], spawnY: 520 }));
+  s.checkpoints = [{ x: 520, y: 520 }, { x: 840, y: 520 }].map((c, i) => ({ id: `cp-${i}`, ...c, lit: false }));
+  s.pickups = [
+    ...[{ x: 130, y: 430 }, { x: 1110, y: 430 }].map((p, i) => ({ ...p, id: `frost-${i}`, kind: 'frost', taken: false })),
+    ...[{ x: 163, y: 494 }, { x: 907, y: 494 }].map((p, i) => ({ ...p, id: `bolt-${i}`, kind: 'bolt', taken: false })),
+  ];
+  s.exit = { x: 1170, y: 520 }; s.shards = [{ x: 680, y: 400, id: 0, taken: false }];
+  s.needs = ['dartRide', 'miteGone']; s.freezeCharges = 2; s.bloomCharges = meta.charges.bloomStart;
   return s;
 }

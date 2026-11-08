@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import { setup, applyAction, validateAction, meta, abilityCheck, abilityTargets, timeObjectAt, bloomTargetAt, bloomSupport, anchor } from '../src/logic.js';
-import { classicCourtyard, rootriseArena, withtimeArena, afterbloomArena } from './arena.js';
+import { classicCourtyard, rootriseArena, withtimeArena, afterbloomArena, trialsArena } from './arena.js';
 
 const send = (state, type, actor = 0, extra = {}) => {
   const action = { type, actor, ...extra };
@@ -45,8 +45,8 @@ describe('ability reach of 300 keeps every courtyard route open', () => {
     expect(abilityCheck(state, BLOOM, 'mover-0')).toBe('ok');
   });
 
-  test('courtyard 5: from either edge of the rift, Still can freeze a projectile flying above it', () => {
-    let state = setup({ level: 4 });
+  test('the creature trials: from either edge of the rift, Still can freeze a projectile flying above it', () => {
+    let state = trialsArena();
     // Only the geometry matters here: keep the guard and lantern from interrupting.
     state.objects = state.objects.filter(o => o.kind !== 'guard' && o.kind !== 'lantern');
     Object.assign(state.actors[STILL], { x: 545 });

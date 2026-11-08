@@ -272,7 +272,15 @@ export function createRenderer(canvas, S) {
     if (targeted) { const a = 32; ctx.strokeStyle = cyan; ctx.lineWidth = 1.5; for (const [x, y] of [[-a, -a], [a, -a], [-a, a], [a, a]]) line(ctx, [[x, y - Math.sign(y) * 8], [x, y], [x - Math.sign(x) * 8, y]], cyan); }
     ctx.restore();
   }
+  // Something keeping a traveller's pace wears their colour (Still teal, Bloom gold): a ring that turns with its own
+  // clock, so it spins one way while its walker walks right, back while they walk left, and rests while they stand.
+  const walkerColor = o => o.walker === 0 ? cyan : gold;
   function timeRing(x, y, r, o, t) {
+    if (o.walker !== undefined) {
+      glow(ctx, x, y, r * 1.5, o.walker === 0 ? '#a1e3e518' : '#e1c68a18');
+      ctx.save(); ctx.translate(x, y); ctx.rotate(o.clock * .012); ctx.setLineDash([8, 8]); circle(ctx, 0, 0, r, null, '#183e4288', 5); circle(ctx, 0, 0, r, null, walkerColor(o), 2.5); ctx.restore();
+      return;
+    }
     if (o.frozen) { glow(ctx, x, y, r * 1.7, '#9de3e527'); circle(ctx, x, y, r + Math.sin(t * .002) * 2, null, '#a1e3e570'); return; }
     if (!o.speed) return;
     ctx.save(); ctx.translate(x, y); ctx.rotate(t * .0012 * o.speed); ctx.setLineDash([6, 9]); circle(ctx, 0, 0, r, null, o.speed < 0 ? '#9fc4e888' : '#e1c68a88', 1.5); ctx.restore();
@@ -376,7 +384,8 @@ export function createRenderer(canvas, S) {
     else line(ctx, [[o.x1 + 6, o.y + 26], [o.x2 + o.w - 6, o.y + 26]], '#b6bea133', 1);
     const g = ctx.createLinearGradient(0, o.y, 0, o.y + 20); g.addColorStop(0, '#b9c0a4'); g.addColorStop(.4, '#647c66'); g.addColorStop(1, '#1b3839');
     ctx.fillStyle = g; ctx.beginPath(); ctx.roundRect(o.x, o.y, o.w, 20, 4); ctx.fill();
-    line(ctx, [[o.x, o.y - 1], [o.x + o.w, o.y - 1]], '#e5ddba', 1.5); circle(ctx, o.x + o.w / 2, o.y + 10, 5, '#183e42', o.speed ? gold : '#8aa89b', 1.5);
+    const rim = o.walker !== undefined ? walkerColor(o) : null;
+    line(ctx, [[o.x, o.y - 1], [o.x + o.w, o.y - 1]], rim ?? '#e5ddba', rim ? 2.5 : 1.5); circle(ctx, o.x + o.w / 2, o.y + 10, 5, '#183e42', rim ?? (o.speed ? gold : '#8aa89b'), 1.5);
     if (targeted) { const a = o.w / 2 + 6, cx = o.x + o.w / 2, cy = o.y + 10; for (const [x, y] of [[-a, -18], [a, -18], [-a, 18], [a, 18]]) line(ctx, [[cx + x, cy + y - Math.sign(y) * 8], [cx + x, cy + y], [cx + x - Math.sign(x) * 8, cy + y]], gold); }
   }
   function checkpoint(cp, active, t) {
