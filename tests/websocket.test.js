@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { createGameServer } from '../server.js';
-import { setup } from '../src/logic.js';
+import { meta, setup } from '../src/logic.js';
 import { rootriseArena } from './arena.js';
 
 const servers = [], sockets = [];
@@ -46,6 +46,41 @@ async function start(pair) {
 }
 
 describe('real WebSocket multiplayer', () => {
+  test('both clients see Still collect the hourglass from the edge of the mature cap', async () => {
+    const server = serve(), p = await pair(server);
+    await start(p);
+    p.room.game = setup({ level: 4, players: p.room.game.playerIds });
+    p.room.epoch++;
+    const plant = p.room.game.objects.find(o => o.id === 'plant-0');
+    const { growTicks, maxHeight } = meta.plant;
+    Object.assign(plant, { age: growTicks - 4, height: maxHeight * (growTicks - 4) / growTicks });
+    Object.assign(p.room.game.actors[0], { x: plant.x + 84, y: plant.base - plant.height, on: plant.id });
+    p.host.send({ type: 'input', seq: 1, action: { type: 'move', dir: 1 } });
+
+    const collected = await p.host.next('snapshot', m => m.game.level === 4 && m.game.pickups[0].taken);
+    expect(collected.game.freezeCharges).toBe(1);
+    const partner = await p.guest.next('snapshot', m => m.game.level === 4 && m.game.tick === collected.game.tick);
+    expect(partner.game.freezeCharges).toBe(1);
+    expect(partner.game.pickups[0].taken).toBe(true);
+  });
+
+  test('Bloom ages the rope and both clients see the same crate release', async () => {
+    const server = serve(), p = await pair(server);
+    await start(p);
+    p.room.game = setup({ level: 4, players: p.room.game.playerIds });
+    p.room.epoch++;
+    const rope = p.room.game.objects.find(o => o.id === 'rope-0');
+    Object.assign(p.room.game.actors[1], { x: rope.x + 50, y: 520, on: 'platform-2' });
+    p.host.send({ type: 'input', seq: 1, action: { type: 'ability', target: 'rope-0' } });
+
+    const aging = await p.host.next('snapshot', m => m.game.level === 4 && m.game.objects.some(o => o.id === 'rope-0' && o.age > 0));
+    expect(aging.game.bloomCharges).toBe(0);
+    expect((await p.guest.next('snapshot', m => m.game.level === 4 && m.game.tick === aging.game.tick)).game).toEqual(aging.game);
+    const dropped = await p.host.next('snapshot', m => m.game.level === 4 && m.game.objects.some(o => o.id === 'crate-0' && !o.rope && o.vy > 0), 3500);
+    expect(dropped.game.objects.some(o => o.id === 'rope-0')).toBe(false);
+    expect((await p.guest.next('snapshot', m => m.game.level === 4 && m.game.tick === dropped.game.tick)).game).toEqual(dropped.game);
+  });
+
   test('static routes and WebSocket origin boundary stay on the same server', async () => {
     const server = serve();
     expect((await fetch(server.url)).status).toBe(200);

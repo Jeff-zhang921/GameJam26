@@ -222,6 +222,7 @@ export function playEffect(context, event) {
   const profiles = {
     step: [110, 65, .065, .018], collision: [150, 55, .12, .035],
     seedLand: [700, 260, .09, .025], crateLand: [100, 35, .2, .045],
+    ropeFray: [360, 110, .085, .024], ropeSnap: [190, 55, .14, .048],
     grab: [400, 650, .1, .02], drop: [500, 200, .12, .02],
     throw: [600, 160, .18, .025],
     wither: [420, 140, .4, .018], switch: [520, 780, .12, .018],
@@ -236,7 +237,7 @@ export function playEffect(context, event) {
   const [from, to, duration, volume] = profile;
   const gain = context.createGain(), oscillator = context.createOscillator();
   const strength = kind === 'land' ? .3 + .7 * (event.strength ?? 1) : 1;
-  oscillator.type = ['step', 'collision', 'crateLand'].includes(kind) ? 'triangle' : 'sine';
+  oscillator.type = ['step', 'collision', 'crateLand', 'ropeFray', 'ropeSnap'].includes(kind) ? 'triangle' : 'sine';
   oscillator.frequency.setValueAtTime(from, now);
   oscillator.frequency.exponentialRampToValueAtTime(to, now + duration);
   gain.gain.setValueAtTime(0, now);

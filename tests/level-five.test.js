@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { setup, applyAction, validateAction, abilityTargets, meta } from '../src/logic.js';
+import { setup, applyAction, validateAction, abilityTargets, bloomTargetAt, canopyWidth, meta } from '../src/logic.js';
 import { LEVELS } from '../src/levels/index.js';
 
 // Courtyard 5, the hidden one: teal things keep Still's pace and gold things Bloom's. Walking right runs their time
@@ -29,11 +29,11 @@ function drive(s, who, id, end) {
 }
 
 describe('courtyard 5 layout', () => {
-  test('a walking-time courtyard with no abilities', () => {
+  test('a walking-time courtyard with one Bloom charge for the hanging crate', () => {
     const s = setup({ level: 4 });
     expect(s.walkingTime).toBe(true);
     expect(s.freezeCharges).toBe(0);
-    expect(s.bloomCharges).toBe(0);
+    expect(s.bloomCharges).toBe(1);
     expect(abilityTargets(s, BLOOM)).toHaveLength(0);
     expect(s.objects.filter(o => o.walker === 0).map(o => o.id)).toEqual(['mover-0', 'mover-3']);
     expect(s.objects.filter(o => o.walker === 1).map(o => o.id)).toEqual(['mover-1', 'mover-2', 'plant-0']);
@@ -50,6 +50,136 @@ describe('courtyard 5 layout', () => {
       expect(s.actors[STILL].on === 'platform-2').toBe(false);
     }
   });
+});
+
+test('Bloom can aim at and age the rope, then the released crate falls and can be picked up', () => {
+  let s = setup({ level: 4 });
+  const rope = get(s, 'rope-0'), crate = get(s, rope.crate);
+  const cast = { type: 'ability', actor: BLOOM, target: rope.id };
+  expect(rope.top).toBe(s.platforms[1].y + s.platforms[1].h);
+  expect(rope.bottom).toBe(crate.y - 27);
+  expect(validateAction(s, 'local', cast).valid).toBe(false);
+  s = tick(s, meta.rope.breakTicks * 2);
+  expect(get(s, rope.id).age).toBe(0);
+  expect(get(s, crate.id).y).toBe(crate.y);
+
+  stand(s, BLOOM, crate.x + 60, crate.y + 30, null);
+  expect(validateAction(s, 'local', { type: 'grab', actor: BLOOM }).valid).toBe(false);
+  stand(s, BLOOM, crate.x + 50, 520, 'platform-2');
+  expect(bloomTargetAt(s, { x: rope.x, y: rope.bottom - 4 })?.id).toBe(rope.id);
+  expect(abilityTargets(s, BLOOM).map(o => o.id)).toEqual([rope.id]);
+  s = act(s, cast);
+  expect(s.bloomCharges).toBe(0);
+  s = tick(s, meta.rope.breakTicks - 1);
+  expect(get(s, crate.id)).toMatchObject({ rope: rope.id });
+  expect(get(s, crate.id).y).toBeGreaterThan(crate.y + 10);
+  expect(s.events.filter(e => e.kind === 'ropeFray')).toHaveLength(2);
+  s = tick(s);
+  expect(get(s, rope.id)).toBeUndefined();
+  expect(get(s, crate.id).rope).toBeUndefined();
+  expect(get(s, crate.id).y).toBeGreaterThan(crate.y);
+  expect(s.events.filter(e => e.kind === 'ropeSnap')).toHaveLength(1);
+  s = tick(s, 60);
+  expect(get(s, crate.id)).toMatchObject({ y: 493, vy: 0, held: null });
+  s = act(s, { type: 'grab', actor: BLOOM });
+  expect(s.actors[BLOOM].carrying).toBe(crate.id);
+
+  const restarted = act(s, { type: 'restart' });
+  expect(get(restarted, rope.id)).toEqual(rope);
+  expect(get(restarted, crate.id)).toEqual(crate);
+  expect(restarted.bloomCharges).toBe(1);
+});
+
+test('Still can ride the sprout to its full height to collect the hourglass', () => {
+  let s = setup({ level: 4 });
+  const [hourglass] = s.pickups, plant = get(s, 'plant-0');
+  stand(s, STILL, hourglass.x, hourglass.y + 52, null);
+  s = tick(s);
+  expect(s.pickups[0].taken).toBe(false);
+
+  s = setup({ level: 4 });
+  s = walkUntil(s, STILL, -1, s2 => s2.actors[STILL].x <= plant.x + 45);
+  s = act(s, { type: 'jump', actor: STILL });
+  s = walkUntil(s, STILL, -1, s2 => Math.abs(s2.actors[STILL].x - plant.x) < 5);
+  s = tick(s, 48);
+  s = act(s, { type: 'jumpRelease', actor: STILL });
+  expect(s.actors[STILL].on).toBe(plant.id);
+  expect(s.freezeCharges).toBe(0);
+  s = walkUntil(s, BLOOM, 1, s2 => get(s2, plant.id).height === meta.plant.maxHeight);
+  expect(s.freezeCharges).toBe(1);
+  expect(s.actors[STILL].on).toBe(plant.id);
+});
+
+test('the mature cap awards the hourglass to a rider at either edge', () => {
+  for (const side of [-1, 1]) {
+    let s = setup({ level: 4 });
+    const plant = get(s, 'plant-0');
+    Object.assign(plant, { age: meta.plant.growTicks, height: meta.plant.maxHeight });
+    stand(s, STILL, plant.x + side * (canopyWidth(plant) / 2 - 25), plant.base - plant.height, plant.id);
+    s = tick(s);
+    expect(s.actors[STILL].on).toBe(plant.id);
+    expect(s.freezeCharges).toBe(1);
+    expect(s.pickups[0].taken).toBe(true);
+  }
+});
+
+test('Still can touch the hourglass in the air when Bloom finishes growing the cap', () => {
+  let s = setup({ level: 4 });
+  const plant = get(s, 'plant-0'), { growTicks, maxHeight } = meta.plant;
+  plant.age = growTicks - 4;
+  plant.height = maxHeight * plant.age / growTicks;
+  stand(s, STILL, plant.x, plant.base - plant.height, plant.id);
+  s = tick(act(s, { type: 'jump', actor: STILL }));
+  expect(s.actors[STILL].grounded).toBe(false);
+  expect(s.pickups[0].taken).toBe(false);
+
+  s = tick(move(s, BLOOM, 1), 2);
+  expect(s.actors[STILL].grounded).toBe(false);
+  expect(s.pickups[0].taken).toBe(true);
+  expect(s.freezeCharges).toBe(1);
+});
+
+test('the guard patrols all the way to both ends of the ground under the gate', () => {
+  let s = setup({ level: 4 });
+  const guard = s.objects.find(o => o.kind === 'guard'), floor = s.platforms[2];
+  expect(guard).toMatchObject({ x: s.exit.x, y: floor.y });
+  let min = guard.x, max = guard.x;
+  for (let i = 0; i < 1550; i++) {
+    s = tick(s);
+    const x = get(s, guard.id).x;
+    min = Math.min(min, x); max = Math.max(max, x);
+  }
+  expect(min).toBeCloseTo(floor.x + 26);
+  expect(max).toBeCloseTo(floor.x + floor.w - 26);
+});
+
+test('both lifts wait for the crate and start above jump height', () => {
+  let s = setup({ level: 4 });
+  s = tick(move(move(s, STILL, 1), BLOOM, 1), 45);
+  s = move(move(s, STILL, 0), BLOOM, 0);
+  for (const id of ['mover-2', 'mover-3']) {
+    const lift = get(s, id);
+    expect(lift).toMatchObject({ y: lift.y2, clock: 0 });
+    const standX = id === 'mover-2' ? lift.x - 22 : lift.x + lift.w + 22;
+    stand(s, STILL, standX, s.platforms[2].y, 'platform-2');
+    s = act(s, { type: 'jump', actor: STILL });
+    for (let i = 0; i < 60; i++) {
+      s = tick(s);
+      expect(s.actors[STILL].y).toBeGreaterThan(lift.y2);
+    }
+    s = act(s, { type: 'jumpRelease', actor: STILL });
+  }
+});
+
+test('the far checkpoint is reachable by jumping from the ground outside the guard patrol height', () => {
+  let s = setup({ level: 4 });
+  const cp = s.checkpoints[0];
+  stand(s, STILL, 1430, s.platforms[2].y, 'platform-2');
+  s = act(s, { type: 'jump', actor: STILL });
+  for (let i = 0; i < 26 && s.actors[STILL].y > cp.y; i++) s = tick(s);
+  s = walkUntil(s, STILL, -1, s2 => s2.actors[STILL].checkpoint === cp.id);
+  s = tick(s, 35);
+  expect(s.actors[STILL].on).toBe('platform-3');
 });
 
 describe('courtyard 5: time keeps pace', () => {
@@ -123,20 +253,34 @@ describe('courtyard 5: room to walk', () => {
 });
 
 describe('courtyard 5 can be finished', () => {
-  test('Still rides the sprout to the shard, the ferries carry each across, the lifts carry each up', () => {
+  function hopFromCrate(s, who, liftId, direction) {
+    const crate = get(s, 'crate-0'), lift = get(s, liftId);
+    s = act(s, { type: 'jump', actor: who });
+    s = walkUntil(s, who, Math.sign(crate.x - s.actors[who].x), s2 => Math.abs(s2.actors[who].x - crate.x) < 5);
+    s = tick(s, 48);
+    expect(s.actors[who].on).toBe(crate.id);
+    s = act(s, { type: 'jumpRelease', actor: who });
+    s = act(s, { type: 'jump', actor: who });
+    for (let i = 0; i < 28 && s.actors[who].y > lift.y; i++) s = tick(s);
+    s = walkUntil(s, who, direction, s2 => s2.actors[who].on === liftId);
+    return act(s, { type: 'jumpRelease', actor: who });
+  }
+
+  test('collect the hourglass, cross by ferry, release the crate and climb both lifts past the guard', () => {
     let s = setup({ level: 4 });
-    // The shard: Still stands on the sprout, Bloom walks right until it is full grown.
+    // Still collects the shard and the hourglass as Bloom grows the mushroom.
     stand(s, STILL, 110, 520 - get(s, 'plant-0').height, 'plant-0');
-    s = walkUntil(s, BLOOM, 1, s2 => get(s2, 'plant-0').height >= meta.plant.maxHeight - 1, 400);
+    s = walkUntil(s, BLOOM, 1, s2 => get(s2, 'plant-0').height === meta.plant.maxHeight);
     expect(s.actors[STILL].on).toBe('plant-0');
     expect(s.shards[0].taken).toBe(true);
+    expect(s.freezeCharges).toBe(1);
     expect(s.flags.treeLifted).toBe(true);
     // Back on the ground (placed), Still walks the teal ferry home, then Bloom hops on.
     stand(s, STILL, 250, 520, 'platform-0'); stand(s, BLOOM, 700, 520, 'platform-0');
     s = drive(s, STILL, 'mover-0', 'lo');
     stand(s, BLOOM, 830, 470, 'mover-0');
     // Still walks; the teal ferry carries Bloom across; Bloom steps off onto the far ground.
-    s = drive(s, STILL, 'mover-0', 'hi');
+    s = walkUntil(s, STILL, 1, s2 => get(s2, 'mover-0').x >= level.movers[0].x2 - 3);
     expect(s.actors[BLOOM].on).toBe('mover-0');
     s = walkUntil(s, BLOOM, 1, s2 => s2.actors[BLOOM].on === 'platform-2' && s2.actors[BLOOM].x > 1500);
     // Bloom walks the gold ferry back to the start ground; Still steps off the edge onto it.
@@ -148,26 +292,49 @@ describe('courtyard 5 can be finished', () => {
     s = act(s, { type: 'jump', actor: STILL });
     s = walkUntil(s, STILL, 1, s2 => s2.actors[STILL].on === 'platform-2');
     s = act(s, { type: 'jumpRelease', actor: STILL });
-    // The gold lift: Bloom brings it down, Still jumps on from below, Bloom walks it up, Still steps onto the plateau.
-    stand(s, BLOOM, 1350, 520, 'platform-2');
+    // Bloom drops the crate by the gold lift. Still slows the guard before heading up.
+    stand(s, BLOOM, 1730, 520, 'platform-2');
+    stand(s, STILL, 1830, 520, 'platform-2');
+    s = act(s, { type: 'ability', actor: BLOOM, target: 'rope-0' });
+    s = tick(s, meta.rope.breakTicks + 60);
     s = drive(s, BLOOM, 'mover-2', 'hi');
-    stand(s, STILL, 1690, 520, 'platform-2');
-    s = act(s, { type: 'jump', actor: STILL }); s = tick(s, 50); s = act(s, { type: 'jumpRelease', actor: STILL });
+    const guard = s.objects.find(o => o.kind === 'guard');
+    for (let i = 0; i < 450 && get(s, guard.id).x > 2115; i++) s = tick(s);
+    s = act(s, { type: 'ability', actor: STILL, x: 2000, y: 495 });
+    expect(get(s, guard.id).frozen).toBe(true);
+    s = hopFromCrate(s, STILL, 'mover-2', -1);
+    s = walkUntil(s, BLOOM, -1, s2 => get(s2, 'mover-2').y <= 103);
     expect(s.actors[STILL].on).toBe('mover-2');
-    s = drive(s, BLOOM, 'mover-2', 'lo');
-    expect(s.actors[STILL].on).toBe('mover-2');
+    s = act(s, { type: 'jump', actor: STILL });
     s = walkUntil(s, STILL, 1, s2 => s2.actors[STILL].on === 'platform-1' && s2.actors[STILL].x > 1800);
-    // The teal lift: Still walks on the plateau to bring it down, Bloom jumps on, Still walks it up.
-    stand(s, BLOOM, 2310, 520, 'platform-2');
+    s = act(s, { type: 'jumpRelease', actor: STILL });
+    // Bloom carries the crate over the slowed guard and sets it beside the teal lift.
+    const crateX = get(s, 'crate-0').x, dx = crateX - s.actors[BLOOM].x;
+    if (Math.abs(dx) > 70) s = walkUntil(s, BLOOM, Math.sign(dx), s2 => Math.abs(s2.actors[BLOOM].x - crateX) < 70);
+    s = act(s, { type: 'grab', actor: BLOOM });
+    s = walkUntil(s, BLOOM, 1, s2 => s2.actors[BLOOM].x >= get(s2, guard.id).x - 78);
+    s = act(s, { type: 'jump', actor: BLOOM });
+    s = walkUntil(s, BLOOM, 1, s2 => s2.actors[BLOOM].x >= 2120);
+    s = act(s, { type: 'jumpRelease', actor: BLOOM });
+    s = walkUntil(s, BLOOM, 1, s2 => s2.actors[BLOOM].x >= 2174);
+    s = act(s, { type: 'grab', actor: BLOOM, aim: { vx: 0, vy: 4 } });
+    s = tick(s, 8);
+    expect(get(s, 'crate-0').x).toBeGreaterThan(2180);
+    expect(get(s, 'crate-0').x).toBeLessThan(2240);
     s = drive(s, STILL, 'mover-3', 'hi');
     expect(s.actors[STILL].on).toBe('platform-1');
-    s = act(s, { type: 'jump', actor: BLOOM }); s = tick(s, 50); s = act(s, { type: 'jumpRelease', actor: BLOOM });
+    s = hopFromCrate(s, BLOOM, 'mover-3', 1);
+    s = walkUntil(s, BLOOM, 1, s2 => s2.actors[BLOOM].x >= level.movers[3].x + 30);
+    const roomToWalk = s.actors[STILL].x < level.exit.x ? 1 : -1;
+    s = walkUntil(s, STILL, roomToWalk, s2 => get(s2, 'mover-3').y <= 103);
+    expect(s.actors[STILL].on).toBe('platform-1');
     expect(s.actors[BLOOM].on).toBe('mover-3');
-    s = drive(s, STILL, 'mover-3', 'lo');
-    expect(s.actors[BLOOM].on).toBe('mover-3');
+    s = act(s, { type: 'jump', actor: BLOOM });
     s = walkUntil(s, BLOOM, -1, s2 => s2.actors[BLOOM].on === 'platform-1' && s2.actors[BLOOM].x < 2200);
-    stand(s, STILL, level.exit.x - 10, 100, 'platform-1'); stand(s, BLOOM, level.exit.x + 10, 100, 'platform-1');
-    s = tick(s, 2);
+    s = act(s, { type: 'jumpRelease', actor: BLOOM });
+    s = walkUntil(s, STILL, Math.sign(level.exit.x - s.actors[STILL].x), s2 => Math.abs(s2.actors[STILL].x - level.exit.x) < 22);
+    s = move(s, BLOOM, -1);
+    for (let i = 0; i < 80 && s.status !== 'won'; i++) s = tick(s);
     expect(s.status).toBe('won');
   });
 });
