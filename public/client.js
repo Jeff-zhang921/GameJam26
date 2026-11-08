@@ -767,7 +767,11 @@ function touchAction(type) {
   }
   const actor = touchActor();
   if (type === 'ability') {
-    if (actor !== 1 || !castUnderfoot(lastView)) toast(actor === 1 ? S.speedUnderfoot : S.aimTouch);
+    if (actor === 1) {
+      const target = defaultBloomTarget(lastView);
+      if (target) castSkill({ actor, target, reason: abilityCheck(lastView, actor, target) });
+      else toast(S.errors[lastView?.bloomCharges <= 0 ? 'noBloomCharges' : 'bloomRange']);
+    } else toast(S.aimTouch);
     return;
   }
   if (type === 'jump') {
@@ -779,6 +783,20 @@ const interactButton = document.querySelector('.touch-interact');
 const abilityButton = document.querySelector('.touch-ability');
 const cancelAimButton = document.querySelector('.touch-cancel');
 const skillCharges = (view, actor) => actor === 0 ? view.freezeCharges : view.bloomCharges;
+
+function defaultBloomTarget(view) {
+  const player = view?.actors[1];
+  if (!player) return null;
+  const candidates = abilityTargets(view, 1).filter(target => abilityCheck(view, 1, target.id) === 'ok');
+  const support = bloomSupport(view);
+  if (support && candidates.some(target => target.id === support.id)) return support.id;
+  let closest = null, distance = Infinity;
+  for (const target of candidates) {
+    const point = anchor(target), next = Math.hypot(point.x - player.x, point.y - player.y);
+    if (next < distance) { closest = target.id; distance = next; }
+  }
+  return closest;
+}
 
 function clearSkillAim() {
   if (!skillAim) return;
@@ -794,7 +812,7 @@ function updateSkillAim(event) {
   if (!skillAim || (event && skillAim.pointer !== event.pointerId)) return;
   if (event) { skillAim.x = event.clientX; skillAim.y = event.clientY; }
   const distance = Math.hypot(skillAim.x - skillAim.startX, skillAim.y - skillAim.startY);
-  if (!skillAim.active && (distance >= 8 || performance.now() - skillAim.started >= 160)) {
+  if (!skillAim.active && (skillAim.defaultTarget || distance >= 8 || performance.now() - skillAim.started >= 160)) {
     skillAim.active = true;
     cancelAimButton.hidden = false; cancelAimButton.setAttribute('aria-label', S.cancelAim);
     document.body.classList.add('skill-aiming');
@@ -834,9 +852,9 @@ function aimPreview(view) {
   if (!player) return null;
   const still = actor === 0, range = still ? meta.freeze.range : meta.controls.range;
   const offset = skillAimOffset(x - startX, y - startY, travel, range);
-  if (!still && !offset) {
-    const support = bloomSupport(view);
-    if (support) return { actor, origin: { x: player.x, y: player.y }, range, point: anchor(support), target: support.id, reason: abilityCheck(view, actor, support.id) };
+  if (!still && !offset && skillAim.defaultTarget) {
+    const target = view.objects.find(object => object.id === skillAim.defaultTarget);
+    return { actor, origin: { x: player.x, y: player.y }, range, point: target ? anchor(target) : null, target: skillAim.defaultTarget, reason: abilityCheck(view, actor, skillAim.defaultTarget) };
   }
   const point = offset && { x: Math.max(0, Math.min(view.width, player.x + offset.x)), y: Math.max(0, Math.min(view.height, player.y - (still ? 30 : 0) + offset.y)) };
   return skillPreview(view, actor, point);
@@ -865,13 +883,14 @@ function castUnderfoot(view) {
 function finishSkillAim(event, released) {
   if (skillAim?.pointer !== event.pointerId) return;
   updateSkillAim(event);
-  const { actor, active, overCancel, x, y, startX, startY } = skillAim;
+  const { actor, active, overCancel, x, y, startX, startY, defaultTarget } = skillAim;
   const aimed = active && Math.hypot(x - startX, y - startY) >= 8;
   const preview = aimPreview(lastView);
   clearSkillAim();
   if (!released || overCancel || viewport.blocked || modal || stageBusy() || rewind || actor !== touchActor()) return;
   if (!aimed) {
-    if (actor !== 1 || !castUnderfoot(lastView)) toast(actor === 1 ? S.speedUnderfoot : S.aimTouch);
+    if (actor === 1 && defaultTarget) castSkill(preview);
+    else toast(actor === 1 ? S.errors[lastView?.bloomCharges <= 0 ? 'noBloomCharges' : 'bloomRange'] : S.aimTouch);
     return;
   }
   castSkill(preview);
@@ -960,7 +979,9 @@ for (const button of document.querySelectorAll('[data-touch]')) {
     try { button.setPointerCapture(event.pointerId); } catch { }
     if (button === abilityButton) {
       const { clientX: x, clientY: y, pointerId: pointer } = event;
-      skillAim = { pointer, actor: touchActor(), x, y, startX: x, startY: y, started: performance.now(), travel: Math.max(76, button.clientWidth * 1.15), active: false, overCancel: false };
+      const actor = touchActor(), defaultTarget = actor === 1 ? defaultBloomTarget(lastView) : null;
+      skillAim = { pointer, actor, defaultTarget, x, y, startX: x, startY: y, started: performance.now(), travel: Math.max(76, button.clientWidth * 1.15), active: false, overCancel: false };
+      updateSkillAim();
     } else if (button === interactButton && interactionFor(ownState(), touchActor()).kind === 'throw') {
       const { clientX: x, clientY: y, pointerId: pointer } = event;
       throwAim = { pointer, actor: touchActor(), x, y, startX: x, startY: y, travel: Math.max(90, button.clientWidth * 1.4), active: false, overCancel: false };
