@@ -41,13 +41,13 @@ test('targets the nearest of two eligible players and releases one that leaves t
   expect(guardTarget(s, g)).toBeNull();
 });
 
-test('holds its target for three seconds even when another player is closer', () => {
+test('holds its target for two seconds even when another player is closer', () => {
   const s = setup({ level: 1 }), g = guard(s);
   stand(s, 0, 3, 1000); stand(s, 1, 3, 1250);
   update(s);
   expect(g.target).toBe(0);
   const acquiredAt = s.tick;
-  for (let i = 1; i < 3 * meta.tickRate; i++) {
+  for (let i = 1; i < 2 * meta.tickRate; i++) {
     g.x = 1100;
     // The locked player is airborne above the same platform, outside acquisition range.
     Object.assign(s.actors[0], { x: 820, y: 465, grounded: false, on: null });
@@ -56,7 +56,7 @@ test('holds its target for three seconds even when another player is closer', ()
     expect(g.target).toBe(0);
   }
   update(s);
-  expect(s.tick - acquiredAt).toBe(3 * meta.tickRate);
+  expect(s.tick - acquiredAt).toBe(2 * meta.tickRate);
   expect(g.target).toBe(1);
 });
 
