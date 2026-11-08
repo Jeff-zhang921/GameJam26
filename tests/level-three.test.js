@@ -111,11 +111,11 @@ describe('courtyard 3 layout', () => {
     expect(s.pits.find(p => p.x === farPit.x && p.wall === -1).plant).not.toBeNull();
   });
 
-  test('resources: three seeds in hand and a spare, enough Bloom charges for three wakes', () => {
+  test('resources: three seeds in hand and three spares, enough Bloom charges for three wakes and a canyon redo', () => {
     const s = setup({ level: 2 });
     expect(s.seeds).toBe(3);
-    expect(s.objects.filter(o => o.kind === 'seed')).toHaveLength(1);
-    expect(s.bloomCharges + s.pickups.filter(c => c.kind === 'bolt').length).toBeGreaterThanOrEqual(4);
+    expect(s.objects.filter(o => o.kind === 'seed')).toHaveLength(3);
+    expect(s.bloomCharges + s.pickups.filter(c => c.kind === 'bolt').length).toBeGreaterThanOrEqual(5);
     expect(s.checkpoints.map(c => c.y)).toEqual([high.y, far.y]);
   });
 });
