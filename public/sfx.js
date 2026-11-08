@@ -360,6 +360,8 @@ export function playEffect(context, event) {
     shard: [880, 1760, .45, .025],
     return: [180, 440, .35, .02],
     hit: [300, 90, .35, .035], checkpoint: [523, 1046, .5, .025], strike: [260, 70, .18, .04],
+    splash: [480, 140, .22, .026], mist: [300, 620, .55, .012], cloudForm: [520, 880, .3, .016], rain: [760, 260, .5, .014],
+    cloudFade: [880, 440, .35, .018],
   };
   const profile = profiles[kind]; if (!profile) return;
   const [from, to, duration, volume] = profile;

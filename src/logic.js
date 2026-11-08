@@ -23,6 +23,18 @@ export const meta = {
   // A carried crate is thrown with an aimed velocity up to `maxSpeed`; without an aim it uses `default` (x is
   // multiplied by the thrower's facing). The crate leaves from `offset` beside the thrower's chest.
   throw: { maxSpeed: 11, default: { vx: 6.8, vy: -6 }, offset: { x: 48, y: -48 } },
+  // A cloud and the water in its pool are one thing in two forms, on a clock of its own that always runs: the water
+  // lies in its pool for `waterTicks`, rises as mist over `formTicks`, holds as a cloud for `cloudTicks` (cloud :
+  // water is 1 : 6) and rains back over `rainTicks`. Only the fully formed cloud is solid; it is `h` thick. Bloom's
+  // Speed runs its clock (1 + speed) times as fast; a Freeze Area slows it, so whichever form it is in lasts longer.
+  // Neither carries over: once the change into the other form is complete, Speed is gone and the Freeze Areas cast
+  // on the old form no longer hold it (a new one does). The first time anyone stands on a newly formed cloud, it
+  // blinks and rains back after `standTicks` (real time, whatever its clock), or sooner if it had less time left.
+  cloud: { waterTicks: 1440, formTicks: 60, cloudTicks: 240, rainTicks: 60, standTicks: 180, h: 20 },
+  // In water a traveller moves sideways at `move` of their speed and their vertical speed is damped by `drag` each
+  // tick; a loose crate is damped by `itemDrag` each tick of its local time. Both scale with how deep they are in it
+  // (a full pool reaches a traveller's waist).
+  water: { move: 0.5, drag: 0.85, itemDrag: 0.85 },
 };
 const STILL = 0, BLOOM = 1;
 
@@ -54,8 +66,44 @@ export function attachHeld(state) {
   return state;
 }
 
+// Where a cloud is in its cycle: `form` is 'water', 'mist' (rising into a cloud), 'cloud' or 'rain' (falling back
+// into the pool); `mist` is how much cloud there is (0..1) and `fill` how full the pool is (0..1).
+export function cloudPhase(o) {
+  const { waterTicks, formTicks, cloudTicks, rainTicks } = meta.cloud, length = waterTicks + formTicks + cloudTicks + rainTicks;
+  let u = ((o.age % length) + length) % length;
+  if (u < waterTicks) return { form: 'water', mist: 0, fill: 1 };
+  if ((u -= waterTicks) < formTicks) { const k = u / formTicks; return { form: 'mist', mist: k, fill: 1 - k }; }
+  if ((u -= formTicks) < cloudTicks) return { form: 'cloud', mist: 1, fill: 0 };
+  const k = (u - cloudTicks) / rainTicks;
+  return { form: 'rain', mist: 1 - k, fill: k };
+}
+export const cloudSolid = o => cloudPhase(o).form === 'cloud';
+// The cloud's clock at the moment it starts to rain back, in its current cycle (while it is a cloud, `rainStart(o) -
+// o.age` is how many of its own ticks it has left).
+function rainStart(o) {
+  const { waterTicks, formTicks, cloudTicks, rainTicks } = meta.cloud, length = waterTicks + formTicks + cloudTicks + rainTicks;
+  return o.age - (((o.age % length) + length) % length) + waterTicks + formTicks + cloudTicks;
+}
+// The cloud's body (solid only while it is fully formed) and the water in its pool right now.
+const cloudRect = o => ({ x: o.x - o.w / 2, y: o.y, w: o.w, h: meta.cloud.h });
+export function waterRect(o) {
+  const h = o.pool.h * cloudPhase(o).fill;
+  return { x: o.pool.x, y: o.pool.y + o.pool.h - h, w: o.pool.w, h };
+}
+// How deep a box stands in any water, as a fraction (0..1) of that pool's full depth.
+function wetness(state, box) {
+  let wet = 0;
+  for (const o of state.objects) {
+    if (o.kind !== 'cloud') continue;
+    const r = waterRect(o);
+    if (r.h > 0 && rectOverlap(box, r)) wet = Math.max(wet, (Math.min(box.y + box.h, r.y + r.h) - Math.max(box.y, r.y)) / o.pool.h);
+  }
+  return Math.min(1, wet);
+}
+
 export function anchor(o) {
   if (isEnemy(o)) { const b = enemyBox(o); return { x: b.x + b.w / 2, y: b.y + b.h / 2 }; }
+  if (o.kind === 'cloud') return { x: o.x, y: o.y + meta.cloud.h / 2 };
   if (o.kind === 'plant') return o.wall ? { x: o.x + o.wall * o.height / 2, y: o.base - 2 } : { x: o.x, y: o.base - o.height / 2 };
   if (o.kind === 'mover') return { x: o.x + o.w / 2, y: o.y + 10 };
   return { x: o.x, y: o.y };
@@ -111,6 +159,7 @@ function makeLevel(index, players, unlocked, totalShards, collected = LEVELS.map
     kind: 'crate', id: `crate-${i}`, x: p.x, y: p.y, vx: 0, vy: 0, frozen: false, held: null,
     spawnX: p.x, spawnY: p.respawnY ?? p.y, ...(p.ropeTop !== undefined && { rope: `rope-${i}` }),
     ...(p.respawnBelow !== undefined && { respawnBelow: p.respawnBelow }),
+    ...(p.respawnRight !== undefined && { respawnRight: p.respawnRight }),
   }));
   const ropes = level.crates.flatMap((p, i) => {
     if (p.ropeTop === undefined) return [];
@@ -126,6 +175,11 @@ function makeLevel(index, players, unlocked, totalShards, collected = LEVELS.map
     ...movers,
     ...level.plants.map((p, i) => makePlant(`plant-${i}`, pits[p.pit], p)),
     ...[...(level.enemies ?? []), ...mounted].map((e, i) => makeEnemy(e.kind, e, `${e.kind}-${i}`)),
+    // A cloud: its middle `x`, its top `y` and width `w`, and the `pool` its water fills; `age` sets where in its
+    // cycle it starts (0: a full pool).
+    // `immune`: the Freeze Areas cast on its previous form, which no longer hold it. `stood`: someone has stood on
+    // this cloud since it formed; `vanish` / `vanishTotal`: real ticks left / at first in its countdown to rain.
+    ...(level.clouds ?? []).map((c, i) => ({ kind: 'cloud', id: `cloud-${i}`, x: c.x, y: c.y, w: c.w, pool: { ...c.pool }, age: c.age ?? 0, speed: 0, frozen: false, immune: [], stood: false, vanish: null, vanishTotal: null })),
   ];
   const state = {
     level: index, levelId: level.id, unlocked, totalShards, collected: clone(collected), tick: 0, status: 'playing', active: 0,
@@ -134,7 +188,7 @@ function makeLevel(index, players, unlocked, totalShards, collected = LEVELS.map
     platforms: clone(level.platforms), objects, pits, nextPlant: level.plants.length, nextSeed: 0, nextEnemy: objects.length,
     checkpoints: (level.checkpoints ?? []).map((c, i) => ({ id: `cp-${i}`, x: c.x, y: c.y, lit: false })),
     exit: clone(level.exit), shards: level.shards.map((p, i) => ({ ...p, id: i, taken: false })),
-    flags: { frozenTouched: false, treeLifted: false, treeRewound: false, vineRewound: false, withered: false, sproutJump: false, moverRide: false, dartRide: false, miteGone: false, guardRide: false, ropeReleased: false },
+    flags: { frozenTouched: false, treeLifted: false, treeRewound: false, vineRewound: false, withered: false, sproutJump: false, moverRide: false, dartRide: false, miteGone: false, guardRide: false, ropeReleased: false, cloudRide: false },
     needs: clone(level.need), needsDone: 0, events: [], eventSeq: 0,
     started: false, elapsed: 0, lastProgressTick: 0, falls: 0,
     freezeAreas: [], nextArea: 0, freezeCharges: level.freezeCharges ?? 1, bloomCharges: level.bloomCharges ?? meta.charges.bloomStart,
@@ -176,7 +230,7 @@ function actorAllowed(state, playerId, actor) {
 }
 
 // Objects a time ability can ever act on.
-const timeObject = o => o.kind === 'plant' || o.kind === 'mover' || o.kind === 'crate' || o.kind === 'rope' || isEnemy(o);
+const timeObject = o => o.kind === 'plant' || o.kind === 'mover' || o.kind === 'crate' || o.kind === 'rope' || o.kind === 'cloud' || isEnemy(o);
 // Still's area slows anything; Bloom hastens things that have a clock of their own (not crates).
 // In a rewinding courtyard Bloom's backwards time only takes hold of plants.
 // Something keeping a traveller's pace answers only to their steps.
@@ -208,6 +262,12 @@ export function objectBox(o) {
   if (o.kind === 'rope') return { x: o.x - 7, y: o.top, w: 14, h: o.bottom - o.top };
   if (o.kind === 'seed') return { x: o.x - 10, y: o.y - 10, w: 20, h: 20 };
   if (o.kind === 'mover') return { x: o.x, y: o.y - 6, w: o.w, h: 26 };
+  // A cloud is the cloud and its full pool together, in either form: tap the water or the cloud, and a Freeze Area
+  // touching either one slows the whole cycle.
+  if (o.kind === 'cloud') {
+    const c = cloudRect(o), x = Math.min(c.x, o.pool.x), y = Math.min(c.y, o.pool.y);
+    return { x, y, w: Math.max(c.x + c.w, o.pool.x + o.pool.w) - x, h: Math.max(c.y + c.h, o.pool.y + o.pool.h) - y };
+  }
   if (o.kind === 'plant' && o.wall) { const w = Math.max(44, o.height); return { x: o.wall === 1 ? o.x : o.x - w, y: o.base - 20, w, h: 36 }; }
   if (o.kind === 'plant') { const w = Math.max(44, canopyWidth(o)); return { x: o.x - w / 2, y: o.base - o.height - 24, w, h: o.height + 30 }; }
   return enemyBox(o);
@@ -221,8 +281,9 @@ export function freezeAreaAt(state, point) {
 
 // Every object (never a traveller) touching an active Freeze Area runs on slowed local time; leaving the
 // area, or the area fading, restores normal time. Recomputed every tick, so it is never left behind.
+// A cloud ignores the areas cast on its previous form (`immune`).
 export function applyFreezeAreas(state) {
-  for (const o of state.objects) o.frozen = free(o) && state.freezeAreas.some(a => circleTouches(a, objectBox(o)));
+  for (const o of state.objects) o.frozen = free(o) && state.freezeAreas.some(a => !o.immune?.includes(a.id) && circleTouches(a, objectBox(o)));
   return state;
 }
 
@@ -339,15 +400,17 @@ export function throwLaunch(state, actor, aim) {
 // The flight of a crate or seed thrown with `aim`, tick by tick, using the same physics as a real throw (including the
 // local time of Freeze Areas it passes through), until it lands, hits a wall or leaves the courtyard.
 export function throwPath(state, actor, aim, maxTicks = 180) {
-  const start = throwLaunch(state, actor, aim), carried = state.actors[actor].carrying;
-  const kind = find(state, carried)?.kind === 'seed' ? 'seed' : 'crate', half = kind === 'seed' ? 10 : 27;
+  const start = throwLaunch(state, actor, aim), carried = state.actors[actor].carrying, item = find(state, carried);
+  const kind = item?.kind === 'seed' ? 'seed' : 'crate', half = kind === 'seed' ? 10 : 27;
+  // Past `respawnRight` the crate returns to its spawn, so the arc ends there.
+  const right = Math.min(state.width - 20, item?.respawnRight ?? Infinity);
   const o = { kind, id: carried, x: start.x, y: start.y, vx: start.vx, vy: start.vy, frozen: false, held: null };
   const all = surfaces(state).filter(f => f.id !== carried), points = [{ x: o.x, y: o.y }];
   for (let i = 0; i < maxTicks; i++) {
     o.frozen = state.freezeAreas.some(a => circleTouches(a, { x: o.x - half, y: o.y - half, w: half * 2, h: half * 2 }));
     const { landed, wall } = stepItem(state, o, all);
     points.push({ x: o.x, y: o.y });
-    if (landed || wall || (kind === 'seed' && seedPit(state, o)) || o.y > 720 || o.x < 20 || o.x > state.width - 20) break;
+    if (landed || wall || (kind === 'seed' && seedPit(state, o)) || o.y > 720 || o.x < 20 || o.x > right) break;
   }
   return points;
 }
@@ -430,6 +493,7 @@ function surfaces(state) {
   for (const o of state.objects) {
     if (o.kind === 'crate' && o.held === null) result.push({ id: o.id, x: o.x - 27, y: o.y - 27, w: 54, h: 54 });
     if (o.kind === 'mover') result.push({ id: o.id, x: o.x, y: o.y, w: o.w, h: 20 });
+    if (o.kind === 'cloud' && cloudSolid(o)) result.push({ id: o.id, ...cloudRect(o) });
     if (o.kind === 'plant' && o.height > 0) {
       if (o.wall) result.push({ id: o.id, ...vineStrip(o) });
       else { const w = canopyWidth(o); result.push({ id: o.id, x: o.x - w / 2, y: o.base - o.height, w, h: 16, spring: !o.withered && o.height <= meta.plant.springHeight }); }
@@ -459,6 +523,31 @@ function ageObjects(state) {
   for (const o of [...state.objects]) {
     const slow = o.frozen ? meta.time.frozenRate : 1, walked = walkerTime(state, o);
     if (walked !== null) o.clock += walked;
+    // A cloud's clock always runs (Speed adds to it), except while it counts down after its first visitor: then only
+    // real time counts, and at the end it starts to rain back. Each change of form is an event: the pool starts to
+    // rise as mist, the cloud is formed (and solid), the cloud starts to rain back.
+    if (o.kind === 'cloud') {
+      const was = cloudPhase(o).form;
+      if (o.vanish !== null) {
+        if (--o.vanish <= 0) { o.age = rainStart(o); o.vanish = o.vanishTotal = null; }
+      } else o.age += (1 + o.speed) * slow;
+      const now = cloudPhase(o).form;
+      if (now !== was) {
+        // A form just completed keeps nothing of the last one's time: no Speed, and the Freeze Areas holding it now
+        // were cast on the old form, so they let it go. A new cloud has not been stood on yet.
+        if (now === 'cloud' || now === 'water') {
+          // It starts the new form from its very beginning (a hastened clock may have run a little past it).
+          const { waterTicks, formTicks, cloudTicks } = meta.cloud;
+          o.age = rainStart(o) - cloudTicks - (now === 'water' ? waterTicks + formTicks : 0);
+          o.speed = 0;
+          o.immune = state.freezeAreas.filter(a => circleTouches(a, objectBox(o))).map(a => a.id);
+        }
+        if (now === 'cloud') o.stood = false;
+        if (now !== 'cloud') o.vanish = o.vanishTotal = null;
+        const at = now === 'mist' ? { x: o.x, y: o.pool.y } : anchor(o);
+        if (now !== 'water') event(state, now === 'cloud' ? 'cloudForm' : now, at.x, at.y, { cloud: o.id });
+      }
+    }
     if (o.kind === 'rope' && o.speed > 0) {
       const { breakTicks, frayAt, stretch } = meta.rope;
       const previous = o.age;
@@ -535,7 +624,11 @@ function stepItem(state, o, all) {
   // Loose crates and guards block crates from the side as well as supporting them from below.
   const obstacles = state.objects.filter(c => c.id !== o.id &&
     ((c.kind === 'crate' && free(c)) || (o.kind === 'crate' && c.kind === 'guard'))).map(objectBox);
-  o.vy += 0.3 * k; o.x += o.vx * k;
+  o.vy += 0.3 * k;
+  // Water holds a crate back: it drifts and sinks slowly through a pool.
+  const wet = o.kind === 'crate' ? wetness(state, { x: o.x - half, y: o.y - half, w: half * 2, h: half * 2 }) : 0;
+  if (wet) { const drag = (1 - (1 - meta.water.itemDrag) * wet) ** k; o.vx *= drag; o.vy *= drag; }
+  o.x += o.vx * k;
   for (const f of [...state.platforms, ...stemBoxes(state), ...obstacles, ...bodies]) if (o.y + half > f.y + 3 && o.y - half < f.y + f.h) {
     // Only crossing a side is a horizontal impact. An existing overlap (a traveller moving into
     // a slowed crate, or a shallow top contact) must not erase the crate's stored flight velocity.
@@ -589,7 +682,7 @@ function moveItems(state) {
       if (landed) o.thrown = false;
     }
     if (landed && landed.speed > 1) event(state, crate ? 'crateLand' : 'seedLand', o.x, landed.y);
-    if (o.y > (o.respawnBelow ?? 720) || o.x < 20 || o.x > state.width - 20) {
+    if (o.y > (o.respawnBelow ?? 720) || o.x < 20 || o.x > Math.min(state.width - 20, o.respawnRight ?? Infinity)) {
       if (o.fromHand) {
         const bloom = state.actors[BLOOM];
         lost.add(o.id); state.seeds++;
@@ -637,15 +730,18 @@ function moveActors(state) {
     };
     if (p.jumpBuffer > 0 && p.coyote > 0) launch();
     if (!p.jumpHeld && !p.jumpCut && p.vy < 0) { p.vy *= meta.controls.jumpCut; p.jumpCut = true; }
-    p.vx = p.move * (p.grounded ? meta.controls.speed : meta.controls.airSpeed);
+    // Wading: how deep the traveller stands in water slows their steps and damps their rise and fall.
+    const wet = wetness(state, { x: p.x - 15, y: p.y - 52, w: 30, h: 51 });
+    p.vx = p.move * (p.grounded ? meta.controls.speed : meta.controls.airSpeed) * (1 - (1 - meta.water.move) * wet);
     if (p.move) p.facing = p.move;
     const oldX = p.x;
     p.x = Math.max(22, Math.min(state.width - 22, p.x + p.vx));
     const body = () => ({ x: p.x - 15, y: p.y - 52, w: 30, h: 51 });
-    // Loose crates, solid creatures and moving platforms are solid on every side. Something that has moved into a
-    // traveller (`inside`) only lets them out of it, so a lift coming down on someone never traps them.
-    const crates = state.objects.filter(o => (o.kind === 'crate' && o.held === null) || o.kind === 'mover' || isSolidEnemy(o))
-      .map(o => o.kind === 'crate' ? { id: o.id, x: o.x - 27, y: o.y - 27, w: 54, h: 54 } : o.kind === 'mover' ? { id: o.id, x: o.x, y: o.y, w: o.w, h: 20 } : { id: o.id, ...enemyBox(o) });
+    // Loose crates, solid creatures, moving platforms and formed clouds are solid on every side. Something that has
+    // moved or formed into a traveller (`inside`) only lets them out of it, so a lift coming down on someone, or a
+    // cloud forming around them, never traps them.
+    const crates = state.objects.filter(o => (o.kind === 'crate' && o.held === null) || o.kind === 'mover' || (o.kind === 'cloud' && cloudSolid(o)) || isSolidEnemy(o))
+      .map(o => o.kind === 'crate' ? { id: o.id, x: o.x - 27, y: o.y - 27, w: 54, h: 54 } : o.kind === 'mover' ? { id: o.id, x: o.x, y: o.y, w: o.w, h: 20 } : o.kind === 'cloud' ? { id: o.id, ...cloudRect(o) } : { id: o.id, ...enemyBox(o) });
     const inside = crates.filter(c => rectOverlap({ x: oldX - 15, y: p.y - 52, w: 30, h: 51 }, c));
     // A mushroom that grows into you only lets you walk out of it.
     const stems = stemBoxes(state);
@@ -665,11 +761,12 @@ function moveActors(state) {
     }
     const previousY = p.y;
     p.vy = Math.min(meta.controls.maxFall, p.vy + (p.vy < 0 ? meta.controls.gravity : meta.controls.fallGravity));
+    if (wet) p.vy *= 1 - (1 - meta.water.drag) * wet;
     const impact = p.vy;
     const airborne = !p.grounded;
     p.y += p.vy;
-    // Every platform's underside, crates, moving platforms and vines stop a rising head (a vine is only standable
-    // from above): nothing can be jumped through from below.
+    // Every platform's underside, crates, moving platforms, formed clouds and vines stop a rising head (a vine is
+    // only standable from above): nothing can be jumped through from below.
     const ceilings = [
       ...crates.filter(c => !inside.includes(c)),
       ...state.platforms,
@@ -690,8 +787,20 @@ function moveActors(state) {
         if (o?.kind === 'crate' && o.frozen) state.flags.frozenTouched = true;
         if ((o?.kind === 'dart' || o?.kind === 'orb') && o.frozen) state.flags.dartRide = true;
         if (o?.kind === 'guard' && o.frozen) state.flags.guardRide = true;
+        if (o?.kind === 'cloud') {
+          state.flags.cloudRide = true;
+          // Its first visitor starts it fading: it rains back after `standTicks`, or once its time as a cloud (at
+          // its pace right now) runs out, whichever is sooner.
+          if (!o.stood) {
+            const pace = (1 + o.speed) * (o.frozen ? meta.time.frozenRate : 1);
+            o.stood = true;
+            o.vanish = o.vanishTotal = Math.max(1, Math.min(meta.cloud.standTicks, Math.ceil((rainStart(o) - o.age) / pace)));
+            event(state, 'cloudFade', o.x, o.y, { cloud: o.id, ticks: o.vanish });
+          }
+        }
       }
     }
+    if (airborne && !wet && wetness(state, body()) > 0) event(state, 'splash', p.x, p.y - 20, { actor: p.id });
     if (p.grounded && airborne) event(state, 'land', p.x, p.y, { actor: p.id, strength: Math.min(1, impact / meta.controls.maxFall) });
     if (p.grounded && p.jumpBuffer > 0) launch();
     if (p.jumpBuffer > 0) p.jumpBuffer--;
@@ -929,7 +1038,8 @@ export function applyAction(state, playerId, action) {
       // courtyard the same press runs it backwards, faster each time.
       const o = abilityTarget(s, action.actor, action);
       s.bloomCharges--;
-      const woke = o.speed === 0;
+      // A cloud's clock never sleeps, so Speed always hastens it.
+      const woke = o.speed === 0 && o.kind !== 'cloud';
       o.speed += s.bloomReverses ? -1 : 1;
       if (s.bloomReverses && o.kind === 'plant' && o.wall) s.flags.vineRewound = true;
       event(s, woke ? 'wake' : 'grow', anchor(o).x, anchor(o).y, { caster: action.actor, target: o.id, ...(s.bloomReverses && { rewind: true }) });

@@ -1,29 +1,46 @@
 import { describe, test, expect } from 'bun:test';
-import { setup, applyAction, validateAction, failureReason, meta } from '../src/logic.js';
+import { setup, applyAction, validateAction, failureReason, meta, cloudSolid } from '../src/logic.js';
 import { LEVELS } from '../src/levels/index.js';
 import { ENEMY } from '../src/enemies.js';
 
-// The slowed guard is a step out of the trench. The dropped crate is the step from the middle ledge to the gate.
+// The slowed guard is a step out of the trench. The dropped crate is the step from the middle ledge to the high
+// ledge, and the cloud over the basin the step from the high ledge to the gate.
 const act = (s, a) => { expect(validateAction(s, 'local', a).valid).toBe(true); return applyAction(s, 'local', a); };
 const tick = (s, n = 1) => { for (let i = 0; i < n; i++) s = applyAction(s, 'local', { type: 'tick' }); return s; };
 const STILL = 0, BLOOM = 1;
 const level = LEVELS[1];
-const [start, gate, middle, trench, beam] = level.platforms;
+const [start, high, middle, trench, beam, basinLeft, groove, basinRight, gate] = level.platforms;
 const on = (f, x) => x > f.x && x < f.x + f.w;
 const guard = s => s.objects.find(o => o.kind === 'guard');
 const crate = s => s.objects.find(o => o.kind === 'crate');
+const cloud = s => s.objects.find(o => o.kind === 'cloud');
 const stand = (s, who, f, x) => Object.assign(s.actors[who], { x, y: f.y, vx: 0, vy: 0, grounded: true, on: `platform-${level.platforms.indexOf(f)}` });
+const GATE = `platform-${level.platforms.indexOf(gate)}`;
 
 describe('courtyard 2 layout', () => {
   test('the two climbs are above normal jump height from their ledges', () => {
     const s = setup({ level: 1 });
-    expect(s.width).toBe(2560);
+    expect(s.width).toBe(3200);
     expect(trench.y - start.y).toBe(80);
     expect(trench.y - middle.y).toBe(190);
-    expect(middle.y - gate.y).toBe(190);
+    expect(middle.y - high.y).toBe(190);
     expect(start.x + start.w).toBe(trench.x);
     expect(trench.x + trench.w).toBe(middle.x);
     expect(on(gate, level.exit.x) && level.exit.y === gate.y).toBe(true);
+  });
+
+  test('past the high ledge, a basin with a water-filled groove lies under the cloud, below the gate\'s ledge', () => {
+    const s = setup({ level: 1 }), c = cloud(s);
+    expect([high.x + high.w, basinLeft.x + basinLeft.w, groove.x + groove.w, basinRight.x + basinRight.w]).toEqual([basinLeft.x, groove.x, basinRight.x, gate.x]);
+    expect(basinLeft.y).toBe(basinRight.y);
+    // The pool fills the groove up to the basin floor: half a traveller's height (the sprite is 72 tall).
+    expect(c.pool).toEqual({ x: groove.x, y: basinLeft.y, w: groove.w, h: groove.y - basinLeft.y });
+    expect(c.pool.h).toBe(34);
+    expect(c.x - c.w / 2 >= groove.x && c.x + c.w / 2 <= groove.x + groove.w).toBe(true);
+    // Too far to jump from the high ledge, too high to jump to from the basin floor.
+    expect(gate.x - (high.x + high.w)).toBe(440);
+    expect(basinLeft.y - gate.y).toBe(220);
+    expect(cloudSolid(c)).toBe(false);
   });
 
   test('the crate hangs above the middle ledge and returns there if dropped below it', () => {
@@ -65,7 +82,7 @@ describe('courtyard 2 has no shortcuts', () => {
     }
   });
 
-  test('the gate\'s ledge cannot be jumped to from the middle ledge', () => {
+  test('the high ledge cannot be jumped to from the middle ledge', () => {
     for (const x of [middle.x + middle.w - 120, middle.x + middle.w - 16]) {
       expect(anyJumpReaches(() => { const s = bare(); stand(s, STILL, middle, x); return s; }, 'platform-1')).toBe(false);
     }
@@ -106,6 +123,30 @@ describe('courtyard 2 has no shortcuts', () => {
         expect(b.x - ENEMY.guard.w / 2 >= trench.x && b.x + ENEMY.guard.w / 2 <= trench.x + trench.w).toBe(true);
       }
     }
+  });
+
+  test('without the cloud, the gate\'s ledge cannot be jumped to from the high ledge or from the basin', () => {
+    for (const x of [high.x + high.w - 100, high.x + high.w - 20, high.x + high.w + 14]) {
+      expect(anyJumpReaches(() => { const s = bare(); stand(s, STILL, high, x); return s; }, GATE)).toBe(false);
+    }
+    for (const [f, x] of [[basinRight, basinRight.x + 10], [basinRight, gate.x - 16], [groove, groove.x + groove.w - 16]]) {
+      expect(anyJumpReaches(() => { const s = bare(); stand(s, STILL, f, x); return s; }, GATE)).toBe(false);
+    }
+  });
+
+  test('the basin cannot be jumped out of back to the high ledge', () => {
+    for (const x of [basinLeft.x + 16, basinLeft.x + 100]) {
+      expect(anyJumpReaches(() => { const s = bare(); stand(s, STILL, basinLeft, x); return s; }, 'platform-1', -1)).toBe(false);
+    }
+  });
+
+  test('a crate taken past the high ledge returns beneath its rope (it would be a step out of the basin)', () => {
+    let s = setup({ level: 1 });
+    s.objects = s.objects.filter(o => o.kind !== 'rope'); delete crate(s).rope;
+    Object.assign(crate(s), { x: high.x + high.w - 20, y: high.y - 27, vx: 4, vy: 0 });
+    s = tick(s, 20);
+    expect(crate(s)).toMatchObject({ x: crate(s).spawnX, y: middle.y - 27 });
+    expect(s.events.some(e => e.kind === 'return')).toBe(true);
   });
 });
 
@@ -181,7 +222,37 @@ describe('courtyard 2 route', () => {
       for (let i = 0; i < 120 && s.actors[who].on !== 'platform-1'; i++) s = tick(s);
       expect(s.actors[who].on).toBe('platform-1');
       s = act(s, { type: 'jumpRelease', actor: who });
+      s = act(s, { type: 'move', actor: who, dir: 0 });
     }
+
+    // Over the basin: both wait at the high ledge's edge and Bloom hastens the water once. The moment a cloud forms,
+    // both drop onto it together (it fades three seconds after the first lands), walk to its right end and jump on
+    // to the gate's ledge.
+    for (const [who, x] of [[STILL, high.x + high.w - 40], [BLOOM, high.x + high.w - 5]]) {
+      s = act(s, { type: 'move', actor: who, dir: 1 });
+      for (let i = 0; i < 200 && s.actors[who].x < x; i++) s = tick(s);
+      s = act(s, { type: 'move', actor: who, dir: 0 });
+    }
+    expect(s.actors.map(a => a.on)).toEqual(['platform-1', 'platform-1']);
+    s = act(s, { type: 'ability', actor: BLOOM, target: cloud(s).id });
+    expect(cloud(s).speed).toBe(1);
+    // (If it is a cloud right now, Speed only hastens this one: the water after it keeps its normal pace.)
+    for (let i = 0; i < 400 && cloudSolid(cloud(s)); i++) s = tick(s);
+    for (let i = 0; i < 2400 && !cloudSolid(cloud(s)); i++) s = tick(s);
+    expect(cloudSolid(cloud(s))).toBe(true);
+    const c = cloud(s), stage = [0, 0];
+    for (let i = 0; i < 300 && !s.actors.every(a => a.on === GATE); i++) {
+      for (const who of [STILL, BLOOM]) {
+        const a = s.actors[who];
+        if (stage[who] === 0) { s = act(s, { type: 'move', actor: who, dir: 1 }); s = act(s, { type: 'jump', actor: who }); stage[who] = 1; }
+        else if (stage[who] === 1 && a.on === c.id) { s = act(s, { type: 'jumpRelease', actor: who }); stage[who] = 2; }
+        else if (stage[who] === 2 && a.x >= c.x + 30) { s = act(s, { type: 'jump', actor: who }); stage[who] = 3; }
+        else if (stage[who] === 3 && a.on === GATE && a.move) s = act(s, { type: 'move', actor: who, dir: 0 });
+      }
+      s = tick(s);
+    }
+    expect(s.actors.map(a => a.on)).toEqual([GATE, GATE]);
+    expect(s.flags.cloudRide).toBe(true);
     for (let i = 0; i < 300 && s.status !== 'won'; i++) {
       for (const who of [STILL, BLOOM]) { const a = s.actors[who]; s = act(s, { type: 'move', actor: who, dir: Math.abs(a.x - level.exit.x) < 10 ? 0 : Math.sign(level.exit.x - a.x) }); }
       s = tick(s);

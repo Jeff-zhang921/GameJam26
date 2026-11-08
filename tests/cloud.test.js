@@ -1,0 +1,245 @@
+import { describe, test, expect } from 'bun:test';
+import { setup, applyAction, validateAction, abilityCheck, meta, cloudPhase, cloudSolid, waterRect } from '../src/logic.js';
+
+// A cloud and its water are one thing in two forms (courtyard 2's basin is the arena): the water lies in the groove,
+// rises as mist, holds as a small cloud (solid only then) and rains back. Cloud : water is 1 : 6. Speed runs its
+// clock faster and a Freeze Area makes whichever form it is in last longer, but neither carries over into the next
+// form. Its first visitor sets a new cloud fading. Water slows whoever wades in it.
+const act = (s, a) => { expect(validateAction(s, 'local', a).valid).toBe(true); return applyAction(s, 'local', a); };
+const tick = (s, n = 1) => { for (let i = 0; i < n; i++) s = applyAction(s, 'local', { type: 'tick' }); return s; };
+const STILL = 0, BLOOM = 1;
+const cloud = s => s.objects.find(o => o.kind === 'cloud');
+const platform = (s, i) => s.platforms[i];
+const stand = (s, who, i, x) => Object.assign(s.actors[who], { x, y: platform(s, i).y, vx: 0, vy: 0, grounded: true, on: `platform-${i}` });
+const HIGH = 1, BASIN = 5, GROOVE = 6, BASIN_RIGHT = 7;
+// Only the travellers, the ledges and the cloud, set to a form; Bloom waits on the high ledge.
+function arena(form = 'water') {
+  const s = setup({ level: 1 });
+  s.objects = s.objects.filter(o => o.kind === 'cloud');
+  const { waterTicks, formTicks, cloudTicks } = meta.cloud;
+  cloud(s).age = { water: 10, mist: waterTicks + 1, cloud: waterTicks + formTicks + 1, rain: waterTicks + formTicks + cloudTicks + 1 }[form];
+  stand(s, BLOOM, HIGH, 2100);
+  return s;
+}
+const freezeOver = (s, id = 'freeze-x') => s.freezeAreas.push({ id, owner: 'local', x: cloud(s).x, y: cloud(s).y + 10, radius: meta.freeze.radius, ticksLeft: 1e6, duration: 1e6 });
+// Ticks of the current form, from now until it changes.
+const formTicksLeft = s => { const form = cloudPhase(cloud(s)).form; let n = 0; while (cloudPhase(cloud(s)).form === form && n < 20000) { s = tick(s); n++; } return [n, s]; };
+// How long each form lasts, measured over a full cycle (after the first, partial one).
+function formLengths(prepare = () => {}) {
+  let s = arena('water'); prepare(s);
+  const runs = []; let last = cloudPhase(cloud(s)).form, run = 0;
+  for (let i = 0; i < 12000 && runs.length < 5; i++) {
+    s = tick(s); run++;
+    const form = cloudPhase(cloud(s)).form;
+    if (form !== last) { runs.push([last, run]); run = 0; last = form; }
+  }
+  return Object.fromEntries(runs.slice(1));
+}
+
+describe('cloud and water take turns', () => {
+  test('a cloud lasts a sixth as long as its water, with a short rise and rain between', () => {
+    const lengths = formLengths();
+    expect(lengths).toEqual({ mist: meta.cloud.formTicks, cloud: meta.cloud.cloudTicks, rain: meta.cloud.rainTicks, water: meta.cloud.waterTicks });
+    expect(meta.cloud.waterTicks).toBe(meta.cloud.cloudTicks * 6);
+    expect(waterRect(cloud(arena('water'))).h).toBe(cloud(arena('water')).pool.h);
+    expect(waterRect(cloud(arena('cloud'))).h).toBe(0);
+  });
+
+  test('each change of form is an event', () => {
+    let s = arena('water'); cloud(s).age = meta.cloud.waterTicks - 1;
+    const kinds = new Set();
+    const span = meta.cloud.formTicks + meta.cloud.cloudTicks + 20;
+    for (let i = 0; i < span; i++) { s = tick(s); for (const e of s.events) kinds.add(e.kind); }
+    expect([...kinds]).toEqual(expect.arrayContaining(['mist', 'cloudForm', 'rain']));
+  });
+
+  test('Speed hastens the form it is cast on and its change; the new form starts at its normal pace', () => {
+    // One cast on the water halves it and its rise into a cloud; the cloud after it lasts its full time.
+    expect(formLengths(s => { cloud(s).speed = 1; })).toEqual({ mist: meta.cloud.formTicks / 2, cloud: meta.cloud.cloudTicks, rain: meta.cloud.rainTicks, water: meta.cloud.waterTicks });
+    let s = arena('water'); cloud(s).age = meta.cloud.waterTicks - 30; cloud(s).speed = 2;
+    while (cloudPhase(cloud(s)).form !== 'cloud') s = tick(s);
+    expect(cloud(s).speed).toBe(0);
+    expect(formTicksLeft(s)[0]).toBe(meta.cloud.cloudTicks);
+  });
+
+  test('a Freeze Area makes the form it is in last five times as long, then lets the next form go', () => {
+    let s = arena('water'); freezeOver(s); s = tick(s);
+    expect(cloud(s).frozen).toBe(true);
+    const age = cloud(s).age; s = tick(s, 10);
+    expect(cloud(s).age - age).toBeCloseTo(10 * meta.freeze.rate, 6);
+
+    // Cast on the cloud: it holds five times as long, and so does its rain; the water after it is free again.
+    s = arena('cloud'); freezeOver(s);
+    let n; [n, s] = formTicksLeft(s);
+    expect(n).toBeCloseTo((meta.cloud.cloudTicks - 1) / meta.freeze.rate, -1);
+    [n, s] = formTicksLeft(s);
+    expect(n).toBeCloseTo(meta.cloud.rainTicks / meta.freeze.rate, -1);
+    s = tick(s, 2);
+    expect(cloudPhase(cloud(s)).form).toBe('water');
+    expect(s.freezeAreas).toHaveLength(1);
+    expect(cloud(s).frozen).toBe(false);
+
+    // Cast on the water: the cloud that rises from it is free, until a new area is cast over it.
+    s = arena('water'); cloud(s).age = meta.cloud.waterTicks - 5; freezeOver(s);
+    while (cloudPhase(cloud(s)).form !== 'cloud') s = tick(s);
+    s = tick(s);
+    expect(cloud(s).frozen).toBe(false);
+    freezeOver(s, 'freeze-y'); s = tick(s);
+    expect(cloud(s).frozen).toBe(true);
+  });
+
+  test('Bloom reaches it from the high ledge\'s edge, and Speed hastens it (it never sleeps)', () => {
+    let s = arena('water'); stand(s, BLOOM, HIGH, 2390);
+    expect(abilityCheck(s, BLOOM, cloud(s).id)).toBe('ok');
+    s = act(s, { type: 'ability', actor: BLOOM, target: cloud(s).id });
+    expect(cloud(s).speed).toBe(1);
+    expect(s.events.at(-1)).toMatchObject({ kind: 'grow', target: cloud(s).id });
+    // Still's Freeze reaches it from there too.
+    stand(s, STILL, HIGH, 2360);
+    s = act(s, { type: 'ability', actor: STILL, x: cloud(s).x, y: cloud(s).y + 20 });
+    expect(tick(s).objects.find(o => o.kind === 'cloud').frozen).toBe(true);
+  });
+});
+
+describe('only a formed cloud is solid', () => {
+  test('a traveller dropping onto it lands only once it has fully formed', () => {
+    for (const form of ['water', 'mist', 'cloud', 'rain']) {
+      let s = arena(form);
+      Object.assign(s.actors[STILL], { x: cloud(s).x, y: cloud(s).y - 10, vx: 0, vy: 0, grounded: false, on: null });
+      s = tick(s, 20);
+      expect(s.actors[STILL].on === cloud(s).id).toBe(form === 'cloud');
+    }
+    let s = arena('cloud');
+    Object.assign(s.actors[STILL], { x: cloud(s).x, y: cloud(s).y - 10, vx: 0, vy: 0, grounded: false, on: null });
+    s = tick(s, 20);
+    expect(s.flags.cloudRide).toBe(true);
+  });
+
+  test('standing on it as it starts to rain drops you into the groove', () => {
+    let s = arena('cloud'); const c = cloud(s);
+    c.age = meta.cloud.waterTicks + meta.cloud.formTicks + meta.cloud.cloudTicks - 5;
+    Object.assign(s.actors[STILL], { x: c.x, y: c.y, vx: 0, vy: 0, grounded: true, on: c.id });
+    s = tick(s, 90);
+    expect(cloudSolid(cloud(s))).toBe(false);
+    expect(s.actors[STILL].on).toBe(`platform-${GROOVE}`);
+  });
+
+  test('a formed cloud stops a rising head, and one forming around a traveller lets them out', () => {
+    let s = arena('cloud'); const c = cloud(s);
+    stand(s, STILL, GROOVE, c.x);
+    s = act(s, { type: 'jump', actor: STILL });
+    let top = Infinity; for (let i = 0; i < 60; i++) { s = tick(s); top = Math.min(top, s.actors[STILL].y); }
+    expect(top - 52).toBeCloseTo(c.y + meta.cloud.h, 3);
+
+    s = arena('mist'); cloud(s).age = meta.cloud.waterTicks + meta.cloud.formTicks - 2;
+    Object.assign(s.actors[STILL], { x: cloud(s).x, y: cloud(s).y + 40, vx: 0, vy: -2, grounded: false, on: null });
+    s = tick(s, 3);
+    expect(cloudSolid(cloud(s))).toBe(true);
+    s = act(s, { type: 'move', actor: STILL, dir: 1 });
+    const x = s.actors[STILL].x; s = tick(s, 30);
+    expect(s.actors[STILL].x).toBeGreaterThan(x + 40);
+  });
+});
+
+describe('a new cloud fades once someone stands on it', () => {
+  // Still standing on the cloud: the first tick sets them on it.
+  const onCloud = s => { Object.assign(s.actors[STILL], { x: cloud(s).x, y: cloud(s).y, vx: 0, vy: 0, grounded: true, on: cloud(s).id }); return tick(s); };
+  const ticksUntilGone = s => { let n = 0; while (cloudSolid(cloud(s)) && n < 5000) { s = tick(s); n++; } return n; };
+  const rainAt = () => meta.cloud.waterTicks + meta.cloud.formTicks + meta.cloud.cloudTicks;
+
+  test('its first visitor starts a three-second countdown (it blinks until it rains back)', () => {
+    const s = onCloud(arena('cloud'));
+    expect(s.actors[STILL].on).toBe(cloud(s).id);
+    expect(cloud(s)).toMatchObject({ stood: true, vanish: meta.cloud.standTicks, vanishTotal: meta.cloud.standTicks });
+    expect(s.events.some(e => e.kind === 'cloudFade' && e.ticks === meta.cloud.standTicks)).toBe(true);
+    expect(meta.cloud.standTicks).toBe(3 * 60);
+    expect(ticksUntilGone(s)).toBe(meta.cloud.standTicks);
+  });
+
+  test('with less than three seconds left, it rains back when its time runs out', () => {
+    let s = arena('cloud'); cloud(s).age = rainAt() - 60;
+    s = onCloud(s);
+    expect(cloud(s).vanishTotal).toBe(59);
+    expect(ticksUntilGone(s)).toBe(59);
+    // Held by a Freeze Area its time left counts five times over, up to three seconds.
+    s = arena('cloud'); cloud(s).age = rainAt() - 30; freezeOver(s);
+    s = onCloud(s);
+    expect(cloud(s).vanishTotal).toBeGreaterThanOrEqual(148);
+    expect(cloud(s).vanishTotal).toBeLessThanOrEqual(150);
+    expect(ticksUntilGone(s)).toBe(cloud(s).vanishTotal);
+    s = arena('cloud'); cloud(s).age = rainAt() - 60; freezeOver(s);
+    expect(cloud(onCloud(s)).vanishTotal).toBe(meta.cloud.standTicks);
+  });
+
+  test('the countdown runs in real time: later visitors, Speed and Freeze do not change it', () => {
+    let s = tick(onCloud(arena('cloud')), 30);
+    stand(s, BLOOM, HIGH, 2390);
+    s = act(s, { type: 'ability', actor: BLOOM, target: cloud(s).id });
+    freezeOver(s);
+    Object.assign(s.actors[BLOOM], { x: cloud(s).x - 30, y: cloud(s).y, vx: 0, vy: 0, grounded: true, on: cloud(s).id });
+    expect(ticksUntilGone(s)).toBe(meta.cloud.standTicks - 30);
+  });
+
+  test('the next cloud starts fresh', () => {
+    let s = onCloud(arena('cloud'));
+    while (cloudPhase(cloud(s)).form !== 'water') s = tick(s);
+    while (cloudPhase(cloud(s)).form !== 'cloud') s = tick(s);
+    expect(cloud(s)).toMatchObject({ stood: false, vanish: null, vanishTotal: null, speed: 0 });
+  });
+});
+
+describe('water holds things back', () => {
+  test('wading is slower, by how deep you stand', () => {
+    let s = arena('water'); stand(s, STILL, GROOVE, 2600);
+    s = act(s, { type: 'move', actor: STILL, dir: 1 });
+    const x = s.actors[STILL].x; s = tick(s, 10);
+    const pace = (s.actors[STILL].x - x) / 10;
+    expect(pace).toBeLessThan(meta.controls.speed * .55);
+    expect(pace).toBeGreaterThan(meta.controls.speed * .45);
+    let dry = arena('cloud'); stand(dry, STILL, GROOVE, 2600);
+    dry = act(dry, { type: 'move', actor: STILL, dir: 1 }); dry = tick(dry, 10);
+    expect(dry.actors[STILL].x - 2600).toBeCloseTo(meta.controls.speed * 10, 3);
+  });
+
+  test('a jump from the water is lower, but still clears the groove\'s edge', () => {
+    let s = arena('water'); const c = cloud(s), floor = platform(s, GROOVE).y;
+    stand(s, STILL, GROOVE, c.x);
+    s = act(s, { type: 'jump', actor: STILL });
+    let top = Infinity; for (let i = 0; i < 80; i++) { s = tick(s); top = Math.min(top, s.actors[STILL].y); }
+    expect(floor - top).toBeLessThan(140);
+    expect(floor - top).toBeGreaterThan(c.pool.h + 20);
+    s = arena('water'); stand(s, STILL, GROOVE, platform(s, GROOVE).x + platform(s, GROOVE).w - 30);
+    s = act(s, { type: 'move', actor: STILL, dir: 1 }); s = act(s, { type: 'jump', actor: STILL });
+    for (let i = 0; i < 120 && s.actors[STILL].on !== `platform-${BASIN_RIGHT}`; i++) s = tick(s);
+    expect(s.actors[STILL].on).toBe(`platform-${BASIN_RIGHT}`);
+  });
+
+  test('falling in splashes and slows the fall', () => {
+    // The same drop into the groove, full of water or dry (its water is up in the cloud, out of the way above).
+    const fall = form => {
+      let s = arena(form), splash = false, impact = null;
+      Object.assign(s.actors[STILL], { x: cloud(s).x, y: platform(s, BASIN).y - 30, vx: 0, vy: 6, grounded: false, on: null });
+      for (let i = 0; i < 60 && !s.actors[STILL].grounded; i++) {
+        s = tick(s);
+        splash ||= s.events.some(e => e.kind === 'splash');
+        const land = s.events.find(e => e.kind === 'land' && e.tick === s.tick && e.actor === STILL);
+        if (land) impact = land.strength * meta.controls.maxFall;
+      }
+      return { splash, impact, on: s.actors[STILL].on };
+    };
+    const wet = fall('water'), dry = fall('cloud');
+    expect(wet).toMatchObject({ splash: true, on: `platform-${GROOVE}` });
+    expect(dry).toMatchObject({ splash: false, on: `platform-${GROOVE}` });
+    expect(wet.impact).toBeLessThan(dry.impact - 1);
+  });
+
+  test('a crate slides less far through water', () => {
+    const slide = form => {
+      let s = arena(form); const floor = platform(s, GROOVE);
+      s.objects.push({ kind: 'crate', id: 'crate-9', x: floor.x + 40, y: floor.y - 27, vx: 6, vy: 0, frozen: false, held: null, spawnX: floor.x + 40, spawnY: floor.y - 27 });
+      s = tick(s, 12);
+      return s.objects.find(o => o.id === 'crate-9').x - (floor.x + 40);
+    };
+    expect(slide('water')).toBeLessThan(slide('cloud') * .7);
+  });
+});

@@ -1,4 +1,4 @@
-import { atExit, meta } from '../src/logic.js';
+import { atExit, meta, cloudPhase } from '../src/logic.js';
 import { guardPlatform } from '../src/enemies.js';
 
 export function taskHintOpacity(seconds) {
@@ -24,10 +24,28 @@ export function taskHints(state) {
   const crossing = state.level === 0 && bank && state.actors.some(p => p.x < bank.x);
   const guard = state.level === 1 && state.objects.find(o => o.kind === 'guard');
   const guardFloor = guard && guardPlatform(state, guard);
-  const middle = state.level === 1 && state.platforms.find(p => p.x >= (guardFloor?.x ?? Infinity) + (guardFloor?.w ?? 0) && p !== gate);
-  const beyondGuard = p => middle && p.x >= middle.x && p.y <= middle.y + 2;
+  // The middle ledge: the nearest one past the trench (the high ledge and the basin lie farther on).
+  const middle = state.level === 1 && state.platforms.filter(p => p.x >= (guardFloor?.x ?? Infinity) + (guardFloor?.w ?? 0) && p !== gate).sort((a, b) => a.x - b.x)[0];
+  // Past the middle ledge (on the high ledge, over the basin or in it) counts as past the guard too.
+  const pastMiddle = p => middle && p.x > middle.x + middle.w;
+  const beyondGuard = p => middle && p.x >= middle.x && (p.y <= middle.y + 2 || pastMiddle(p));
   const rope = state.level === 1 && state.objects.find(o => o.kind === 'rope');
   const stepCrate = state.level === 1 && state.objects.find(o => o.kind === 'crate');
+  // Past the climb: wait for the water to rise as a cloud (Speed brings it sooner, Freeze holds it), drop onto it and
+  // jump on to the gate's ledge. Freeze and Speed are only suggested while there is a charge to spend.
+  const cloud = state.level === 1 && state.objects.find(o => o.kind === 'cloud');
+  const cloudHint = (p, actor) => {
+    const { form } = cloudPhase(cloud);
+    // Once someone has landed on it, the cloud blinks and fades within three seconds.
+    const fading = cloud.vanish !== null && cloud.vanish !== undefined;
+    if (p.on === cloud.id) return fading ? 'It is fading: walk right and jump to the gate.' : 'Walk to its right end; jump to the gate\'s ledge.';
+    if (form === 'cloud' && fading) return 'The cloud is fading: jump on now.';
+    if (form === 'cloud') return actor === 0 && !cloud.frozen && state.freezeCharges > 0 ? 'Freeze the cloud so it waits for you.' : 'Jump onto the cloud together.';
+    if (form === 'mist') return 'The cloud is forming: get ready.';
+    if (p.y > cloud.y + meta.cloud.h) return 'Wait for the cloud, then jump onto it.';
+    if (actor === 1 && state.bloomCharges > 0 && cloud.speed < meta.time.maxSpeed) return 'From the edge, use Speed on the water.';
+    return 'Wait at the edge for the cloud to form.';
+  };
 
   if (guard && guardFloor && state.actors.some(p => !beyondGuard(p))) {
     const nearEdge = guard.x >= guardFloor.x + guardFloor.w - 190;
@@ -49,9 +67,10 @@ export function taskHints(state) {
     hints[1] = rope.speed ? 'Watch for the rope to snap.' : 'Walk up to the rope and use Speed.';
   } else if (stepCrate) {
     state.actors.forEach((p, actor) => {
-      if (p.carrying === stepCrate.id) hints[actor] = 'Set the crate near the right edge.';
+      if (cloud && pastMiddle(p)) hints[actor] = cloudHint(p, actor);
+      else if (p.carrying === stepCrate.id) hints[actor] = 'Set the crate near the right edge.';
       else if (p.on === stepCrate.id) hints[actor] = 'Jump right to the high ledge.';
-      else hints[actor] = 'Jump onto the crate, then up to the gate.';
+      else hints[actor] = cloud ? 'Jump onto the crate, then up to the high ledge.' : 'Jump onto the crate, then up to the gate.';
     });
   } else if (crossing) {
     const crates = state.objects.filter(o => o.kind === 'crate');

@@ -1,4 +1,4 @@
-import { canopyWidth, meta, atExit, anchor, exitStatus, heldPosition } from '../src/logic.js';
+import { canopyWidth, meta, atExit, anchor, exitStatus, heldPosition, cloudPhase, waterRect } from '../src/logic.js';
 import { GROW, DIE, growFrame, dieFrame } from '../src/mushroom.js';
 import { enemyBox, lifeFraction, miteStage, isEnemy, attackCharge } from '../src/enemies.js';
 import { createCamera, createParticles, worldPoint } from './presentation.js';
@@ -174,15 +174,24 @@ export function createRenderer(canvas, S) {
   // neighbour at least as tall (the start ground against the high ledge's wall, a step jutting from a cliff) is
   // closed instead: its fill runs on under the neighbour's inset, so no background shows through the seam.
   const FILL_INSET = 12;
+  // A step down no deeper than SHALLOW (the groove of a cloud's pool) is not a cliff: the higher ledge's end is
+  // `flush` (its fill runs straight down at its edge, with no inset and no dark edge, so water in the groove meets the
+  // rock), and the lower ledge is shaded from the higher top (`shadeTop`), so the two read as one block of ground with
+  // a groove cut into it.
+  const SHALLOW = 60;
   function closedSides(p, all = []) {
-    const against = side => all.some(q => q !== p && !q.hidden && q.y <= p.y && q.y + q.h > p.y && Math.abs(side < 0 ? q.x + q.w - p.x : q.x - (p.x + p.w)) < 1);
-    return { left: p.x > 0 && against(-1), right: p.x + p.w < worldWidth && against(1) };
+    const touching = side => all.filter(q => q !== p && !q.hidden && q.y < p.y + p.h && q.y + q.h > p.y && Math.abs(side < 0 ? q.x + q.w - p.x : q.x - (p.x + p.w)) < 1);
+    const against = side => touching(side).some(q => q.y <= p.y);
+    const step = side => touching(side).some(q => q.y > p.y && q.y - p.y <= SHALLOW);
+    const left = p.x > 0, right = p.x + p.w < worldWidth;
+    const above = [...(left ? touching(-1) : []), ...(right ? touching(1) : [])].filter(q => q.y < p.y && p.y - q.y <= SHALLOW);
+    return { left: left && against(-1), right: right && against(1), flushLeft: left && step(-1), flushRight: right && step(1), shadeTop: Math.min(p.y, ...above.map(q => q.y)) + FILL_TOP };
   }
   function fillSpan(p, all) {
     const closed = closedSides(p, all);
     return [
-      p.x <= 0 ? p.x : closed.left ? p.x - FILL_INSET : p.x + FILL_INSET,
-      p.x + p.w >= worldWidth ? p.x + p.w : closed.right ? p.x + p.w + FILL_INSET : p.x + p.w - FILL_INSET,
+      p.x <= 0 ? p.x : closed.left ? p.x - FILL_INSET : closed.flushLeft ? p.x : p.x + FILL_INSET,
+      p.x + p.w >= worldWidth ? p.x + p.w : closed.right ? p.x + p.w + FILL_INSET : closed.flushRight ? p.x + p.w : p.x + p.w - FILL_INSET,
     ];
   }
   function groundFill(x, y, w, h, top = y) {
@@ -227,10 +236,14 @@ export function createRenderer(canvas, S) {
     }
     if (surface && art(theme.ground.fill.src)) {
       const closed = closedSides(p, all), [x0, x1] = fillSpan(p, all);
-      groundFill(x0, p.y + FILL_TOP, x1 - x0, p.h - FILL_TOP);
-      // Its open faces get a dark edge; a closed end has none (the neighbour's face carries on there).
-      if (p.x > 0 && !closed.left) line(ctx, [[x0 + 1, p.y + 40], [x0 + 1, p.y + p.h]], '#15141c80', 2);
-      if (p.x + p.w < worldWidth && !closed.right) line(ctx, [[x1 - 1, p.y + 40], [x1 - 1, p.y + p.h]], '#15141c80', 2);
+      groundFill(x0, p.y + FILL_TOP, x1 - x0, p.h - FILL_TOP, closed.shadeTop);
+      // A flush end's rock reaches right up under the moss, so nothing shows between its rounded end and water in the
+      // groove beside it.
+      if (closed.flushLeft) groundFill(x0, p.y, FILL_INSET, FILL_TOP, closed.shadeTop);
+      if (closed.flushRight) groundFill(x1 - FILL_INSET, p.y, FILL_INSET, FILL_TOP, closed.shadeTop);
+      // Its open faces get a dark edge; a closed or flush end has none (the ground carries on there).
+      if (p.x > 0 && !closed.left && !closed.flushLeft) line(ctx, [[x0 + 1, p.y + 40], [x0 + 1, p.y + p.h]], '#15141c80', 2);
+      if (p.x + p.w < worldWidth && !closed.right && !closed.flushRight) line(ctx, [[x1 - 1, p.y + 40], [x1 - 1, p.y + p.h]], '#15141c80', 2);
       return groundCap(p, surface, closed);
     }
     const g = ctx.createLinearGradient(0, p.y, 0, 650); g.addColorStop(0, '#35534c'); g.addColorStop(1, '#123239'); ctx.fillStyle = g; ctx.fillRect(p.x, p.y, p.w, p.h);
@@ -440,6 +453,59 @@ export function createRenderer(canvas, S) {
     line(ctx, [[o.x, o.y - 1], [o.x + o.w, o.y - 1]], rim ?? '#e5ddba', rim ? 2.5 : 1.5); circle(ctx, o.x + o.w / 2, o.y + 10, 5, '#183e42', rim ?? (o.speed ? gold : '#8aa89b'), 1.5);
     if (targeted) { const a = o.w / 2 + 6, cx = o.x + o.w / 2, cy = o.y + 10; for (const [x, y] of [[-a, -18], [a, -18], [-a, 18], [a, 18]]) line(ctx, [[cx + x, cy + y - Math.sign(y) * 8], [cx + x, cy + y], [cx + x - Math.sign(x) * 8, cy + y]], gold); }
   }
+  // A cloud (see cloudPhase): a small puff whose size and opacity follow how much cloud there is. Until it is fully
+  // formed, and so solid, its rim is dashed; while forming, mist rises to it from the pool, and while it rains back,
+  // streaks fall into the pool. Its top is where travellers stand.
+  const CLOUD_PUFFS = [[-.3, 14], [-.08, 18], [.16, 16], [.34, 12]];
+  // From its first visitor until it rains back, a cloud blinks: fast at first (BLINK.fast per second), slowing
+  // evenly to BLINK.slow by the end. Counted in world ticks, so both players see the same blinks.
+  const BLINK = { fast: 9, slow: 2.5, dim: .3 };
+  function cloudBlink(o) {
+    if (o.vanish === null || o.vanish === undefined || !o.vanishTotal) return 1;
+    const T = o.vanishTotal / 60, s = (o.vanishTotal - o.vanish) / 60;
+    const turns = BLINK.fast * s + (BLINK.slow - BLINK.fast) * s * s / (2 * T);
+    return turns % 1 < .5 ? 1 : BLINK.dim;
+  }
+  function cloud(o, targeted, t) {
+    const { form, mist } = cloudPhase(o), cx = o.x, top = o.y, w = o.w, h = meta.cloud.h, formed = form === 'cloud';
+    timeRing(cx, top + h / 2, w / 2 + 14, o, t);
+    const below = o.pool.y + o.pool.h * (1 - cloudPhase(o).fill), bottom = top + h;
+    if (form === 'rain' || form === 'mist') {
+      ctx.save(); ctx.lineCap = 'round';
+      for (let i = 0; i < 9; i++) {
+        const x = cx - w / 2 + (i + .5) * w / 9, span = Math.max(1, below - bottom), u = ((t * .3 + i * 53) % span) / span;
+        if (form === 'rain') { ctx.globalAlpha = .7 * (1 - mist * .3); line(ctx, [[x, bottom + u * span], [x - 2, bottom + u * span + 11]], '#c9e6f3', 1.5); }
+        else { ctx.globalAlpha = .45 * (1 - u); circle(ctx, x + Math.sin(t * .003 + i) * 4, below - u * span, 2.5 + u * 3, '#eef6f9'); }
+      }
+      ctx.restore();
+    }
+    if (mist > .01) {
+      const k = formed ? 1 : .55 + .45 * mist;
+      ctx.save(); ctx.globalAlpha *= (formed ? 1 : .2 + .55 * mist) * cloudBlink(o);
+      ellipse(ctx, cx, bottom - 4, w / 2 * k, 9 * k, 0, '#b9c8d4');
+      ellipse(ctx, cx, bottom - 7, w / 2 * k, 9 * k, 0, '#e9f0f4');
+      for (const [dx, r] of CLOUD_PUFFS) circle(ctx, cx + dx * w * k, top - 4 + r * (2 - k), r * k, '#f6f9fb');
+      ctx.restore();
+    }
+    // Where the cloud will stand, faint while the pool is full.
+    if (!formed) { ctx.save(); ctx.setLineDash([4, 6]); ctx.globalAlpha *= .25 + .4 * mist; ctx.beginPath(); ctx.ellipse(cx, top + h / 2 - 4, w / 2 + 4, h / 2 + 12, 0, 0, Math.PI * 2); ctx.strokeStyle = '#e9f3f8'; ctx.lineWidth = 1.2; ctx.stroke(); ctx.restore(); }
+    if (targeted) { const a = w / 2 + 8, cy = top + h / 2; for (const [x, y] of [[-a, -20], [a, -20], [-a, 18], [a, 18]]) line(ctx, [[cx + x, cy + y - Math.sign(y) * 8], [cx + x, cy + y], [cx + x - Math.sign(x) * 8, cy + y]], gold); }
+  }
+  // The water in a cloud's pool, drawn over the travellers so whoever wades in it shows only above the surface.
+  function water(o, t) {
+    const r = waterRect(o);
+    if (r.h <= .5) return;
+    const surface = x => r.y + Math.sin(x * .09 + t * .004) * 1.2;
+    ctx.save(); ctx.beginPath(); ctx.moveTo(r.x, r.y + r.h);
+    for (let x = r.x; x < r.x + r.w; x += 7) ctx.lineTo(x, surface(x));
+    ctx.lineTo(r.x + r.w, surface(r.x + r.w)); ctx.lineTo(r.x + r.w, r.y + r.h); ctx.closePath();
+    const g = ctx.createLinearGradient(0, r.y, 0, o.pool.y + o.pool.h);
+    g.addColorStop(0, '#86c9e0b8'); g.addColorStop(1, '#2f6d88d8');
+    ctx.fillStyle = g; ctx.fill();
+    ctx.beginPath(); for (let x = r.x; x <= r.x + r.w; x += 7) ctx[x === r.x ? 'moveTo' : 'lineTo'](x, surface(x));
+    ctx.strokeStyle = '#e8f7fccc'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.restore();
+  }
   function checkpoint(cp, active, t) {
     line(ctx, [[cp.x, cp.y], [cp.x, cp.y - 34]], '#b8ac71', 2);
     if (cp.lit) glow(ctx, cp.x, cp.y - 38, 46 + Math.sin(t * .003) * 3, active ? '#f1dc9a66' : '#e1c68a33');
@@ -609,7 +675,7 @@ export function createRenderer(canvas, S) {
       if (bottom > H && p.y + p.h >= H - 1) {
         // The fill below the world lines up with the fill above it, inset like it at ends that are not open.
         const [s0, s1] = fillSpan(p, state.platforms), f0 = p.x <= 0 ? x0 : s0, f1 = p.x + p.w >= W ? x1 : s1;
-        if (art(theme.ground.fill.src)) groundFill(f0, H - 2, f1 - f0, bottom - H + 2, p.y + FILL_TOP); // the same gradient, continued
+        if (art(theme.ground.fill.src)) groundFill(f0, H - 2, f1 - f0, bottom - H + 2, closedSides(p, state.platforms).shadeTop); // the same gradient, continued
         // While the ground texture loads, the mirrored scene behind it already covers the viewport.
       }
     }
@@ -668,7 +734,7 @@ export function createRenderer(canvas, S) {
   }
   // Slowed objects carry a small mark so it is clear what the area is holding.
   function frostMark(o, t) {
-    const b = isEnemy(o) ? enemyBox(o) : o.kind === 'plant' ? (o.wall ? { x: anchor(o).x - 10, y: o.base - 4, w: 20, h: 0 } : { x: o.x - 10, y: o.base - o.height - 4, w: 20, h: 0 }) : o.kind === 'mover' ? { x: o.x, y: o.y, w: o.w, h: 0 } : { x: o.x - 10, y: o.y - (o.kind === 'crate' ? 30 : 14), w: 20, h: 0 };
+    const b = isEnemy(o) ? enemyBox(o) : o.kind === 'plant' ? (o.wall ? { x: anchor(o).x - 10, y: o.base - 4, w: 20, h: 0 } : { x: o.x - 10, y: o.base - o.height - 4, w: 20, h: 0 }) : o.kind === 'mover' ? { x: o.x, y: o.y, w: o.w, h: 0 } : o.kind === 'cloud' ? { x: o.x - 10, y: o.y - 8, w: 20, h: 0 } : { x: o.x - 10, y: o.y - (o.kind === 'crate' ? 30 : 14), w: 20, h: 0 };
     const x = b.x + b.w / 2 + Math.sin(t * .003 + b.x) * 3, y = b.y - 10;
     ctx.save(); ctx.globalAlpha *= .85; glow(ctx, x, y, 12, '#e6d6a366'); star(ctx, x, y, 4, '#f6ecc8'); ctx.restore();
   }
@@ -880,6 +946,7 @@ export function createRenderer(canvas, S) {
     for (const cp of state.checkpoints ?? []) checkpoint(cp, cp.id === state.actors[state.active].checkpoint, t);
     for (const o of state.objects) if (o.kind === 'mover') mover(o, marked(o), t);
     for (const o of state.objects) if (o.kind === 'plant') plant(o, marked(o), t, options.reduced);
+    for (const o of state.objects) if (o.kind === 'cloud') cloud(o, marked(o), t);
     // Let the gate's glow extend beyond the world clip while keeping it behind the travellers.
     ctx.restore();
     door(state, t, departure?.opening);
@@ -931,6 +998,7 @@ export function createRenderer(canvas, S) {
       o.kind === 'crate' ? crate(held, false, t) : seed(held, t);
       ctx.restore();
     }
+    for (const o of state.objects) if (o.kind === 'cloud') water(o, t);
     for (const o of state.objects) if (isEnemy(o) && flying(o)) enemy(o, marked(o), t, options.reduced);
     for (const o of state.objects) if (o.frozen && (o.held === null || o.held === undefined)) frostMark(o, t);
     // While time rewinds, faint afterimages trail the travellers.
@@ -967,13 +1035,14 @@ export function createRenderer(canvas, S) {
     if (options.throwArc) throwArc(options.throwArc);
     const selected = state.objects.find(o => o.id === target);
     if (state.status === 'playing' && selected) {
-      const top = isEnemy(selected) ? enemyBox(selected).y - 26 : selected.kind === 'plant' ? (selected.wall ? selected.base - 45 : selected.base - selected.height - 53) : selected.kind === 'mover' ? selected.y - 30 : selected.y - 62;
+      const top = isEnemy(selected) ? enemyBox(selected).y - 26 : selected.kind === 'plant' ? (selected.wall ? selected.base - 45 : selected.base - selected.height - 53) : selected.kind === 'mover' ? selected.y - 30 : selected.kind === 'cloud' ? selected.y - 34 : selected.y - 62;
       const x = selected.kind === 'mover' ? selected.x + selected.w / 2 : selected.kind === 'plant' && selected.wall ? anchor(selected).x : selected.x;
       const words = options.touch ? S.tapLabels : { freeze: S.targetFreeze, wake: S.targetWake, hasten: S.targetHasten, max: S.targetMax, rewind: S.targetRewind };
       if (state.active === 0) label(x, top, words.freeze);
       else if (Math.abs(selected.speed) >= meta.time.maxSpeed) label(x, top, words.max, muted);
       else if (selected.kind === 'rope') label(x, selected.y - 26, S.targetRope, gold);
-      else label(x, top, state.bloomReverses ? words.rewind : selected.speed ? words.hasten : words.wake, gold);
+      // A cloud's clock never sleeps, so Speed always hastens it.
+      else label(x, top, state.bloomReverses ? words.rewind : selected.speed || selected.kind === 'cloud' ? words.hasten : words.wake, gold);
     }
     ctx.restore();
     if (options.rewind) rewindOverlay(options.rewind.progress, t);

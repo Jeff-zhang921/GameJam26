@@ -90,6 +90,11 @@ const effects = {
   ropeFray: { kind: 'dust', color: '#e7bf83', count: 6, speed: 58, life: .4 },
   ropeSnap: { kind: 'dust', color: '#f5d49b', count: 16, speed: 92, life: .55 },
   spawn: { kind: 'dust', color: '#c9b58a', count: 10, speed: 45, life: .5 },
+  // A traveller dropping into water, a pool rising as mist, a cloud taking shape, a cloud starting to rain back.
+  splash: { kind: 'dust', color: '#cdeaf4', count: 14, speed: 70, life: .45 },
+  mist: { kind: 'dust', color: '#eef6f9', count: 8, speed: 30, life: .9 },
+  cloudForm: { kind: 'dust', color: '#f2f7fa', count: 12, speed: 40, life: .6 },
+  rain: { kind: 'dust', color: '#c9e6f3', count: 10, speed: 35, life: .6 },
 };
 
 export function createParticles() {
