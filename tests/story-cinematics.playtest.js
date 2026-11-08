@@ -145,7 +145,7 @@ try {
     const paperAlpha = await host.getByTestId('newspaper').evaluate(image => Number(image.style.opacity));
     if (phase === 'caption') {
       assert.equal(paperAlpha, 0, 'Newspaper appeared before the caption finished');
-      assert.equal(await host.getByTestId('newspaper-caption').textContent(), '后来，人们出了报道');
+      assert.equal(await host.getByTestId('newspaper-caption').textContent(), 'Later, reports came out');
       assert.equal(await host.getByTestId('newspaper-caption').evaluate(node => Number(node.style.opacity)), 1);
     }
     if (phase === 'reveal') assert.ok(paperAlpha > .1 && paperAlpha < .9, 'Newspaper did not reveal gradually');
