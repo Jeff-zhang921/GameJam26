@@ -56,7 +56,7 @@ Coordinates are world units; a platform's `y` is its top. Jump reach is about 16
 
 - No floor: falling in returns the traveller to their checkpoint.
 - Near wall pit `{ x: 1400, y: 330, wall: 1 }` on the high ledge's right face, 30 below its top. Bloom plants it by
-  standing about 40 back from the edge and throwing almost straight down (the throw arc shows the hit). Vine 1
+  standing about 38 back from the edge and throwing straight down (the throw arc shows the hit). Vine 1
   spans x 1400 → 1640 at y 330 when full.
 - Lift: `{ axis: 'y', x: 1660, w: 120, y1: 250, y2: 330, speed: 1, dir: -1 }` — starts at the vine-1 height and
   rises to the far-vine height, back and forth (80 px each way, 80 ticks).
