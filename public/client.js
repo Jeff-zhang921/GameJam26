@@ -137,7 +137,9 @@ const modalRoot = document.querySelector('#modal-root');
 const veil = document.querySelector('.scene-veil');
 let sceneFade = null, celebration = null, arrival = null, nextPending = false, entryPending = true;
 const dialogue = createDialogue(document.querySelector('.character-dialogue'));
-const sharedTasks = createTaskHints(document.querySelector('.task-hints'));
+const sharedTasks = createTaskHints(document.querySelector('.task-hints'), {
+  story: document.querySelector('.character-dialogue'), hud: document.querySelector('.game-bottom'),
+});
 let awaitingOnlineState = true;
 const stageBusy = () => !!(sceneFade || celebration || arrival || entrance.active);
 const canvas = document.querySelector('#game');
@@ -1231,8 +1233,8 @@ function runFrame(time) {
       sceneKey: outgoing?.sceneKey ?? sceneKey, cameraReset: outgoing?.cameraReset ?? cameraReset,
       followActor: !outgoing && !rewind ? onlineMode ? network.ownActor : state.actors[state.active] : undefined,
       celebration: celebration && { progress: Math.max(0, Math.min(1, (time - celebration.start) / celebration.duration)), finale: celebration.finale },
-      arrival: !outgoing && arrival ? { progress: Math.max(0, Math.min(1, (time - arrival.start) / arrival.duration)) }
-        : !outgoing && (entryPending || onlineMode && ['WAITING', 'READY', 'STARTING'].includes(network.room?.status)) ? { progress: 0, waiting: true } : null,
+      arrival: !outgoing && arrival ? { kind: state.level === 0 ? 'left-run' : 'portal', progress: Math.max(0, Math.min(1, (time - arrival.start) / arrival.duration)) }
+        : !outgoing && (entryPending || onlineMode && ['WAITING', 'READY', 'STARTING'].includes(network.room?.status)) ? { kind: state.level === 0 ? 'left-run' : 'portal', progress: 0, waiting: true } : null,
       target: aim?.target ?? null,
       touch, tappable: !aim && touch && viewActor === 1 && displayState.status === 'playing' ? new Set(abilityTargets(displayState, viewActor).map(o => o.id)) : null,
       rewind: rewindInfo,

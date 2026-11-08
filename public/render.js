@@ -3,7 +3,8 @@ import { GROW, DIE, growFrame, dieFrame } from '../src/mushroom.js';
 import { enemyBox, lifeFraction, miteStage, isEnemy, attackCharge } from '../src/enemies.js';
 import { createCamera, createParticles, worldPoint } from './presentation.js';
 import { themeFor } from './themes.js';
-import { portalFrame, arrivalFrame, GATE_DURATION, ARRIVAL_DURATION } from './portal.js';
+import { portalFrame, arrivalFrame, arrivalPortal, GATE_ZOOM, GATE_DURATION, ARRIVAL_DURATION } from './portal.js';
+import { bridgeBands } from './bridge-layout.js';
 import { measureCharacterFrames, characterPlacement } from './character-sprites.js';
 import { guardAttackFrame } from './guard-animation.js';
 
@@ -31,7 +32,7 @@ export function createRenderer(canvas, S) {
     budget.elapsed = budget.frames = budget.slow = 0;
   }
   const camera = createCamera(), effects = createParticles();
-  let transform, portalView = null, arrivalView = null;
+  let transform, portalView = null, arrivalView = null, entryGate = null, arrivalKind = null;
   const cyan = '#a1e3e5', gold = '#e1c68a', muted = '#8aa89b';
   const sprites = Object.fromEntries(['crate', 'seed', 'mushroom-grow', 'mushroom-die', 'still', 'mage', 'snail', 'pit', 'vine', 'crossbow', 'arrow'].map(name => { const img = new Image(); img.src = `/sprites/${name}.png`; return [name, img]; }));
   const loaded = (...names) => names.every(name => sprites[name].complete && sprites[name].naturalWidth > 0);
@@ -204,15 +205,8 @@ export function createRenderer(canvas, S) {
       for (let x = p.x; x < p.x + p.w - .5; x += span) piece(0, Math.min(g.width, (p.x + p.w - x) / k), x);
     };
     if (!g.scale || !g.base || !g.legs) return row(g.y, g.height, top);
-    const [l0, l1] = g.legs, course = (l1 - l0) * k;
     const viewportBottom = (frameHeight - transform.offsetY) / transform.scale;
-    const foot = p.y + p.h >= background.height - 1 ? Math.max(p.y + p.h, viewportBottom) : p.y + p.h;
-    const natural = top + (g.base - g.y) * k;
-    const courses = 1 + Math.max(0, Math.ceil((foot - natural) / course));
-    row(g.y, l0 - g.y, top);
-    let y = top + (l0 - g.y) * k;
-    for (let i = 0; i < courses; i++, y += course) row(l0, l1 - l0, y);
-    row(l1, g.y + g.height - l1, y);
+    for (const band of bridgeBands(p, g, background.height, viewportBottom)) row(band.sy, band.sh, band.y);
   }
   // `all` is every platform of the courtyard, to find the ends that rest against a neighbour. A `hidden` platform is
   // never drawn: it only gives collision to art another platform draws wider than itself.
@@ -455,24 +449,35 @@ export function createRenderer(canvas, S) {
     ctx.restore();
   }
   const SNAIL = { cell: 300, top: 76, bottom: 244, shellX: 128 };
-  let snailTint;
+  const snailFrames = new Map();
+  function snailLayers(frame, frozen) {
+    const key = `${frame}:${frozen}`;
+    if (snailFrames.has(key)) return snailFrames.get(key);
+    const layers = {};
+    for (const name of ['head', 'shell']) {
+      const canvas = document.createElement('canvas'); canvas.width = canvas.height = SNAIL.cell;
+      const t = canvas.getContext('2d');
+      t.drawImage(sprites.snail, frame % 4 * SNAIL.cell, Math.floor(frame / 4) * SNAIL.cell, SNAIL.cell, SNAIL.cell, 0, 0, SNAIL.cell, SNAIL.cell);
+      if (frozen) { t.globalCompositeOperation = 'source-atop'; t.fillStyle = 'rgba(188, 238, 240, .35)'; t.fillRect(0, 0, SNAIL.cell, SNAIL.cell); }
+      // Protect the complete shell across all eight frames, including its low front curve.
+      // A vertical cut at x=198 sliced through that curve and shrank part of the shell with the head.
+      t.globalCompositeOperation = name === 'shell' ? 'destination-in' : 'destination-out';
+      t.fillStyle = '#fff';
+      t.beginPath(); t.moveTo(0, 0); t.lineTo(232, 0); t.lineTo(232, 206);
+      t.lineTo(225, 220); t.lineTo(210, 238); t.lineTo(0, 248); t.closePath(); t.fill();
+      layers[name] = canvas;
+    }
+    snailFrames.set(key, layers); return layers;
+  }
   function snail(o, b, pose) {
-    const img = sprites.snail, k = b.h / (SNAIL.bottom - SNAIL.top), size = Math.ceil(SNAIL.cell * k);
-    const frame = Math.floor(Math.abs(o.x) / 6) % 8, sx = frame % 4 * SNAIL.cell, sy = Math.floor(frame / 4) * SNAIL.cell;
-    snailTint ??= document.createElement('canvas');
-    if (snailTint.width !== size) snailTint.width = snailTint.height = size;
-    const t = snailTint.getContext('2d');
-    t.globalCompositeOperation = 'source-over'; t.clearRect(0, 0, size, size);
-    t.drawImage(img, sx, sy, SNAIL.cell, SNAIL.cell, 0, 0, size, size);
-    const tint = o.frozen ? 'rgba(188, 238, 240, .35)' : null;
-    if (tint) { t.globalCompositeOperation = 'source-atop'; t.fillStyle = tint; t.fillRect(0, 0, size, size); }
+    const k = b.h / (SNAIL.bottom - SNAIL.top), frame = Math.floor(Math.abs(o.x) / 6) % 8;
+    const layers = snailLayers(frame, o.frozen);
     const dir = o.dir < 0 ? -1 : 1;
     ctx.save(); ctx.translate(b.x + b.w / 2, o.y);
-    ctx.scale(dir * (1 + pose.charge * .05 + pose.recoil * .06), 1 - pose.charge * .12 + pose.recoil * .06);
-    ctx.translate(-SNAIL.shellX * k, -SNAIL.bottom * k);
-    const head = Math.min(size - 1, Math.round(198 * k));
-    ctx.drawImage(snailTint, head, 0, size - head, size, head - 40 * k * pose.retract, 0, (size - head) * (1 - .85 * pose.retract), size);
-    ctx.drawImage(snailTint, 0, 0, head, size, 0, 0, head, size);
+    ctx.scale(dir * k, k); ctx.translate(-SNAIL.shellX, -SNAIL.bottom);
+    ctx.save(); ctx.translate(232 - 40 * pose.retract, 0); ctx.scale(1 - .85 * pose.retract, 1);
+    ctx.drawImage(layers.head, -232, 0); ctx.restore();
+    ctx.drawImage(layers.shell, 0, 0);
     ctx.restore();
   }
   function enemy(o, targeted, t, reduced) {
@@ -710,8 +715,8 @@ export function createRenderer(canvas, S) {
     ctx.fillText(S.rewinding, cx, cy + r * 1.75);
     ctx.restore();
   }
-  function door(state, t, opening = 0) {
-    const { x, y } = state.exit, open = state.status === 'won' || state.actors.some(p => atExit(state, p));
+  function door(state, t, opening = 0, entrance = null) {
+    const { x, y } = entrance ?? state.exit, open = !!entrance || state.status === 'won' || state.actors.some(p => atExit(state, p));
     ctx.save(); ctx.translate(x, y);
     glow(ctx, 0, -65, 105, open ? '#e8d49838' : '#b8d8d31c');
     const stone = ctx.createLinearGradient(-50, 0, 50, 0);
@@ -750,7 +755,7 @@ export function createRenderer(canvas, S) {
     line(ctx, [[-30, -1], [30, -1]], '#fff1b7', 2);
     ctx.restore();
     star(ctx, 0, -133, 6, '#d8c595');
-    if (state.status !== 'won') {
+    if (!entrance && state.status !== 'won') {
       const waiting = exitStatus(state).waiting;
       ctx.textAlign = 'center'; ctx.font = '9px Georgia'; ctx.fillStyle = '#efe6c6';
       ctx.fillText(waiting !== null ? S.gateWaiting[waiting] : 'THE MOON GATE', 0, -153);
@@ -798,7 +803,7 @@ export function createRenderer(canvas, S) {
     portalView = departure;
     if (departure) {
       const baseScale = transform.scale;
-      const targetScale = Math.max(baseScale, Math.min(frameWidth / 90, frameHeight / 72));
+      const targetScale = baseScale * GATE_ZOOM;
       const scale = baseScale * (targetScale / baseScale) ** departure.zoom;
       const cx = (frameWidth / 2 - transform.offsetX) / baseScale;
       const cy = (frameHeight / 2 - transform.offsetY) / baseScale;
@@ -808,7 +813,9 @@ export function createRenderer(canvas, S) {
         offsetY: frameHeight / 2 - (cy + (focusY - cy) * departure.focus) * scale,
       };
     }
-    arrivalView = options.arrival ? arrivalFrame(options.arrival.progress, state.actors, Math.max(0, -transform.offsetX / transform.scale), options.reduced && !options.arrival.waiting) : null;
+    arrivalKind = options.arrival?.kind ?? null;
+    entryGate = arrivalKind === 'portal' ? arrivalPortal(options.arrival.progress, state.actors, options.arrival.waiting) : null;
+    arrivalView = options.arrival ? arrivalFrame(options.arrival.progress, state.actors, Math.max(0, -transform.offsetX / transform.scale), options.reduced, arrivalKind ?? 'left-run', options.arrival.waiting) : null;
     if (arrivalView) state = { ...state, actors: arrivalView, objects: state.objects.map(o => o.held != null ? { ...o, ...heldPosition(o, arrivalView[o.held]) } : o) };
     lastReset = options.cameraReset;
     effects.update(state, { dt, reduced: options.reduced, paused: options.paused && state.status !== 'won', sceneKey: options.sceneKey });
@@ -836,6 +843,10 @@ export function createRenderer(canvas, S) {
     // Let the gate's glow extend beyond the world clip while keeping it behind the travellers.
     ctx.restore();
     door(state, t, departure?.opening);
+    if (entryGate && entryGate.alpha > 0) {
+      ctx.save(); ctx.globalAlpha *= entryGate.alpha;
+      door(state, t, entryGate.opening, entryGate); ctx.restore();
+    }
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.beginPath(); ctx.rect(cx0, cy0, cx1 - cx0, cy1 - cy0); ctx.clip();
     ctx.setTransform(k, 0, 0, k, ox, oy);
     for (const shard of state.shards) if (!shard.taken) { const yy = shard.y + Math.sin(t * .002 + shard.id) * 5; glow(ctx, shard.x, yy, 40, '#e7d2a51b'); ctx.save(); ctx.translate(shard.x, yy); ctx.rotate(Math.PI / 4); ctx.fillStyle = '#e2d194'; ctx.fillRect(-5, -5, 10, 10); ctx.strokeStyle = '#f4e7b477'; ctx.strokeRect(-10, -10, 20, 20); ctx.restore(); }
@@ -846,10 +857,12 @@ export function createRenderer(canvas, S) {
     for (const o of state.objects) if (isEnemy(o) && !flying(o)) enemy(o, marked(o), t, options.reduced);
     for (const a of state.freezeAreas ?? []) freezeTint(a, t);
     for (const actorState of state.actors) {
+      if (actorState.alpha === 0) continue;
       const inv = actorState.invuln > 0;
       if (inv && !options.reduced && !options.paused && Math.floor(state.tick / 4) % 2) continue;
       if (inv && options.reduced) ctx.globalAlpha = .5;
       ctx.save();
+      ctx.globalAlpha *= actorState.alpha ?? 1;
       let traveller = actorState;
       if (departure) {
         const side = actorState.id === 0 ? -1 : 1;
@@ -870,8 +883,12 @@ export function createRenderer(canvas, S) {
       ctx.restore(); ctx.globalAlpha = 1;
     }
     for (const o of state.objects) if (!departure && o.held != null) {
-      const held = { ...o, ...heldPosition(o, state.actors[o.held]) };
+      const carrier = state.actors[o.held];
+      if (carrier.alpha === 0) continue;
+      ctx.save(); ctx.globalAlpha *= carrier.alpha ?? 1;
+      const held = { ...o, ...heldPosition(o, carrier) };
       o.kind === 'crate' ? crate(held, false, t) : seed(held, t);
+      ctx.restore();
     }
     for (const o of state.objects) if (isEnemy(o) && flying(o)) enemy(o, marked(o), t, options.reduced);
     for (const o of state.objects) if (o.frozen && (o.held === null || o.held === undefined)) frostMark(o, t);
@@ -934,7 +951,7 @@ export function createRenderer(canvas, S) {
       const rect = canvas.getBoundingClientRect();
       return transform ? worldPoint(transform, clientX - rect.left, clientY - rect.top) : null;
     },
-    inspect: () => ({ sceneKey: budget.scene, camera: transform && { ...transform }, portal: portalView && { ...portalView }, arrival: arrivalView?.map(p => ({ id: p.id, x: p.x, y: p.y, move: p.move })) ?? null, particles: effects.count, visualTime, pixelRatio: currentDpr, effectQuality: budget.level === 0 ? 'full' : 'light' }),
+    inspect: () => ({ sceneKey: budget.scene, camera: transform && { ...transform }, portal: portalView && { ...portalView }, arrivalKind, entryGate: entryGate && { ...entryGate }, arrival: arrivalView?.map(p => ({ id: p.id, x: p.x, y: p.y, move: p.move, alpha: p.alpha })) ?? null, particles: effects.count, visualTime, pixelRatio: currentDpr, effectQuality: budget.level === 0 ? 'full' : 'light' }),
     // After a failed frame: drop any clip / transform / save it left behind (resizing a canvas resets its state).
     resetContext: () => { const w = canvas.width; canvas.width = 0; canvas.width = w; },
   };

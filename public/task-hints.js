@@ -86,7 +86,7 @@ export function taskHints(state) {
   return hints.map((text, actor) => ({ actor, name: actor === 0 ? 'STILL' : 'BLOOM', text }));
 }
 
-export function createTaskHints(root) {
+export function createTaskHints(root, { story, hud } = {}) {
   root.innerHTML = [0, 1].map(actor => `<div class="task-hint" data-actor="${actor}" data-testid="task-hint-${actor}" hidden><strong></strong><span></span></div>`).join('');
   const nodes = [...root.children];
   let scene, lastTick = -1;
@@ -113,6 +113,27 @@ export function createTaskHints(root) {
         const order = [...boxes].sort((a, b) => a.x - b.x);
         const left = Math.max(8, Math.min(width - cardWidth * 2 - 18, (order[0].x + order[1].x) / 2 - cardWidth - 5));
         order[0].left = left; order[1].left = left + cardWidth + 10;
+      }
+      const origin = story || hud ? root.getBoundingClientRect() : { left: 0, top: 0 };
+      const visibleRect = node => {
+        if (!node || node.hidden) return null;
+        const style = getComputedStyle(node);
+        if (style.visibility === 'hidden' || Number(style.opacity) === 0) return null;
+        const r = node.getBoundingClientRect();
+        return { left: r.left - origin.left, top: r.top - origin.top, right: r.right - origin.left, bottom: r.bottom - origin.top };
+      };
+      const storyRect = visibleRect(story), hudRect = visibleRect(hud), placed = [];
+      const overlaps = (box, r) => r && box.left < r.right + 8 && box.left + cardWidth + 8 > r.left && box.top < r.bottom + 8 && box.top + cardHeight + 8 > r.top;
+      for (const box of boxes) {
+        // On a short screen the story can share the travellers' head height. Move those cards
+        // into the free column beside it, below the HUD, rather than obscuring either text.
+        if (overlaps(box, storyRect)) {
+          if (storyRect.right + 12 + cardWidth <= width - 8) box.left = storyRect.right + 12;
+          else box.top = storyRect.bottom + 10;
+        }
+        if (overlaps(box, hudRect)) box.top = hudRect.bottom + 10;
+        for (const other of placed) if (overlaps(box, other)) box.top = other.bottom + 10;
+        placed.push({ left: box.left, right: box.left + cardWidth, top: box.top, bottom: box.top + cardHeight });
       }
       for (let actor = 0; actor < 2; actor++) {
         const node = nodes[actor], box = boxes.find(b => b.hint.actor === actor);

@@ -137,7 +137,16 @@ function makeLevel(index, players, unlocked, totalShards, collected = LEVELS.map
     // A possible dead end: the reason, and a counter that only moves when a new warning appears.
     failure: null, failureSeq: 0,
   };
+  if (level.startSeedInHand && state.seeds > 0) putSeedInHand(state);
   return state;
+}
+
+function putSeedInHand(state) {
+  const p = state.actors[BLOOM];
+  const o = { ...makeSeed(`seed-taken-${state.nextSeed++}`, p.x, p.y - 10), held: BLOOM, fromHand: true };
+  Object.assign(o, heldPosition(o, p));
+  state.seeds--; state.objects.push(o); p.carrying = o.id;
+  return o;
 }
 
 export function setup(options = {}) {
@@ -479,15 +488,24 @@ const ITEM_SLIDE = 1.5;
 // One physics tick for a loose crate or seed. Returns whether it landed (and how hard) and whether it hit a wall.
 function stepItem(state, o, all) {
   const half = o.kind === 'crate' ? 27 : 10, k = o.frozen ? meta.time.frozenRate : 1, previous = o.y + half;
+  const previousX = o.x;
   let landed = null, wall = false;
   // A crate is solid to the travellers: it stops against their sides and comes to rest on their heads.
   const bodies = o.kind === 'crate' ? state.actors.map(p => ({ id: `actor-${p.id}`, x: p.x - 15, y: p.y - 52, w: 30, h: 51 })) : [];
   // Other loose crates are solid from the side too (they already stack on top of each other).
   const crates = state.objects.filter(c => c.kind === 'crate' && c.id !== o.id && free(c)).map(c => ({ id: c.id, x: c.x - 27, y: c.y - 27, w: 54, h: 54 }));
   o.vy += 0.3 * k; o.x += o.vx * k;
-  // Platform sides, mushroom stems and crates are walls: an item flying into one stops against it instead of passing through.
-  for (const f of [...state.platforms, ...stemBoxes(state), ...crates, ...bodies]) if (o.y + half > f.y + 3 && o.y - half < f.y + f.h && o.x + half > f.x && o.x - half < f.x + f.w) {
-    o.x = o.x < f.x + f.w / 2 ? f.x - half : f.x + f.w + half; o.vx = 0; wall = true;
+  // Platform sides, mushroom stems and other crates are walls: an item flying into one stops against it instead of passing through.
+  for (const f of [...state.platforms, ...stemBoxes(state), ...crates, ...bodies]) if (o.y + half > f.y + 3 && o.y - half < f.y + f.h) {
+    // Only crossing a side is a horizontal impact. An existing overlap (a traveller moving into
+    // a slowed crate, or a shallow top contact) must not erase the crate's stored flight velocity.
+    const embeddedWall = state.platforms.includes(f) && previousX + half > f.x && previousX - half < f.x + f.w;
+    // A throw origin can be inside a nearby thick wall. Keep that real obstruction solid;
+    // only movement farther into it is blocked, while an item already moving out can escape.
+    const hitLeft = o.vx > 0 && (previousX + half <= f.x + 1e-6 && o.x + half > f.x || embeddedWall && previousX < f.x + f.w / 2);
+    const hitRight = o.vx < 0 && (previousX - half >= f.x + f.w - 1e-6 && o.x - half < f.x + f.w || embeddedWall && previousX >= f.x + f.w / 2);
+    if (!hitLeft && !hitRight) continue;
+    o.x = hitLeft ? f.x - half : f.x + f.w + half; o.vx = 0; wall = true;
   }
   o.y += o.vy * k;
   let left = Infinity, right = -Infinity;
@@ -820,10 +838,7 @@ export function applyAction(state, playerId, action) {
   if (action.type === 'jumpRelease') p.jumpHeld = false;
   if (action.type === 'takeSeed') {
     // One seed from the count goes into Bloom's hand. If it is ever lost it goes back to the count.
-    s.seeds--;
-    const o = { ...makeSeed(`seed-taken-${s.nextSeed++}`, p.x, p.y - 10), held: BLOOM, fromHand: true };
-    Object.assign(o, heldPosition(o, p));
-    s.objects.push(o); p.carrying = o.id;
+    const o = putSeedInHand(s);
     event(s, 'seedTake', o.x, o.y, { actor: BLOOM, seeds: s.seeds });
   }
   if (action.type === 'stowSeed') {

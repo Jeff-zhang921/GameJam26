@@ -178,7 +178,7 @@ describe('online rendering of carried boxes', () => {
 describe('a loose crate is solid to the travellers', () => {
   // A crate in the air at (x, y) with velocity (vx, vy); Still at stillX, Bloom out of the way.
   function flying(x, y, vx, vy, stillX) {
-    const state = setup({ level: 0 });
+    const state = classicCourtyard();
     Object.assign(crate(state), { x, y, vx, vy });
     state.actors[0].x = stillX; state.actors[1].x = 60;
     return state;

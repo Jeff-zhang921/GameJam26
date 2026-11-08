@@ -23,9 +23,9 @@ export default {
   ],
   spawn: [{ x: 190, y: 520 }, { x: 265, y: 520 }],
   crates: [],
-  // Three seeds in hand (the mushroom and two vines); spares on the start ground, the high ledge and the far cliff,
+  // Three starting seeds, one in hand (the mushroom and two vines); spares on the start ground, high ledge and far cliff,
   // so a failed canyon crossing can be redone (or Bloom, across, can plant the far vine and then the near one for Still).
-  seeds: [{ x: 350, y: 510 }, { x: 1300, y: 290 }, { x: 2470, y: 190 }], startSeeds: 3,
+  seeds: [{ x: 350, y: 510 }, { x: 1300, y: 290 }, { x: 2470, y: 190 }], startSeeds: 3, startSeedInHand: true,
   // The mushroom's pit on the start ground; wall pits on the near cliff (vine grows right, 30 below the ledge top)
   // and the far cliff (vine grows left, 50 below its top).
   pits: [{ x: 600, y: 520 }, { x: 1400, y: 330, wall: 1 }, { x: 2190, y: 250, wall: -1 }],

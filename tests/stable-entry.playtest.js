@@ -30,7 +30,7 @@ async function open(options, reduced = false) {
       const view = game.presentation(), s = game.snapshot();
       if (!view.camera || !Array.isArray(s.actors) || window.entryFrames.length > 6000) return;
       window.entryFrames.push({ key: view.sceneKey, phase: s.phase, level: s.level, tick: s.tick,
-        transition: game.transition().phase, arrival: view.arrival, camera: view.camera,
+        transition: game.transition().phase, arrival: view.arrival, arrivalKind: view.arrivalKind, gate: view.entryGate, camera: view.camera,
         actors: s.actors.map(p => ({ x: p.x, y: p.y, grounded: p.grounded })), room: game.connection().room?.status });
     });
   }, reduced);
@@ -48,8 +48,11 @@ function checkEntry(trace, key, reduced = false) {
     if (f.transition === 'landing') running = true;
     if (!running) {
       assert.ok(f.arrival, `Spawn flashed before entry (${f.phase}, ${f.transition})`);
-      const left = Math.max(0, -f.camera.offsetX / f.camera.scale);
-      assert.ok(f.arrival.every(p => p.x <= left - 79), 'A waiting traveller was not fully offscreen');
+      assert.ok(f.arrival.every(p => p.alpha === 0), 'A waiting traveller was visible');
+      if (f.arrivalKind === 'left-run') {
+        const left = Math.max(0, -f.camera.offsetX / f.camera.scale);
+        assert.ok(f.arrival.every(p => p.x <= left - 79), 'A waiting traveller was not fully offscreen');
+      } else assert.ok(f.gate && f.gate.alpha === 0, 'Entrance gate flashed during the covered phase');
     } else if (f.arrival) {
       if (previous) for (let i = 0; i < f.arrival.length; i++) assert.ok(f.arrival[i].x >= previous[i].x - 1e-6, 'Traveller vanished or moved backwards during entry');
       previous = f.arrival;
@@ -124,7 +127,13 @@ try {
     Object.assign(room.game.actors[0], { x: 1300, y: 300, vx: 0, vy: 0, move: 0, on: 'platform-1', grounded: true });
     Object.assign(room.game.actors[1], { x: 1495, y: 440, vx: 0, vy: 0, move: 0, facing: -1, on: 'platform-5', grounded: true, jumpHeld: false });
     await guest.waitForFunction(() => window.__moonclock.snapshot().actors[1].x === 1495);
-    await guest.evaluate(() => window.__moonclock.dispatch({ type: 'takeSeed', actor: 1 }));
+    await guest.waitForFunction(() => document.querySelector('[data-testid="touch-seed-counter"] b')?.textContent === '3');
+    await guest.keyboard.down('KeyR'); await guest.keyboard.press('Escape'); await guest.keyboard.up('KeyR');
+    await guest.waitForFunction(() => {
+      const s = window.__moonclock.snapshot(); return s.seeds === 3 && s.actors[1].carrying === null;
+    });
+    console.log('PASS upstream seed controls: opening hand seed returns to stock once when the R aim is cancelled');
+    await guest.evaluate(() => { if (window.__moonclock.snapshot().actors[1].carrying === null) window.__moonclock.dispatch({ type: 'takeSeed', actor: 1 }); });
     await guest.waitForFunction(() => window.__moonclock.snapshot().actors[1].carrying !== null);
     let aim = null;
     for (let vx = -11; vx <= 11; vx += .25) for (let vy = -11; vy <= 11; vy += .25) {
@@ -136,6 +145,14 @@ try {
     await guest.evaluate(({ vx, vy }) => window.__moonclock.dispatch({ type: 'grab', actor: 1, aim: { vx, vy } }), aim);
     await guest.waitForFunction(() => window.__moonclock.snapshot().pits.some(p => p.wall === 1 && p.plant));
     await guest.screenshot({ path: `${out}/wide-platform-throw.png` });
+    const planted = await snapshot(guest);
+    await guest.reload(); await ready(guest); await guest.waitForTimeout(80);
+    const reconnected = await snapshot(guest);
+    assert.equal(reconnected.seeds, planted.seeds, 'Reconnect duplicated the opening seed');
+    assert.equal(reconnected.actors[1].carrying, null, 'Reconnect gave Bloom another hand seed');
+    assert.equal(reconnected.pits.find(p => p.wall === 1).plant, planted.pits.find(p => p.wall === 1).plant);
+    assert.equal(await guest.evaluate(() => window.__moonclock.presentation().arrival), null);
+    console.log('PASS third-courtyard reconnect: opening seed stays spent, plant persists, no repeated entry');
     await guest.evaluate(() => {
       window.__moonclock.dispatch({ type: 'move', actor: 1, dir: -1 });
       window.__moonclock.dispatch({ type: 'jump', actor: 1 });

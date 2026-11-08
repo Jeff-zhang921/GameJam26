@@ -82,6 +82,8 @@ export function reverseArena({ age = 1200 } = {}) {
 // (platform-1, y 265) with the moon gate at (1160, 265). Level index 2 keeps `exitNeedsPlant` for fail checks.
 export function afterbloomArena(options = {}) {
   const s = setup({ ...options, level: 2 });
+  // This fixed mechanics arena replaces all objects and uses its own stock-only seed setup.
+  s.actors.forEach(p => { p.carrying = null; });
   const { growTicks, matureTicks, maxHeight } = meta.plant;
   s.width = 1280;
   s.platforms = [{ x: 0, y: 520, w: 1280, h: 140 }, { x: 1000, y: 265, w: 280, h: 400 }];

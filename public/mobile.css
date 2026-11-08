@@ -119,23 +119,24 @@ body.touch-layout .touch-controls .touch-seeds:not([hidden]){display:flex;right:
 .touch-seeds.empty .skill-charges{color:#ffd3bd;background:#603d35}
 .touch-controls .touch-seeds[data-kind="plant"]{box-shadow:0 0 0 calc(3 * var(--control-unit)) #efd88dcc,0 calc(8 * var(--control-unit)) calc(22 * var(--control-unit)) #0d2d2952}
 /* Traveller dialogue stays out of the thumb controls and never pauses the world. */
-.character-dialogue{position:absolute;z-index:5;top:22px;left:24px;width:min(340px,calc(100% - 100px));min-height:98px;padding:15px 18px 15px 72px;border:1px solid #e1d3a990;border-radius:4px 18px 18px 18px;background:linear-gradient(125deg,#132f32ef,#284b45e8);box-shadow:0 8px 28px #0b29262e;pointer-events:none;color:#f2edd7}
+.character-dialogue{position:absolute;z-index:5;top:22px;left:24px;width:min(420px,calc(100% - 100px));min-height:120px;padding:18px 20px 18px 88px;border:1px solid #e1d3a990;border-radius:4px 18px 18px 18px;background:linear-gradient(125deg,#132f32ef,#284b45e8);box-shadow:0 8px 28px #0b29262e;pointer-events:none;color:#f2edd7}
 .character-dialogue[hidden]{display:none}
-.dialogue-portrait{position:absolute;left:10px;bottom:14px;width:54px;height:60px;background:url('/sprites/still.png') 0 0 / 800% 200% no-repeat}
+.dialogue-portrait{position:absolute;left:12px;bottom:16px;width:64px;height:72px;background:url('/sprites/still.png') 0 0 / 800% 200% no-repeat}
 .character-dialogue[data-speaker="1"] .dialogue-portrait{background-image:url('/sprites/mage.png')}
 .dialogue-speaker{font-size:10px;letter-spacing:2px;color:#bce0db}
 .character-dialogue[data-speaker="1"] .dialogue-speaker{color:#ead49c}
 .character-dialogue>button{position:absolute;top:0;right:4px;display:flex;align-items:center;justify-content:center;gap:4px;min-width:60px;min-height:44px;color:#dfd6b6;font-size:11px;pointer-events:auto;border-radius:8px}
 .character-dialogue>button svg{width:12px;height:12px}
-.dialogue-text{font:14px/1.65 Georgia,serif;margin:12px 0 0;min-height:46px;overflow-wrap:break-word}
+.dialogue-text{font:16px/1.6 Georgia,serif;margin:12px 0 0;min-height:56px;overflow-wrap:break-word}
 .typing .dialogue-text:after{content:'▏';color:#e8d09a}
 .dialogue-announcement{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-body.touch-layout .character-dialogue{top:calc(var(--safe-top) + 12px);left:calc(var(--safe-left) + 12px);width:min(320px,36vw);padding:13px 14px 13px 62px}
-body.touch-layout .dialogue-text{font-size:13px;line-height:1.55;margin-top:12px}
-body.touch-layout .dialogue-portrait{left:6px;width:50px;height:58px}
+body.touch-layout .character-dialogue{top:calc(var(--safe-top) + 12px);left:calc(var(--safe-left) + 12px);width:min(384px,44vw,calc(100% - var(--safe-left) - var(--safe-right) - 76px));min-height:116px;padding:15px 16px 15px 78px}
+body.touch-layout .dialogue-text{font-size:15px;line-height:1.55;margin-top:12px}
+body.touch-layout .dialogue-portrait{left:8px;width:60px;height:68px}
 .celebrating .character-dialogue,.scene-changing .character-dialogue,.online-entering .character-dialogue{visibility:hidden}
-@media(max-height:560px){body.touch-layout .character-dialogue{min-height:88px;padding-top:10px;padding-bottom:10px}body.touch-layout .dialogue-text{font-size:12px;line-height:1.5}}
-@media(max-height:560px) and (orientation:landscape){body.touch-layout .game-bottom{left:auto;right:calc(var(--safe-right) + 68px);transform:none;max-width:calc(100% - 36vw - var(--safe-left) - var(--safe-right) - 94px);padding:7px 10px}}
+@media(max-height:560px){body.touch-layout .character-dialogue{min-height:104px;padding-top:12px;padding-bottom:12px}body.touch-layout .dialogue-text{font-size:14px;line-height:1.5}}
+body.touch-layout .game-bottom{left:calc(var(--safe-left) + min(384px,44vw) + 24px);right:auto;transform:none;max-width:calc(100% - min(384px,44vw) - var(--safe-left) - var(--safe-right) - 108px)}
+@media(max-height:560px) and (orientation:landscape){body.touch-layout .game-bottom{padding:7px 10px}body.touch-layout #online-room-badge{top:calc(var(--safe-top) + 64px)}}
 .task-hints{position:absolute;inset:0;z-index:3;pointer-events:none}
 .task-hint{position:absolute;min-height:58px;padding:8px 11px;border:1px solid #a9ded8a6;border-radius:9px;background:#173b3aeb;color:#f6f1da;box-shadow:0 4px 14px #102b3533;font:12px/1.4 "Segoe UI",sans-serif;text-align:left;pointer-events:none}
 .task-hint[hidden]{display:none}

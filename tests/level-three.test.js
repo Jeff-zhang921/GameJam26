@@ -34,8 +34,8 @@ const aimAt = (s, x, y) => {
 };
 // Bloom, standing where it is, takes a seed and throws it into a wall pit (aimed just off the face).
 const throwInto = (s, pit) => {
-  s = act(s, { type: 'takeSeed', actor: BLOOM });
-  const aim = aimAt(s, pit.x + pit.wall * 10, pit.y);
+  if (s.actors[BLOOM].carrying === null) s = act(s, { type: 'takeSeed', actor: BLOOM });
+  const aim = aimAt(s, pit.x + (pit.wall ?? 0) * 10, pit.y - (pit.wall ? 0 : 10));
   expect(aim.d).toBeLessThanOrEqual(24);
   s = act(s, { type: 'grab', actor: BLOOM, aim: { vx: aim.vx, vy: aim.vy } });
   s = tick(s, 90);
@@ -174,7 +174,8 @@ describe('courtyard 3 layout', () => {
 
   test('resources: enough seeds and Bloom charges for a clean run and one canyon redo', () => {
     const s = setup({ level: 2 });
-    expect(s.seeds).toBe(3);
+    expect(s.seeds).toBe(2);
+    expect(s.objects.find(o => o.id === s.actors[BLOOM].carrying)?.kind).toBe('seed');
     // A clean run uses three seeds and three wakes (mushroom, two vines); a canyon redo needs two more of each.
     expect(s.seeds + s.objects.filter(o => o.kind === 'seed').length).toBeGreaterThanOrEqual(3 + 2);
     expect(s.bloomCharges + s.pickups.filter(c => c.kind === 'bolt').length).toBeGreaterThanOrEqual(3 + 2);
