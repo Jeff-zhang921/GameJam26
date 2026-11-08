@@ -5,7 +5,7 @@
   "description": "Two travelers, one borrowed moment. A cooperative adventure in time.",
   "start_url": "/",
   "scope": "/",
-  "display": "standalone",
+  "display": "fullscreen",
   "background_color": "#8cb7a7",
   "theme_color": "#8cb7a7",
   "orientation": "landscape",

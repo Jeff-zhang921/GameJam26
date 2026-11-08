@@ -60,10 +60,10 @@ function fixture({ networkFails = false, clients = [] } = {}) {
   };
 }
 
-test('manifest declares standalone Moonclock, landscape preference and complete local install icons', async () => {
+test('installed Moonclock requests fullscreen from launch with landscape preference and complete local icons', async () => {
   const manifest = JSON.parse(await readFile(new URL('../public/manifest.webmanifest', import.meta.url), 'utf8'));
   expect(manifest.name).toBe('Moonclock'); expect(manifest.short_name).toBe('Moonclock');
-  expect(manifest.start_url).toBe('/'); expect(manifest.scope).toBe('/'); expect(manifest.display).toBe('standalone');
+  expect(manifest.start_url).toBe('/'); expect(manifest.scope).toBe('/'); expect(manifest.display).toBe('fullscreen');
   expect(manifest.orientation).toBe('landscape');
   expect(manifest.icons.some(icon => icon.purpose === 'maskable')).toBe(true);
   for (const icon of manifest.icons) {
