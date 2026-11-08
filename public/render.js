@@ -1,4 +1,4 @@
-import { canopyWidth, meta, atExit, anchor, exitStatus, heldPosition, cloudPhase, waterRect } from '../src/logic.js';
+import { canopyWidth, meta, atExit, anchor, exitStatus, heldPosition, cloudPhase, cloudRate, waterRect } from '../src/logic.js';
 import { GROW, DIE, growFrame, dieFrame } from '../src/mushroom.js';
 import { enemyBox, lifeFraction, miteStage, isEnemy, attackCharge } from '../src/enemies.js';
 import { createCamera, createParticles, worldPoint } from './presentation.js';
@@ -552,10 +552,13 @@ export function createRenderer(canvas, S) {
     if (shape === 'cloud') timeRing(cx, top + h / 2, w / 2 + 14, o, t);
     const below = o.pool.y + o.pool.h * (1 - cloudPhase(o).fill), bottom = top + h;
     if (form === 'rain' || form === 'mist') {
+      // Rain falls while it turns back into water; mist rises while it turns into a cloud. Rewound, each change plays
+      // backwards: rain becomes rising mist, mist becomes falling rain.
+      const falling = (form === 'rain') !== (cloudRate(o) < 0);
       ctx.save(); ctx.lineCap = 'round';
       for (let i = 0; i < 9; i++) {
         const x = cx - w / 2 + (i + .5) * w / 9, span = Math.max(1, below - bottom), u = ((t * .3 + i * 53) % span) / span;
-        if (form === 'rain') { ctx.globalAlpha = .7 * (1 - mist * .3); line(ctx, [[x, bottom + u * span], [x - 2, bottom + u * span + 11]], '#c9e6f3', 1.5); }
+        if (falling) { ctx.globalAlpha = .7 * (1 - mist * .3); line(ctx, [[x, bottom + u * span], [x - 2, bottom + u * span + 11]], '#c9e6f3', 1.5); }
         else { ctx.globalAlpha = .45 * (1 - u); circle(ctx, x + Math.sin(t * .003 + i) * 4, below - u * span, 2.5 + u * 3, '#eef6f9'); }
       }
       ctx.restore();

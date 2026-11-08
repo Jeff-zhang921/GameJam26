@@ -87,6 +87,14 @@ function rainStart(o) {
   const { waterTicks, formTicks, cloudTicks, rainTicks } = meta.cloud, length = waterTicks + formTicks + cloudTicks + rainTicks;
   return o.age - (((o.age % length) + length) % length) + waterTicks + formTicks + cloudTicks;
 }
+// How fast a cloud's clock runs, before any Freeze Area: forward at 1 + speed, or, rewound (speed < 0), backwards.
+export const cloudRate = o => o.speed < 0 ? o.speed : 1 + o.speed;
+// Real ticks a cloud has left as a cloud at its pace right now: until it starts to rain back, or, rewound, until it
+// sinks back into its rise.
+function cloudTimeLeft(o) {
+  const rate = cloudRate(o) * (o.frozen ? meta.time.frozenRate : 1), end = rainStart(o);
+  return rate > 0 ? (end - o.age) / rate : (o.age - (end - meta.cloud.cloudTicks)) / -rate;
+}
 // The cloud's body (solid only while it is fully formed) and the water in its pool right now.
 const cloudRect = o => ({ x: o.x - o.w / 2, y: o.y, w: o.w, h: meta.cloud.h });
 export function waterRect(o) {
@@ -236,10 +244,10 @@ function actorAllowed(state, playerId, actor) {
 // Objects a time ability can ever act on.
 const timeObject = o => o.kind === 'plant' || o.kind === 'mover' || o.kind === 'crate' || o.kind === 'rope' || o.kind === 'cloud' || isEnemy(o);
 // Still's area slows anything; Bloom hastens things that have a clock of their own (not crates).
-// In a rewinding courtyard Bloom's backwards time only takes hold of plants.
+// In a rewinding courtyard Bloom's backwards time only takes hold of plants and clouds.
 // Something keeping a traveller's pace answers only to their steps.
 const canAffect = (state, actor, o) => timeObject(o) && o.walker === undefined && (actor === STILL ||
-  (o.kind !== 'crate' && (!state.bloomReverses || o.kind === 'plant') && (!state.walkingTime || o.kind === 'rope')));
+  (o.kind !== 'crate' && (!state.bloomReverses || o.kind === 'plant' || o.kind === 'cloud') && (!state.walkingTime || o.kind === 'rope')));
 
 // Where reach to an object is measured, from point `p`: its anchor, or for a pool of water (wide, and low under the
 // ledges beside it), the nearest point of its surface.
@@ -531,29 +539,34 @@ function ageObjects(state) {
   for (const o of [...state.objects]) {
     const slow = o.frozen ? meta.time.frozenRate : 1, walked = walkerTime(state, o);
     if (walked !== null) o.clock += walked;
-    // A cloud's clock always runs (Speed adds to it), except while it counts down after its first visitor: then only
-    // real time counts, and at the end it starts to rain back. Each change of form is an event: the pool starts to
-    // rise as mist, the cloud is formed (and solid), the cloud starts to rain back.
+    // A cloud's clock always runs (Speed adds to it; rewound, it runs backwards), except while it counts down after its
+    // first visitor: then only real time counts, and at the end it starts to rain back. Each change of form is an
+    // event: the pool starting to rise as mist, the cloud formed (and solid), the cloud starting to rain back.
     if (o.kind === 'cloud') {
-      const was = cloudPhase(o);
+      const was = cloudPhase(o), backwards = o.vanish === null && cloudRate(o) < 0;
       if (o.vanish !== null) {
         if (--o.vanish <= 0) { o.age = rainStart(o); o.vanish = o.vanishTotal = null; }
-      } else o.age += (1 + o.speed) * slow;
+      } else o.age += cloudRate(o) * slow;
       const now = cloudPhase(o);
       if (now.form !== was.form) {
-        // Starting to turn into the other form (mist rising, or rain falling), it keeps nothing of the old one's time:
-        // it starts the change from its very beginning (a hastened clock may have run a little past it), without
-        // Speed, and every Freeze Area cast so far lets it go. A new cloud has not been stood on yet.
+        // Turning into the other form, it keeps nothing of the old one's time: no Speed or rewind, and every Freeze
+        // Area cast so far lets it go. A new cloud has not been stood on yet. Going forward, that happens as the change
+        // begins (mist rising, rain falling), from the change's very beginning (a hastened clock may have run a little
+        // past it). Rewound, the change plays backwards first (rain rising back into a cloud, mist sinking back into
+        // water), and the form it comes back to starts afresh: a whole new cloud, or a whole spell of water.
         if (now.shape !== was.shape) {
-          const { formTicks, cloudTicks } = meta.cloud;
-          o.age = rainStart(o) - (now.form === 'mist' ? cloudTicks + formTicks : 0);
+          const { waterTicks, formTicks, cloudTicks } = meta.cloud, end = rainStart(o);
+          o.age = backwards ? end - cloudTicks - (now.form === 'water' ? formTicks + waterTicks : 0)
+            : end - (now.form === 'mist' ? cloudTicks + formTicks : 0);
           o.speed = 0;
           o.immune = state.freezeAreas.map(a => a.id);
           o.stood = false;
         }
         if (now.form !== 'cloud') o.vanish = o.vanishTotal = null;
-        const at = now.form === 'mist' ? { x: o.x, y: o.pool.y } : { x: o.x, y: o.y + meta.cloud.h / 2 };
-        if (now.form !== 'water') event(state, now.form === 'cloud' ? 'cloudForm' : now.form, at.x, at.y, { cloud: o.id });
+        // Rewound, rain played backwards is water rising (mist), and mist played backwards is a cloud sinking (rain).
+        const kind = backwards ? { rain: 'mist', cloud: 'cloudForm', mist: 'rain' }[now.form] : { mist: 'mist', cloud: 'cloudForm', rain: 'rain' }[now.form];
+        const at = kind === 'mist' ? { x: o.x, y: o.pool.y } : { x: o.x, y: o.y + meta.cloud.h / 2 };
+        if (kind) event(state, kind, at.x, at.y, { cloud: o.id });
       }
     }
     if (o.kind === 'rope' && o.speed > 0) {
@@ -800,9 +813,8 @@ function moveActors(state) {
           // Its first visitor starts it fading: it rains back after `standTicks`, or once its time as a cloud (at
           // its pace right now) runs out, whichever is sooner.
           if (!o.stood) {
-            const pace = (1 + o.speed) * (o.frozen ? meta.time.frozenRate : 1);
             o.stood = true;
-            o.vanish = o.vanishTotal = Math.max(1, Math.min(meta.cloud.standTicks, Math.ceil((rainStart(o) - o.age) / pace)));
+            o.vanish = o.vanishTotal = Math.max(1, Math.min(meta.cloud.standTicks, Math.ceil(cloudTimeLeft(o))));
             event(state, 'cloudFade', o.x, o.y, { cloud: o.id, ticks: o.vanish });
           }
         }

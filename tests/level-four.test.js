@@ -1,14 +1,17 @@
 import { describe, test, expect } from 'bun:test';
-import { setup, applyAction, validateAction, abilityCheck, meta } from '../src/logic.js';
+import { setup, applyAction, validateAction, abilityCheck, meta, cloudSolid } from '../src/logic.js';
 import { LEVELS } from '../src/levels/index.js';
 
 // Courtyard 4: Bloom rewinds. A dead tree in front of a low tunnel (hop in from the cap while it is about half
-// height), then a thorny vine closing the shaft in front of the exit cliff (rewound, it opens a gap by the cliff).
+// height), then a thorny vine closing the shaft in front of the cliff (rewound, it opens a gap by the cliff), then a
+// cloud over a basin: the crate is the step from the cliff's edge up onto it, and it is the step to the gate.
 const act = (s, a) => { expect(validateAction(s, 'local', a).valid).toBe(true); return applyAction(s, 'local', a); };
 const tick = (s, n = 1) => { for (let i = 0; i < n; i++) s = applyAction(s, 'local', { type: 'tick' }); return s; };
 const STILL = 0, BLOOM = 1;
 const level = LEVELS[3];
-const [start, floor, roof, lower, block, cliff] = level.platforms;
+const [start, floor, roof, lower, block, cliff, basinLeft, groove, basinRight, gate] = level.platforms;
+const GATE = `platform-${level.platforms.indexOf(gate)}`;
+const on = (f, x) => x > f.x && x < f.x + f.w;
 const get = (s, id) => s.objects.find(o => o.id === id);
 const stand = (s, who, x, y, on) => Object.assign(s.actors[who], { x, y, vx: 0, vy: 0, grounded: true, on });
 const { growTicks, maxHeight } = meta.plant;
@@ -33,19 +36,33 @@ function anyJumpReaches(build, goal, dir = 1) {
 const solo = (prepare = () => {}) => () => { const s = setup({ level: 3 }); stand(s, BLOOM, 40, 520, 'platform-0'); prepare(s); return s; };
 
 describe('courtyard 4 layout', () => {
-  test('rewinding courtyard, six platforms in order, gate on the cliff', () => {
+  test('rewinding courtyard, platforms in order, gate on its own ledge past the cloud basin', () => {
     const s = setup({ level: 3 });
     expect(s.bloomReverses).toBe(true);
-    expect(s.width).toBe(2800);
+    expect(s.width).toBe(3360);
     expect(start.y - floor.y).toBe(200);
     expect(roof.ceiling && roof.y + roof.h).toBe(251);
     expect(floor.y - (roof.y + roof.h)).toBe(69);
     expect(lower.y).toBe(520);
     expect(block.ceiling && block.y + block.h).toBe(380);
     expect(lower.y - cliff.y).toBe(140);
-    expect(level.exit.y === cliff.y && level.exit.x > cliff.x).toBe(true);
+    expect(level.exit.y === gate.y && level.exit.x > gate.x).toBe(true);
     expect(s.seeds).toBe(0);
-    expect(s.objects.filter(o => o.kind === 'seed' || o.kind === 'crate' || o.kind === 'mover')).toHaveLength(0);
+    expect(s.objects.filter(o => o.kind === 'seed' || o.kind === 'mover')).toHaveLength(0);
+  });
+
+  test('past the cliff: a basin with a water-filled groove under a high cloud, and one crate on the cliff', () => {
+    const s = setup({ level: 3 }), c = s.objects.find(o => o.kind === 'cloud'), box = s.objects.find(o => o.kind === 'crate');
+    expect([cliff.x + cliff.w, basinLeft.x + basinLeft.w, groove.x + groove.w, basinRight.x + basinRight.w]).toEqual([basinLeft.x, groove.x, basinRight.x, gate.x]);
+    expect(basinLeft.y - cliff.y).toBe(70);
+    expect(c.pool).toEqual({ x: groove.x, y: basinLeft.y, w: groove.w, h: groove.y - basinLeft.y });
+    expect(c.x - c.w / 2 >= groove.x && c.x + c.w / 2 <= groove.x + groove.w).toBe(true);
+    // Too high to jump to from the cliff (a jump rises about 163), reachable from the crate.
+    expect(cliff.y - c.y).toBe(180);
+    expect(gate.x - (cliff.x + cliff.w)).toBe(400);
+    expect(s.objects.filter(o => o.kind === 'crate')).toHaveLength(1);
+    expect(box).toMatchObject({ y: cliff.y - 27, respawnRight: cliff.x + cliff.w });
+    expect(on(cliff, box.x)).toBe(true);
   });
 
   test('the dead tree sleeps, withered and low; the vine sleeps, full and thorny', () => {
@@ -117,6 +134,80 @@ describe('courtyard 4: the shaft', () => {
   });
 });
 
+describe('courtyard 4: the cloud basin', () => {
+  // Only the travellers, the ledges, the cloud (formed, or a full pool) and, if asked, the crate; Bloom waits on the cliff.
+  const section = ({ formed = false, crate = false, prepare = () => {} } = {}) => () => {
+    const s = setup({ level: 3 });
+    s.objects = s.objects.filter(o => o.kind === 'cloud' || (crate && o.kind === 'crate'));
+    get(s, 'cloud-0').age = formed ? meta.cloud.waterTicks + meta.cloud.formTicks + 1 : 10;
+    stand(s, BLOOM, cliff.x + 40, cliff.y, 'platform-5');
+    prepare(s);
+    return s;
+  };
+  const edge = cliff.x + cliff.w;
+
+  test('the cloud is out of jumping reach from the cliff, but not from the crate at its edge', () => {
+    for (const x of [edge - 80, edge - 20, edge + 14]) {
+      expect(anyJumpReaches(section({ formed: true, prepare: s => stand(s, STILL, x, cliff.y, 'platform-5') }), 'cloud-0')).toBe(false);
+    }
+    expect(anyJumpReaches(section({ formed: true, crate: true, prepare: s => {
+      Object.assign(get(s, 'crate-0'), { x: edge - 30 });
+      stand(s, STILL, edge - 40, cliff.y - 54, 'crate-0');
+    } }), 'cloud-0')).toBe(true);
+  });
+
+  test('from the cloud the gate\'s ledge is a jump away', () => {
+    for (const x of [2730, 2780, 2805]) expect(anyJumpReaches(section({ formed: true, prepare: s => stand(s, STILL, x, get(s, 'cloud-0').y, 'cloud-0') }), GATE)).toBe(true);
+  });
+
+  test('without the cloud, nothing reaches the gate\'s ledge: not the cliff, the crate, a crate held in mid-air, or the basin', () => {
+    for (const x of [edge - 60, edge + 14]) expect(anyJumpReaches(section({ prepare: s => stand(s, STILL, x, cliff.y, 'platform-5') }), GATE)).toBe(false);
+    expect(anyJumpReaches(section({ crate: true, prepare: s => {
+      Object.assign(get(s, 'crate-0'), { x: edge - 30 });
+      stand(s, STILL, edge - 20, cliff.y - 54, 'crate-0');
+    } }), GATE)).toBe(false);
+    // A crate slowed in mid-air can only hover over the cliff (it returns once past the edge): a block there, at
+    // any height, is not a step to the gate.
+    for (const top of [-60, 60, 160, 260]) {
+      expect(anyJumpReaches(section({ prepare: s => {
+        s.platforms.push({ x: edge - 27, y: top, w: 54, h: 54 });
+        stand(s, STILL, edge + 10, top, `platform-${s.platforms.length - 1}`);
+      } }), GATE)).toBe(false);
+    }
+    for (const [f, x] of [[basinRight, basinRight.x + 20], [basinRight, gate.x - 16], [groove, groove.x + groove.w - 16]]) {
+      expect(anyJumpReaches(section({ prepare: s => stand(s, STILL, x, f.y, `platform-${level.platforms.indexOf(f)}`) }), GATE)).toBe(false);
+    }
+  });
+
+  test('anyone who drops into the basin can jump back up onto the cliff', () => {
+    for (const x of [basinLeft.x + 20, basinLeft.x + 90]) {
+      expect(anyJumpReaches(section({ prepare: s => stand(s, STILL, x, basinLeft.y, `platform-${level.platforms.indexOf(basinLeft)}`) }), 'platform-5', -1)).toBe(true);
+    }
+  });
+
+  test('the crate never leaves the cliff: past its edge it returns to its spot', () => {
+    let s = setup({ level: 3 });
+    const box = get(s, 'crate-0');
+    Object.assign(box, { x: edge - 20, vx: 4 });
+    s = tick(s, 20);
+    expect(get(s, 'crate-0')).toMatchObject({ x: box.spawnX, y: box.spawnY });
+    expect(s.events.some(e => e.kind === 'return')).toBe(true);
+  });
+
+  test('Bloom rewinds the cloud here: water that has just rained away rises back into a fresh cloud', () => {
+    let s = setup({ level: 3 });
+    const { waterTicks, formTicks, cloudTicks, rainTicks } = meta.cloud;
+    get(s, 'cloud-0').age = waterTicks + formTicks + cloudTicks + rainTicks + 100;
+    stand(s, BLOOM, edge - 20, cliff.y, 'platform-5');
+    expect(abilityCheck(s, BLOOM, 'cloud-0')).toBe('ok');
+    s = act(s, { type: 'ability', actor: BLOOM, target: 'cloud-0' });
+    expect(get(s, 'cloud-0').speed).toBe(-1);
+    let n = 0; while (!cloudSolid(get(s, 'cloud-0')) && n < 1000) { s = tick(s); n++; }
+    expect(n).toBeLessThanOrEqual(100 + rainTicks + 2);
+    expect(get(s, 'cloud-0').speed).toBe(0);
+  });
+});
+
 describe('courtyard 4 can be finished', () => {
   test('rewind the tree, both hop into the tunnel, rewind the vine, both jump up, both reach the gate', () => {
     let s = setup({ level: 3 });
@@ -145,8 +236,51 @@ describe('courtyard 4 can be finished', () => {
     s = tick(s, 70);
     for (const who of [STILL, BLOOM]) expect(s.actors[who].on).toBe('platform-5');
     for (const who of [STILL, BLOOM]) s = act(s, { type: 'move', actor: who, dir: 0 });
-    stand(s, STILL, level.exit.x - 10, cliff.y, 'platform-5'); stand(s, BLOOM, level.exit.x + 10, cliff.y, 'platform-5');
-    s = tick(s, 2);
+
+    // On the cliff: Still carries the crate to the edge and sets it down with a gentle throw; both stand on it.
+    s = act(s, { type: 'grab', actor: STILL });
+    s = act(s, { type: 'move', actor: STILL, dir: 1 });
+    for (let i = 0; i < 100 && s.actors[STILL].x < cliff.x + cliff.w - 90; i++) s = tick(s);
+    s = act(s, { type: 'move', actor: STILL, dir: 0 });
+    s = act(s, { type: 'grab', actor: STILL, aim: { vx: 0.6, vy: 0 } });
+    s = tick(s, 40);
+    const box = get(s, 'crate-0');
+    expect(box.x).toBeGreaterThan(cliff.x + cliff.w - 60);
+    expect(box.x).toBeLessThanOrEqual(cliff.x + cliff.w);
+    for (const who of [STILL, BLOOM]) {
+      s = act(s, { type: 'jumpRelease', actor: who });
+      s = act(s, { type: 'move', actor: who, dir: 1 });
+      for (let i = 0; i < 80 && s.actors[who].x < box.x - 60; i++) s = tick(s);
+      s = act(s, { type: 'jump', actor: who });
+      for (let i = 0; i < 60 && s.actors[who].on !== box.id; i++) {
+        s = tick(s);
+        if (s.actors[who].x > box.x + (who === STILL ? 10 : -10)) s = act(s, { type: 'move', actor: who, dir: 0 });
+      }
+      s = act(s, { type: 'move', actor: who, dir: 0 }); s = act(s, { type: 'jumpRelease', actor: who });
+      expect(s.actors[who].on).toBe(box.id);
+    }
+
+    // Once a cloud has formed: Still jumps onto it and Bloom follows as Still lands (never both on it for long); each
+    // walks to its right end and jumps on to the gate's ledge.
+    for (let i = 0; i < 2400 && !cloudSolid(get(s, 'cloud-0')); i++) s = tick(s);
+    expect(cloudSolid(get(s, 'cloud-0'))).toBe(true);
+    const stage = [0, 0];
+    for (let i = 0; i < 400 && !s.actors.every(a => a.on === GATE); i++) {
+      for (const who of [STILL, BLOOM]) {
+        const a = s.actors[who];
+        if (stage[who] === 0 && (who === STILL || stage[STILL] >= 2)) { s = act(s, { type: 'move', actor: who, dir: 1 }); s = act(s, { type: 'jump', actor: who }); stage[who] = 1; }
+        else if (stage[who] === 1 && a.on === 'cloud-0') { s = act(s, { type: 'jumpRelease', actor: who }); stage[who] = 2; }
+        else if (stage[who] === 2 && a.x >= get(s, 'cloud-0').x + 30) { s = act(s, { type: 'jump', actor: who }); stage[who] = 3; }
+        else if (stage[who] === 3 && a.on === GATE && a.move) s = act(s, { type: 'move', actor: who, dir: 0 });
+      }
+      s = tick(s);
+    }
+    expect(s.actors.map(a => a.on)).toEqual([GATE, GATE]);
+    expect(s.flags.cloudRide).toBe(true);
+    for (let i = 0; i < 300 && s.status !== 'won'; i++) {
+      for (const who of [STILL, BLOOM]) { const a = s.actors[who]; s = act(s, { type: 'move', actor: who, dir: Math.abs(a.x - level.exit.x) < 10 ? 0 : Math.sign(level.exit.x - a.x) }); }
+      s = tick(s);
+    }
     expect(s.status).toBe('won');
   });
 });

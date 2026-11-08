@@ -232,6 +232,60 @@ describe('a new cloud fades once someone stands on it', () => {
   });
 });
 
+describe('in courtyard 4, Bloom rewinds it', () => {
+  const { waterTicks, formTicks, cloudTicks, rainTicks } = meta.cloud, cycle = waterTicks + formTicks + cloudTicks + rainTicks;
+  // Courtyard 4's cloud at clock `age`, Bloom at the cliff's edge beside it, Still on the cliff.
+  function rewinding(age) {
+    let s = setup({ level: 3 });
+    s.objects = s.objects.filter(o => o.kind === 'cloud');
+    cloud(s).age = age;
+    stand(s, BLOOM, 5, 2540); stand(s, STILL, 5, 2200);
+    expect(abilityCheck(s, BLOOM, cloud(s).id)).toBe('ok');
+    s = act(s, { type: 'ability', actor: BLOOM, target: cloud(s).id });
+    expect(cloud(s).speed).toBe(-1);
+    expect(s.events.at(-1)).toMatchObject({ kind: 'grow', rewind: true });
+    return s;
+  }
+
+  test('water that has just rained away rises back into a whole new cloud', () => {
+    let s = rewinding(cycle + 100);
+    const kinds = new Set();
+    let n = 0; while (cloudPhase(cloud(s)).form !== 'cloud' && n < 2000) { s = tick(s); n++; for (const e of s.events) kinds.add(e.kind); }
+    // Back through the water and its rain (played backwards: the water rising), then the cloud, fresh and forward.
+    expect(n).toBeGreaterThanOrEqual(100 + rainTicks);
+    expect(n).toBeLessThanOrEqual(100 + rainTicks + 2);
+    expect([...kinds]).toEqual(expect.arrayContaining(['mist', 'cloudForm']));
+    expect(cloud(s)).toMatchObject({ speed: 0, stood: false });
+    expect(formTicksLeft(s)[0]).toBe(cloudTicks);
+  });
+
+  test('rewound while it rains back, it is a cloud again within the rain\'s time', () => {
+    let s = rewinding(waterTicks + formTicks + cloudTicks + 30);
+    let n = 0; while (!cloudSolid(cloud(s)) && n < 500) { s = tick(s); n++; }
+    expect(n).toBeLessThanOrEqual(32);
+    expect(cloud(s).speed).toBe(0);
+  });
+
+  test('a rewound cloud sinks back into a whole spell of water', () => {
+    let s = rewinding(waterTicks + formTicks + 50);
+    let n; [n, s] = formTicksLeft(s);
+    expect(cloudPhase(cloud(s)).form).toBe('mist');
+    [n, s] = formTicksLeft(s);
+    expect(cloudPhase(cloud(s)).form).toBe('water');
+    expect(cloud(s).speed).toBe(0);
+    expect(formTicksLeft(s)[0]).toBe(waterTicks);
+  });
+
+  test('stood on while being rewound, it fades when it would sink back', () => {
+    let s = setup({ level: 3 });
+    s.objects = s.objects.filter(o => o.kind === 'cloud');
+    Object.assign(cloud(s), { age: waterTicks + formTicks + 100, speed: -1 });
+    Object.assign(s.actors[STILL], { x: cloud(s).x, y: cloud(s).y, vx: 0, vy: 0, grounded: true, on: cloud(s).id });
+    s = tick(s);
+    expect(cloud(s).vanishTotal).toBe(99);
+  });
+});
+
 describe('water holds things back', () => {
   test('wading is slower, by how deep you stand', () => {
     let s = arena('water'); stand(s, STILL, GROOVE, 2600);
