@@ -20,11 +20,11 @@ export default {
   // (Bloom hastens it until it wilts and lets travellers pass) and the pit for a new mushroom beside the gate's
   // ledge. Bloom starts empty-handed, so this seed is the only one. The ancient mushroom's pit cannot be planted
   // once it is gone (the seed cannot be wasted there), and its cap is too far from the gate's ledge to jump from.
-  freezePickups: [{ x: 900, y: 444 }],
+  freezePickups: [{ x: 900, y: 382 }],
   seeds: [{ x: 1000, y: 460 }], startSeeds: 0,
   pits: [{ x: 1200, y: 470, plantable: false }, { x: 1530, y: 470 }],
   plants: [{ pit: 0, grown: 1, barrier: true }], movers: [],
-  bloomPickups: [{ x: 300, y: 444 }],
+  bloomPickups: [{ x: 300, y: 382 }],
   // The gate's ledge is out of jumping reach without a mushroom (used by fail detection).
   exitNeedsPlant: true,
   exit: { x: 1790, y: 195 }, shards: [{ x: 600, y: 340 }], need: ['frozenTouched', 'withered', 'treeLifted'],

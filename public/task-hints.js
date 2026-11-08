@@ -78,9 +78,9 @@ export function taskHints(state) {
     if (atExit(state, p)) hints[actor] = `Wait at the gate for ${actor === 0 ? 'Bloom' : 'Still'}.`;
     else if (gate && p.x >= gate.x && p.y <= gate.y + 2) hints[actor] = 'Walk to the moon gate.';
     else if (actor === 0 && state.freezeCharges <= 0 && /\b(Freeze|slow)\b/i.test(hints[actor]) && !hints[actor].startsWith('End Freeze')) {
-      hints[actor] = state.pickups.some(p => p.kind === 'frost' && !p.taken) ? 'Collect an hourglass for Freeze.' : 'No Freeze left — restart from Pause.';
+      hints[actor] = state.pickups.some(p => p.kind === 'frost' && !p.taken) ? 'Jump for an hourglass to restore Freeze.' : 'No Freeze left — restart from Pause.';
     } else if (actor === 1 && state.bloomCharges <= 0 && /Speed/.test(hints[actor])) {
-      hints[actor] = state.pickups.some(p => p.kind === 'bolt' && !p.taken) ? 'Collect lightning to restore Speed.' : plant?.speed > 0 ? 'Ride the mushroom; save your jump.' : 'No Speed left — restart from Pause.';
+      hints[actor] = state.pickups.some(p => p.kind === 'bolt' && !p.taken) ? 'Jump for lightning to restore Speed.' : plant?.speed > 0 ? 'Ride the mushroom; save your jump.' : 'No Speed left — restart from Pause.';
     }
   });
   return hints.map((text, actor) => ({ actor, name: actor === 0 ? 'STILL' : 'BLOOM', text }));

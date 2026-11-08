@@ -20,8 +20,8 @@ export default {
   enemies: [{ kind: 'guard', x: 1100, y: 580, minX: 740, maxX: 1460 }],
   checkpoints: [{ x: 640, y: 500 }, { x: 1560, y: 390 }],
   // Freeze: one to start, plus an hourglass on the start ledge and one on the middle ledge.
-  freezeCharges: 1, freezePickups: [{ x: 450, y: 474 }, { x: 1700, y: 364 }],
-  bloomPickups: [{ x: 320, y: 474 }],
+  freezeCharges: 1, freezePickups: [{ x: 450, y: 412 }, { x: 1700, y: 302 }],
+  bloomPickups: [{ x: 320, y: 412 }],
   // The gate's ledge is out of jumping reach without a mushroom (used by fail detection).
   exitNeedsPlant: true,
   exit: { x: 2300, y: 180 }, shards: [{ x: 1100, y: 340 }], need: ['guardRide', 'treeLifted'],

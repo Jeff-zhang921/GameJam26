@@ -56,8 +56,8 @@ export default {
   checkpoints: [{ x: 820, y: 300 }, { x: 2170, y: 200 }],
   // Freeze stretches the safe band, the vines' window and the movers' meeting; hourglasses on the high ledge and the
   // far cliff. Spare bolts on the high ledge and the far cliff.
-  freezeCharges: 1, freezePickups: [{ x: 900, y: 274 }, { x: 2290, y: 174 }],
-  bloomPickups: [{ x: 1100, y: 274 }, { x: 2440, y: 174 }],
+  freezeCharges: 1, freezePickups: [{ x: 900, y: 212 }, { x: 2290, y: 112 }],
+  bloomPickups: [{ x: 1100, y: 212 }, { x: 2440, y: 112 }],
   // The high ledge is out of jumping reach without a mushroom (used by fail detection). Only travellers still on the
   // start ground (platform 0) need one: past the high ledge the vines and movers carry them, so a traveller on the
   // far cliff with no seeds left is not stranded.

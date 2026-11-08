@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { setup, applyAction, validateAction, meta, atExit } from '../src/logic.js';
+import { setup, applyAction, validateAction, meta, atExit, levelCount } from '../src/logic.js';
 import { withtimeArena } from './arena.js';
 
 const act = (s, a) => applyAction(s, 'local', a);
@@ -40,6 +40,30 @@ function walkTo(s, who, x) {
 }
 const settle = (s, limit = 600) => { for (let i = 0; i < limit && s.actors.some(p => !p.grounded); i++) s = tick(s); return s; };
 
+test('every charge pickup stays overhead when standing and can be reached with a jump tap', () => {
+  for (let level = 0; level < levelCount; level++) {
+    for (const pickup of setup({ level }).pickups) {
+      let s = setup({ level });
+      const platform = s.platforms.find(p => pickup.x >= p.x && pickup.x <= p.x + p.w && pickup.y < p.y);
+      expect(platform.y - pickup.y).toBe(88);
+      const actor = pickup.kind === 'frost' ? 0 : 1;
+      const charges = actor === 0 ? 'freezeCharges' : 'bloomCharges';
+      const initial = s[charges];
+      Object.assign(s.actors[actor], { x: pickup.x, y: platform.y });
+      s = tick(s);
+      expect(s.pickups.find(c => c.id === pickup.id).taken).toBe(false);
+      expect(s[charges]).toBe(initial);
+
+      // A quick tap may press and release before the simulation's next tick.
+      s.actors[actor].x += 8;
+      s = send(send(s, 'jump', actor), 'jumpRelease', actor);
+      s = settle(tick(s));
+      expect(s.pickups.find(c => c.id === pickup.id).taken).toBe(true);
+      expect(s[charges]).toBe(initial + 1);
+    }
+  }
+});
+
 describe('starting Freeze charges are enough for every crossing that needs them', () => {
   test('courtyard 1: a crate and a cast per traveller cross the gap, the ancient mushroom is aged away, a new one lifts both to the gate', () => {
     let s = setup({ level: 0 });
@@ -61,8 +85,10 @@ describe('starting Freeze charges are enough for every crossing that needs them'
     s = hop(s, 0, 'platform-2', 6);
     expect(s.freezeCharges).toBe(0);
     s = settle(tick(s, 300));
-    // On the long ledge, Still collects the hourglass and Bloom the seed.
+    // On the long ledge, Still jumps for the hourglass and Bloom collects the seed.
     s = walkTo(s, 0, 900);
+    s = settle(tick(send(s, 'jump', 0)));
+    s = send(s, 'jumpRelease', 0);
     expect(s.freezeCharges).toBe(1);
     s = walkTo(s, 1, 1000);
     expect(s.seeds).toBe(1);

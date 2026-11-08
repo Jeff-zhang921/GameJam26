@@ -177,11 +177,10 @@ describe('courtyard 3 layout', () => {
     // A clean run uses three seeds and three wakes (mushroom, two vines); a canyon redo needs two more of each.
     expect(s.seeds + s.objects.filter(o => o.kind === 'seed').length).toBeGreaterThanOrEqual(3 + 2);
     expect(s.bloomCharges + s.pickups.filter(c => c.kind === 'bolt').length).toBeGreaterThanOrEqual(3 + 2);
-    // Spares on the high ledge and the far cliff, within reach of a passing Bloom (seed: 34 from the middle at
-    // feet − 20; bolt: 36 from feet − 26).
+    // Each ledge has a seed within reach on foot and a bolt overhead.
     for (const f of [high, far]) {
       expect(s.objects.some(o => o.kind === 'seed' && on(f, o.x) && Math.abs(o.y - (f.y - 20)) < meta.seeds.reach)).toBe(true);
-      expect(s.pickups.some(c => c.kind === 'bolt' && on(f, c.x) && Math.abs(c.y - (f.y - 26)) < meta.charges.pickupReach)).toBe(true);
+      expect(s.pickups.some(c => c.kind === 'bolt' && on(f, c.x) && c.y < f.y)).toBe(true);
     }
     expect(s.checkpoints.map(c => c.y)).toEqual([high.y, far.y]);
   });
