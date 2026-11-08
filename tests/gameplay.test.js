@@ -248,10 +248,10 @@ describe('role-specific resources', () => {
       expect(s.bloomCharges).toBe(3);
       // Courtyard 4 has neither seeds nor a bolt: every cast there rewinds a plant (see level-four.test.js).
       if (level === 3) continue;
-      // Courtyards 1 and 2 are the exception: their only seed lies out in the courtyard. Courtyard 3 needs three
-      // (a mushroom and two vines).
+      // Courtyard 1 has a seed out in the courtyard, courtyard 2 uses a hanging crate, and courtyard 3 needs three
+      // seeds (a mushroom and two vines).
       expect(s.seeds).toBe(level <= 1 ? 0 : level === 2 ? 2 : 1);
-      if (level <= 1) expect(s.objects.filter(o => o.kind === 'seed')).toHaveLength(1);
+      if (level === 0) expect(s.objects.filter(o => o.kind === 'seed')).toHaveLength(1);
       expect(s.pickups.some(c => c.kind === 'bolt')).toBe(true);
     }
   });
@@ -272,7 +272,7 @@ describe('role-specific resources', () => {
 
 describe('possible dead ends raise a warning; the game goes on', () => {
   test('a ledge only a mushroom reaches: warns once the last mushroom and seed are gone, without stopping play', () => {
-    let s = rootriseArena();
+    let s = classicCourtyard();
     s.objects = s.objects.filter(o => o.kind !== 'seed'); s.seeds = 0;
     Object.assign(s.actors[STILL], { x: s.exit.x, y: s.exit.y, on: 'platform-1' });
     s = tick(s);

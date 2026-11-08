@@ -229,10 +229,10 @@ describe('host level select and shared failure', () => {
   test('a possible dead end warns both players while play goes on; only the host restarts, as one shared 4 s rewind', () => {
     const f = fixture(); f.start();
     f.send(f.host, { type: 'control', action: 'level', level: 1 });
-    f.room.game.objects = f.room.game.objects.filter(o => o.kind !== 'seed'); f.room.game.seeds = 0;
-    Object.assign(f.room.game.actors[0], { x: f.room.game.exit.x, y: f.room.game.exit.y, on: 'platform-1' });
+    f.room.game.bloomCharges = 0;
+    for (const pickup of f.room.game.pickups) if (pickup.kind === 'bolt') pickup.taken = true;
     f.advance(50);
-    for (const ws of [f.host, f.guest]) expect(f.last(ws, 'snapshot').game).toMatchObject({ status: 'playing', failure: 'stranded', failureSeq: 1 });
+    for (const ws of [f.host, f.guest]) expect(f.last(ws, 'snapshot').game).toMatchObject({ status: 'playing', failure: 'rope', failureSeq: 1 });
     const going = f.room.game.tick; f.advance(100);
     expect(f.room.game.tick).toBeGreaterThan(going); // a warning never stops the courtyard
     f.send(f.guest, { type: 'control', action: 'restart' });
@@ -243,8 +243,8 @@ describe('host level select and shared failure', () => {
     expect(hostReplay.replay).toEqual(guestReplay.replay);
     expect(hostReplay.replay.duration).toBe(4000);
     expect(hostReplay.replay.end).toMatchObject({ level: 1, tick: 0, status: 'playing', failure: null });
-    expect(hostReplay.replay.end.objects.filter(o => o.kind === 'seed')).toHaveLength(1); // restored: the loose seed (Bloom starts with none)
-    expect(hostReplay.replay.end.seeds).toBe(0);
+    expect(hostReplay.replay.end.objects).toContainEqual(expect.objectContaining({ kind: 'crate', rope: 'rope-0' }));
+    expect(hostReplay.replay.end.bloomCharges).toBe(3);
     expect(hostReplay.room.rewinding.id).toBe(hostReplay.replay.id);
     // During the rewind: no inputs, no second restart, and the shared world holds still.
     f.send(f.guest, { type: 'input', seq: 1, action: { type: 'move', dir: 1 } });
@@ -261,8 +261,8 @@ describe('host level select and shared failure', () => {
       expect(snap.room.epoch).toBe(epoch + 1);
       expect(snap.room.rewinding).toBe(null);
       expect(snap.game).toMatchObject({ level: 1, status: 'playing', failure: null });
-      expect(snap.game.objects.filter(o => o.kind === 'seed')).toHaveLength(1);
-      expect(snap.game.seeds).toBe(0);
+      expect(snap.game.objects).toContainEqual(expect.objectContaining({ kind: 'crate', rope: 'rope-0' }));
+      expect(snap.game.bloomCharges).toBe(3);
     }
     expect(f.last(f.host, 'snapshot').game).toEqual(f.last(f.guest, 'snapshot').game);
     expect(f.room.players.map(p => p.character).sort()).toEqual(['bloom', 'still']);

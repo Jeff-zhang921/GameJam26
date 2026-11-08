@@ -110,6 +110,7 @@ function makeLevel(index, players, unlocked, totalShards, collected = LEVELS.map
   const crates = level.crates.map((p, i) => ({
     kind: 'crate', id: `crate-${i}`, x: p.x, y: p.y, vx: 0, vy: 0, frozen: false, held: null,
     spawnX: p.x, spawnY: p.respawnY ?? p.y, ...(p.ropeTop !== undefined && { rope: `rope-${i}` }),
+    ...(p.respawnBelow !== undefined && { respawnBelow: p.respawnBelow }),
   }));
   const ropes = level.crates.flatMap((p, i) => {
     if (p.ropeTop === undefined) return [];
@@ -133,7 +134,7 @@ function makeLevel(index, players, unlocked, totalShards, collected = LEVELS.map
     platforms: clone(level.platforms), objects, pits, nextPlant: level.plants.length, nextSeed: 0, nextEnemy: objects.length,
     checkpoints: (level.checkpoints ?? []).map((c, i) => ({ id: `cp-${i}`, x: c.x, y: c.y, lit: false })),
     exit: clone(level.exit), shards: level.shards.map((p, i) => ({ ...p, id: i, taken: false })),
-    flags: { frozenTouched: false, treeLifted: false, treeRewound: false, vineRewound: false, withered: false, sproutJump: false, moverRide: false, dartRide: false, miteGone: false, guardRide: false },
+    flags: { frozenTouched: false, treeLifted: false, treeRewound: false, vineRewound: false, withered: false, sproutJump: false, moverRide: false, dartRide: false, miteGone: false, guardRide: false, ropeReleased: false },
     needs: clone(level.need), needsDone: 0, events: [], eventSeq: 0,
     started: false, elapsed: 0, lastProgressTick: 0, falls: 0,
     freezeAreas: [], nextArea: 0, freezeCharges: level.freezeCharges ?? 1, bloomCharges: level.bloomCharges ?? meta.charges.bloomStart,
@@ -471,6 +472,7 @@ function ageObjects(state) {
       if (o.age >= breakTicks) {
         if (crate) delete crate.rope;
         state.objects = state.objects.filter(item => item !== o);
+        state.flags.ropeReleased = true;
         event(state, 'ropeSnap', o.x, split);
       } else if (frayAt.some(fraction => previous < fraction * breakTicks && wear >= fraction)) {
         event(state, 'ropeFray', o.x, split);
@@ -587,7 +589,7 @@ function moveItems(state) {
       if (landed) o.thrown = false;
     }
     if (landed && landed.speed > 1) event(state, crate ? 'crateLand' : 'seedLand', o.x, landed.y);
-    if (o.y > 720 || o.x < 20 || o.x > state.width - 20) {
+    if (o.y > (o.respawnBelow ?? 720) || o.x < 20 || o.x > state.width - 20) {
       if (o.fromHand) {
         const bloom = state.actors[BLOOM];
         lost.add(o.id); state.seeds++;
@@ -843,6 +845,7 @@ export function assessFailure(state) {
   // (not standing on something higher) and the plant can no longer be rewound — gone (unless its going opens the
   // way), or asleep with no Bloom charge and no lightning left.
   const bolt = state.pickups.some(c => c.kind === 'bolt' && !c.taken);
+  if (level.exitRope && find(state, level.exitRope)?.speed === 0 && state.bloomCharges <= 0 && !bolt) return { known: true, reason: 'rope' };
   for (const need of level.rewindNeeds ?? []) {
     const f = state.platforms[need.from];
     if (!stuck.some(p => onLedge(f, p) && !state.platforms.some(g => g !== f && g.y < f.y && onLedge(g, p)))) continue;

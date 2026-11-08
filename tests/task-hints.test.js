@@ -64,14 +64,12 @@ describe('shared tasks over the travellers', () => {
     s.actors[1].carrying = 'seed-h';
     expect(hint(s, 1)).toBe('Throw the seed into the empty pit.');
   });
-  test('level two: fetch the seed, lure and freeze the snail, then climb off its shell', () => {
+  test('level two: lure and freeze the snail, then climb off its shell', () => {
     const s = setup({ level: 1 });
     const snail = s.objects.find(o => o.kind === 'guard'), trench = s.platforms[3];
     for (const p of s.actors) Object.assign(p, { x: trench.x + 100, y: trench.y, grounded: true, on: 'platform-3' });
-    expect(hint(s, 1)).toContain('Collect the seed');
-    expect(hint(s, 0)).toContain('Freeze the snail');
-    s.seeds = 1; s.objects = s.objects.filter(o => o.kind !== 'seed');
     expect(hint(s, 1)).toContain('Lure the snail');
+    expect(hint(s, 0)).toContain('Freeze the snail');
     snail.x = 1450; snail.frozen = true;
     expect(hint(s, 1)).toContain('slowed snail');
     s.actors[1].on = snail.id;
@@ -81,27 +79,22 @@ describe('shared tasks over the travellers', () => {
     s.freezeCharges = 0; snail.frozen = false;
     expect(hint(s, 0)).toContain('hourglass');
   });
-  test('level two progresses from planting to Speed, freezing and jumping', () => {
+  test('level two explains aging the rope, waiting for the crate, and climbing it', () => {
     const s = setup({ level: 1 }); onMiddle(s);
-    expect(hint(s, 1)).toContain('seed');
-    const middle = s.platforms[2];
-    for (const actor of s.actors) Object.assign(actor, { x: middle.x + 40, y: middle.y, grounded: true, on: 'platform-2' });
-    const p = s.pits[0];
-    const mushroom = { kind: 'plant', id: 'new-plant', x: p.x, base: p.y, height: 0, speed: 0, withered: false, frozen: false };
-    s.objects.push(mushroom); p.plant = mushroom.id; s.seeds = 0;
-    expect(hint(s, 1)).toContain('tap Speed');
-    mushroom.speed = 1; mushroom.height = 50;
-    expect(hint(s, 1)).toContain('Ride');
-    mushroom.height = 220;
-    expect(hint(s, 0)).toContain('Freeze the mushroom');
-    mushroom.frozen = true;
-    expect(hint(s, 0)).toContain('Jump');
+    const rope = s.objects.find(o => o.kind === 'rope');
+    expect(hint(s, 0)).toContain('drop the crate');
+    expect(hint(s, 1)).toContain('rope and use Speed');
+    rope.speed = 1;
+    expect(hint(s, 1)).toContain('rope to snap');
+    s.objects = s.objects.filter(o => o !== rope);
+    expect(hint(s, 0)).toContain('Jump onto the crate');
+    s.actors[0].on = rope.crate;
+    expect(hint(s, 0)).toContain('Jump right');
     Object.assign(s.actors[0], s.exit);
     expect(hint(s, 0)).toContain('Wait at the gate for Bloom');
   });
   test('level two explains the lure, edge Freeze, head jump and waiting partner', () => {
     const s = setup({ level: 1 }), guard = s.objects.find(o => o.kind === 'guard');
-    s.seeds = 1;
     expect(hint(s, 1)).toContain('Lure the snail');
     guard.target = 0;
     expect(hint(s, 0)).toContain('Lure it right');

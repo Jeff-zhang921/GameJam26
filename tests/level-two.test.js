@@ -1,41 +1,41 @@
 import { describe, test, expect } from 'bun:test';
-import { setup, applyAction, validateAction, failureReason } from '../src/logic.js';
+import { setup, applyAction, validateAction, failureReason, meta } from '../src/logic.js';
 import { LEVELS } from '../src/levels/index.js';
 import { ENEMY } from '../src/enemies.js';
 
-// Courtyard 2: a start ledge, a low trench patrolled by a guard (with the only seed), a middle ledge too high to
-// jump to from the trench except off the slowed guard's head, and the gate's ledge reached on a mushroom grown in
-// the middle ledge's pit.
+// The slowed guard is a step out of the trench. The dropped crate is the step from the middle ledge to the gate.
 const act = (s, a) => { expect(validateAction(s, 'local', a).valid).toBe(true); return applyAction(s, 'local', a); };
 const tick = (s, n = 1) => { for (let i = 0; i < n; i++) s = applyAction(s, 'local', { type: 'tick' }); return s; };
 const STILL = 0, BLOOM = 1;
 const level = LEVELS[1];
-const [start, gate, middle, trench] = level.platforms;
+const [start, gate, middle, trench, beam] = level.platforms;
 const on = (f, x) => x > f.x && x < f.x + f.w;
 const guard = s => s.objects.find(o => o.kind === 'guard');
+const crate = s => s.objects.find(o => o.kind === 'crate');
 const stand = (s, who, f, x) => Object.assign(s.actors[who], { x, y: f.y, vx: 0, vy: 0, grounded: true, on: `platform-${level.platforms.indexOf(f)}` });
 
 describe('courtyard 2 layout', () => {
-  test('four ledges: the trench is lowest, the gate\'s ledge highest, the middle between', () => {
+  test('the two climbs are above normal jump height from their ledges', () => {
     const s = setup({ level: 1 });
     expect(s.width).toBe(2560);
     expect(trench.y - start.y).toBe(80);
     expect(trench.y - middle.y).toBe(190);
-    expect(middle.y - gate.y).toBe(210);
+    expect(middle.y - gate.y).toBe(190);
     expect(start.x + start.w).toBe(trench.x);
     expect(trench.x + trench.w).toBe(middle.x);
     expect(on(gate, level.exit.x) && level.exit.y === gate.y).toBe(true);
   });
 
-  test('no crates; the only seed is on the trench floor and the only pit on the middle ledge', () => {
+  test('the crate hangs above the middle ledge and returns there if dropped below it', () => {
     const s = setup({ level: 1 });
-    expect(s.objects.filter(o => o.kind === 'crate')).toHaveLength(0);
-    const seeds = s.objects.filter(o => o.kind === 'seed');
-    expect(seeds).toHaveLength(1);
-    expect(on(trench, seeds[0].x)).toBe(true);
+    const box = crate(s), rope = s.objects.find(o => o.id === box.rope);
+    expect(on(beam, rope.x) && on(middle, box.x)).toBe(true);
+    expect(rope.top).toBe(beam.y + beam.h);
+    expect(rope.bottom).toBe(box.y - 27);
+    expect(box.spawnY).toBe(middle.y - 27);
+    expect(s.objects.some(o => o.kind === 'seed' || o.kind === 'plant')).toBe(false);
     expect(s.seeds).toBe(0);
-    expect(s.pits).toHaveLength(1);
-    expect(on(middle, s.pits[0].x) && s.pits[0].y === middle.y).toBe(true);
+    expect(s.pits).toHaveLength(0);
     expect(guard(s)).toMatchObject({ y: trench.y });
     expect(on(trench, guard(s).x)).toBe(true);
     expect(s.freezeCharges + s.pickups.filter(p => p.kind === 'frost').length).toBe(3);
@@ -56,7 +56,7 @@ describe('courtyard 2 has no shortcuts', () => {
     }
     return false;
   }
-  // No guard, no seed: only the travellers and the ledges.
+  // Only the travellers and the ledges.
   const bare = () => { const s = setup({ level: 1 }); s.objects = []; stand(s, BLOOM, start, 40); return s; };
 
   test('the middle ledge cannot be jumped to from the trench floor', () => {
@@ -69,6 +69,15 @@ describe('courtyard 2 has no shortcuts', () => {
     for (const x of [middle.x + middle.w - 120, middle.x + middle.w - 16]) {
       expect(anyJumpReaches(() => { const s = bare(); stand(s, STILL, middle, x); return s; }, 'platform-1')).toBe(false);
     }
+  });
+
+  test('the hanging crate is too high to jump onto before the rope breaks', () => {
+    for (const dir of [-1, 1]) expect(anyJumpReaches(() => {
+      const s = setup({ level: 1 });
+      const box = crate(s);
+      stand(s, STILL, middle, box.x - dir * 48);
+      return s;
+    }, 'crate-0', dir)).toBe(false);
   });
 
   test('the optional shard over the trench is out of reach of a jump from its floor', () => {
@@ -128,12 +137,8 @@ describe('courtyard 2 route', () => {
     return s;
   }
 
-  test('lure the guard to the right wall, slow it, and climb off its head to the middle ledge, then grow up to the gate', () => {
+  test('both travellers use the slowed guard and then the dropped crate to reach the gate', () => {
     let s = setup({ level: 1 });
-    // Bloom fetches the seed from the trench floor.
-    stand(s, BLOOM, trench, level.seeds[0].x);
-    s = tick(s);
-    expect(s.seeds).toBe(1);
     // Stay within sight while luring it; teleporting beyond its detection range
     // should not lock a guard onto an actor it cannot currently reach or see.
     stand(s, STILL, trench, guard(s).x + 180); stand(s, BLOOM, trench, 1470);
@@ -152,18 +157,27 @@ describe('courtyard 2 route', () => {
     expect(s.actors.map(a => a.on)).toEqual(['platform-2', 'platform-2']);
     expect(s.events.some(e => e.kind === 'hit')).toBe(false);
     expect(s.flags.guardRide).toBe(true);
-    // Bloom plants the seed; both stand on it and Bloom wakes it at full speed.
-    const pit = s.pits[0];
-    stand(s, BLOOM, middle, pit.x);
-    s = act(s, { type: 'plant', actor: BLOOM });
-    stand(s, STILL, middle, pit.x + 10);
-    for (let i = 0; i < 3; i++) s = act(s, { type: 'ability', actor: BLOOM, target: 'plant-0' });
-    for (let i = 0; i < 600 && s.actors[STILL].y > gate.y - 10; i++) s = tick(s);
-    expect(s.flags.treeLifted).toBe(true);
-    // From the cap, each traveller jumps right onto the gate's ledge and walks into the moon gate.
+    const x = crate(s).x;
     for (const who of [STILL, BLOOM]) {
-      s = act(s, { type: 'move', actor: who, dir: 1 }); s = act(s, { type: 'jump', actor: who });
-      s = act(s, { type: 'jumpRelease', actor: who === STILL ? BLOOM : STILL });
+      s = act(s, { type: 'move', actor: who, dir: 1 });
+      for (let i = 0; i < 120 && s.actors[who].x < x - 60; i++) s = tick(s);
+      s = act(s, { type: 'move', actor: who, dir: 0 });
+    }
+    s = act(s, { type: 'ability', actor: BLOOM, target: 'rope-0' });
+    s = tick(s, meta.rope.breakTicks + 60);
+    expect(s.flags.ropeReleased).toBe(true);
+    expect(crate(s)).toMatchObject({ x, y: middle.y - 27, vy: 0 });
+
+    for (const who of [STILL, BLOOM]) {
+      s = act(s, { type: 'move', actor: who, dir: 1 });
+      s = act(s, { type: 'jump', actor: who });
+      for (let i = 0; i < 60 && s.actors[who].x < x; i++) s = tick(s);
+      s = act(s, { type: 'move', actor: who, dir: 0 });
+      for (let i = 0; i < 60 && s.actors[who].on !== 'crate-0'; i++) s = tick(s);
+      expect(s.actors[who].on).toBe('crate-0');
+      s = act(s, { type: 'jumpRelease', actor: who });
+      s = act(s, { type: 'move', actor: who, dir: 1 });
+      s = act(s, { type: 'jump', actor: who });
       for (let i = 0; i < 120 && s.actors[who].on !== 'platform-1'; i++) s = tick(s);
       expect(s.actors[who].on).toBe('platform-1');
       s = act(s, { type: 'jumpRelease', actor: who });
@@ -175,9 +189,24 @@ describe('courtyard 2 route', () => {
     expect(s.status).toBe('won');
   });
 
-  test('with the seed spent and the mushroom gone, a traveller below the gate is warned they are stranded', () => {
+  test('a released crate lost to the trench resets on the middle ledge', () => {
+    let s = setup({ level: 1 });
+    stand(s, BLOOM, middle, crate(s).x - 50);
+    s = tick(act(s, { type: 'ability', actor: BLOOM, target: 'rope-0' }), meta.rope.breakTicks + 60);
+    const box = crate(s);
+    Object.assign(box, { x: trench.x + 400, y: middle.y + 80, vy: 4 });
+    s = tick(s);
+    expect(crate(s)).toMatchObject({ x: box.spawnX, y: middle.y - 27 });
+    expect(crate(s).rope).toBeUndefined();
+  });
+
+  test('warns only when the rope still needs Speed and there is no charge or lightning left', () => {
     const s = setup({ level: 1 });
-    s.objects = s.objects.filter(o => o.kind !== 'seed');
-    expect(failureReason(s)).toBe('stranded');
+    s.bloomCharges = 0;
+    expect(failureReason(s)).toBeNull();
+    s.pickups.find(c => c.kind === 'bolt').taken = true;
+    expect(failureReason(s)).toBe('rope');
+    s.objects.find(o => o.kind === 'rope').speed = 1;
+    expect(failureReason(s)).toBeNull();
   });
 });

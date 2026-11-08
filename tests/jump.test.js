@@ -182,11 +182,11 @@ describe('courtyard jump routes', () => {
     return state;
   }
 
-  test('a mature tree on the middle ledge provides the jump to the second courtyard\'s gate ledge', () => {
-    let state = treeCheckpoint(1, 1840, meta.plant.maxHeight, 2);
+  test('a mature tree in the original second courtyard arena provides a jump to the gate ledge', () => {
+    let state = treeCheckpoint(rootriseArena, 600, meta.plant.maxHeight);
     state = send(send(state, 'move', 0, { dir: 1 }), 'jump');
     state = until(state, s => s.actors[0].on === 'platform-1');
-    expect(state.actors[0].y).toBe(180);
+    expect(state.actors[0].y).toBe(290);
   });
 
   test('a young sprout still launches onto the old third courtyard\'s cliff', () => {

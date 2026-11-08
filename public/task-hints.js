@@ -26,6 +26,8 @@ export function taskHints(state) {
   const guardFloor = guard && guardPlatform(state, guard);
   const middle = state.level === 1 && state.platforms.find(p => p.x >= (guardFloor?.x ?? Infinity) + (guardFloor?.w ?? 0) && p !== gate);
   const beyondGuard = p => middle && p.x >= middle.x && p.y <= middle.y + 2;
+  const rope = state.level === 1 && state.objects.find(o => o.kind === 'rope');
+  const stepCrate = state.level === 1 && state.objects.find(o => o.kind === 'crate');
 
   if (guard && guardFloor && state.actors.some(p => !beyondGuard(p))) {
     const nearEdge = guard.x >= guardFloor.x + guardFloor.w - 190;
@@ -39,9 +41,18 @@ export function taskHints(state) {
       hints[1] = 'Stay clear until Still slows the snail.';
     } else {
       hints[0] = guard.target === 0 ? 'Lure it right, then Freeze it at the edge.' : 'Wait nearby; Freeze the snail at the edge.';
-      hints[1] = state.seeds <= 0 && looseSeed ? 'Collect the seed, then lure the snail right.' : guard.target === 0 ? 'Keep clear while Still lures the snail.' : 'Lure the snail toward the right wall.';
+      hints[1] = guard.target === 0 ? 'Keep clear while Still lures the snail.' : 'Lure the snail toward the right wall.';
     }
     state.actors.forEach((p, actor) => { if (beyondGuard(p)) hints[actor] = 'Wait here while your partner climbs.'; });
+  } else if (rope) {
+    hints[0] = 'Wait for Bloom to drop the crate.';
+    hints[1] = rope.speed ? 'Watch for the rope to snap.' : 'Walk up to the rope and use Speed.';
+  } else if (stepCrate) {
+    state.actors.forEach((p, actor) => {
+      if (p.carrying === stepCrate.id) hints[actor] = 'Set the crate near the right edge.';
+      else if (p.on === stepCrate.id) hints[actor] = 'Jump right to the high ledge.';
+      else hints[actor] = 'Jump onto the crate, then up to the gate.';
+    });
   } else if (crossing) {
     const crates = state.objects.filter(o => o.kind === 'crate');
     const slowed = crates.find(o => o.frozen && o.x > start.x + start.w - 35 && o.x < bank.x);
