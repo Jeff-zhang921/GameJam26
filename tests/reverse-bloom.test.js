@@ -144,8 +144,7 @@ describe('ceilings', () => {
   });
 });
 
-// Enabled in Task 7 once the new chamber 4 exists.
-describe.skip('rewindNeeds fail rule (courtyard 4)', () => {
+describe('rewindNeeds fail rule (courtyard 4)', () => {
   const at = (s, who, x, y, on) => Object.assign(s.actors[who], { x, y, vx: 0, vy: 0, grounded: true, on });
   const fresh = () => { const s = setup({ level: 3 }); at(s, STILL, 300, 520, 'platform-0'); at(s, BLOOM, 400, 520, 'platform-0'); return s; };
 

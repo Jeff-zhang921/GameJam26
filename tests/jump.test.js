@@ -174,7 +174,8 @@ describe('courtyard jump routes', () => {
   });
 
   function treeCheckpoint(level, x, height, ledge = 0) {
-    const state = setup({ level });
+    // `level` is a courtyard index or a function building a test arena.
+    const state = typeof level === 'function' ? level() : setup({ level });
     state.objects = state.objects.filter(o => o.kind !== 'plant');
     state.objects.push({ id: 'route-tree', kind: 'plant', pit: 'pit-0', x, base: state.platforms[ledge].y, age: height / meta.plant.maxHeight * meta.plant.growTicks, height, frozen: true, withered: false, speed: 1 });
     Object.assign(state.actors[0], { x, y: state.platforms[ledge].y - height, on: 'route-tree' });
@@ -196,8 +197,8 @@ describe('courtyard jump routes', () => {
     expect(state.actors[0].y).toBe(265);
   });
 
-  test('the last courtyard tree still reaches its moving platform', () => {
-    let state = treeCheckpoint(3, 400, meta.plant.maxHeight);
+  test('the old courtyard 4 tree (withtime arena) still reaches its moving platform', () => {
+    let state = treeCheckpoint(withtimeArena, 400, meta.plant.maxHeight);
     state = send(send(state, 'move', 0, { dir: 1 }), 'jump');
     state = until(state, s => s.actors[0].on === 'mover-0');
     expect(state.actors[0].y).toBe(290);

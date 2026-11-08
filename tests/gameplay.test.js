@@ -243,10 +243,12 @@ describe('role-specific resources', () => {
     for (let level = 0; level < 5; level++) {
       const s = setup({ level });
       expect(s.actors[BLOOM].carrying).toBe(null);
+      expect(s.bloomCharges).toBe(3);
+      // Courtyard 4 has neither seeds nor a bolt: every cast there rewinds a plant (see level-four.test.js).
+      if (level === 3) continue;
       // Courtyards 1 and 2 are the exception: their only seed lies out in the courtyard.
       expect(s.seeds).toBe(level <= 1 ? 0 : 1);
       if (level <= 1) expect(s.objects.filter(o => o.kind === 'seed')).toHaveLength(1);
-      expect(s.bloomCharges).toBe(3);
       expect(s.pickups.some(c => c.kind === 'bolt')).toBe(true);
     }
   });
