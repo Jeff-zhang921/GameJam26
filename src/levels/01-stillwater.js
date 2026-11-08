@@ -1,7 +1,7 @@
 export default {
   id: 'stillwater',
   // Art and music by name, from public/themes.js (GROUNDS, BACKGROUNDS, MUSIC).
-  theme: { ground: 'bridge', background: 'chamber1', music: 'whatSheHasntSeen' },
+  theme: { ground: 'sketchBridge', background: 'chamber1', music: 'whatSheHasntSeen' },
   // Wider than the other courtyards (1920 instead of 1280): the camera scrolls right along the middle ledge.
   width: 1920,
   // Three ledges: the start (left) and a long middle ledge at the same height, and the highest ledge with the moon

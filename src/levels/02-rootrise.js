@@ -1,7 +1,7 @@
 export default {
   id: 'rootrise',
   // Art and music by name, from public/themes.js (GROUNDS, BACKGROUNDS, MUSIC).
-  theme: { ground: 'cobbleMoss', background: 'chamber2', music: 'doubledPawns' },
+  theme: { ground: 'watercolorStone', background: 'chamber2', music: 'doubledPawns' },
   // Wider still (3200): the camera scrolls right through the ledges and on over the cloud basin.
   width: 3200,
   // 0 the start ledge; 1 the high ledge (the top of the climb); 2 the middle ledge; 3 between the start and the middle,

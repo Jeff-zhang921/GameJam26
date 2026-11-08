@@ -1,4 +1,6 @@
 import { LEVELS } from '../src/levels/index.js';
+import { SKETCH_BRIDGE } from './courtyard-one-frames.js';
+import { STONE_ART } from './courtyard-two-art.js';
 
 // The art and music a courtyard can use. Each level picks one of each by name with its `theme` parameter
 // (src/levels/*.js); anything a level leaves out falls back to DEFAULT_THEME.
@@ -8,6 +10,19 @@ import { LEVELS } from '../src/levels/index.js';
 // `scale` is world units per source px. A platform is capped with `left`, tiles of `fillL` / `fillR` either side
 // of `emblem` (alternately mirrored), then `right`; with no `emblem` the middle is all `fillR` tiles. fill: a texture that tiles both ways, drawn at `scale`.
 export const GROUNDS = {
+  watercolorStone: {
+    kind: 'watercolorStone',
+    surface: { src: '/sprites/courtyard-two/ground.png', ...STONE_ART.ground },
+    tall: { src: '/sprites/courtyard-two/ground-tall.png', ...STONE_ART['ground-tall'] },
+    floating: { src: '/sprites/courtyard-two/floating-platform.png', ...STONE_ART['floating-platform'] },
+    fill: { src: '/sprites/ground-fill.png', scale: .6 },
+  },
+  // First-courtyard watercolor viaduct: flat deck and plain, extendable pencil-sketched piers.
+  sketchBridge: {
+    kind: 'bridge',
+    surface: { src: '/sprites/courtyard-one/bridge.png', x: 0, y: 0, ...SKETCH_BRIDGE, scale: 830 / SKETCH_BRIDGE.width, continuousShaft: true },
+    fill: { src: '/sprites/ground-fill.png', scale: .6 },
+  },
   // One bridge span (`x`, `y`, `width`, `height` in source px; feet rest `walk` px below its top), drawn at the same
   // `scale` (world units per source px) on every ledge: 830 / 2103 shows it exactly once on courtyard 1's 830-wide
   // middle ledge. Narrower ledges show the part of it that fits. `base` is the source y where the piers end and

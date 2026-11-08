@@ -7,6 +7,8 @@ import { portalFrame, arrivalFrame, arrivalPortal, GATE_ZOOM, GATE_DURATION, ARR
 import { bridgeBands } from './bridge-layout.js';
 import { measureCharacterFrames, characterPlacement } from './character-sprites.js';
 import { guardAttackFrame } from './guard-animation.js';
+import { LEAF_FRAMES } from './courtyard-one-frames.js';
+import { ROPE_FRAMES } from './courtyard-two-art.js';
 
 export function createRenderer(canvas, S) {
   const ctx = canvas.getContext('2d');
@@ -42,7 +44,10 @@ export function createRenderer(canvas, S) {
     if (!artCache.has(src)) { const img = new Image(); img.onload = () => { backgroundKey = null; }; img.src = src; artCache.set(src, img); }
     const img = artCache.get(src); return img.complete && img.naturalWidth > 0 ? img : null;
   }
-  let theme = themeFor(0), backgroundKey = null;
+  let theme = themeFor(0), backgroundKey = null, firstCourtyard = false, secondCourtyard = false;
+  const courtyardArt = name => firstCourtyard ? art(`/sprites/courtyard-one/${name}.png`) : null;
+  const leafWind = new Map();
+  let leafWindScene;
   // The backdrop's average colour along its top and bottom edges, for the space beyond the world.
   let edge = { top: '#86b4b0', bottom: '#609d91' };
   // Draws a sprite cropped to its art, centred on x and standing on `bottom`.
@@ -213,8 +218,8 @@ export function createRenderer(canvas, S) {
   function bridge(p, img) {
     const g = theme.ground.surface, k = g.scale ?? p.w / g.width, span = g.width * k, top = p.y - g.walk * k;
     // One horizontal band of source rows sy..sy+sh at world y (bands overlap by half a unit, so no seam shows).
-    const row = (sy, sh, y) => {
-      const piece = (sx, sw, x) => ctx.drawImage(img, g.x + sx, sy, sw, sh, x, y, sw * k, sh * k + .5);
+    const row = (sy, sh, y, height = sh * k + .5) => {
+      const piece = (sx, sw, x) => ctx.drawImage(img, g.x + sx, sy, sw, sh, x, y, sw * k, height);
       if (p.w <= span + .5) {
         const sw = Math.min(g.width, p.w / k), atLeft = p.x <= 0, atRight = p.x + p.w >= worldWidth;
         return piece(atLeft && !atRight ? g.width - sw : atRight && !atLeft ? 0 : (g.width - sw) / 2, sw, p.x);
@@ -223,12 +228,44 @@ export function createRenderer(canvas, S) {
     };
     if (!g.scale || !g.base || !g.legs) return row(g.y, g.height, top);
     const viewportBottom = (frameHeight - transform.offsetY) / transform.scale;
+    if (g.continuousShaft) {
+      // Repeating a tapered watercolor pier gives its edges a sawtooth seam. Continue one fixed shaft row
+      // instead; its world-space origin and length stay stable as the camera moves.
+      const shaft = g.legs[0], shaftY = top + (shaft - g.y) * k;
+      const bottom = p.y + p.h >= worldHeight - 1 ? Math.max(worldHeight + 2048, viewportBottom) : p.y + p.h;
+      row(g.y, shaft - g.y, top);
+      row(shaft, 1, shaftY, Math.max(1, bottom - shaftY));
+      return;
+    }
     for (const band of bridgeBands(p, g, worldHeight, viewportBottom)) row(band.sy, band.sh, band.y);
+  }
+  function stonePlatform(p) {
+    const ground = theme.ground;
+    const g = p.ceiling ? ground.floating : p.h >= 200 ? ground.tall : ground.surface;
+    const img = art(g.src);
+    if (!img) return;
+    const k = p.w / g.width, top = p.y - g.walk * k;
+    // Keep the pale rim at its painted proportions; only the stone face changes height.
+    const header = Math.min(g.height - 1, g.walk + 64), faceY = top + header * k;
+    const onFloor = p.y + p.h >= worldHeight - 1;
+    ctx.drawImage(img, 0, 0, g.width, header, p.x, top, p.w, header * k + .5);
+    if (!onFloor) return ctx.drawImage(img, 0, header, g.width, g.height - header, p.x, faceY, p.w, Math.max(.5, p.y + p.h - faceY));
+    // Continue a full patch of painted stone below the world. Mirrored joins preserve its texture without
+    // stretching one source row into visible vertical stripes or repeating the bottom edge's grass.
+    const bottom = Math.max(worldHeight, (frameHeight - transform.offsetY) / transform.scale);
+    const face = g.height - header - 80, tileH = face * k;
+    ctx.save(); ctx.beginPath(); ctx.rect(p.x, faceY, p.w, Math.max(0, bottom - faceY)); ctx.clip();
+    for (let i = 0, y = faceY; y < bottom; i++, y += tileH) {
+      ctx.save(); ctx.translate(p.x, y + (i % 2 ? tileH : 0)); ctx.scale(1, i % 2 ? -1 : 1);
+      ctx.drawImage(img, 0, header, g.width, face, 0, 0, p.w, tileH + .5); ctx.restore();
+    }
+    ctx.restore();
   }
   // `all` is every platform of the courtyard, to find the ends that rest against a neighbour. A `hidden` platform is
   // never drawn: it only gives collision to art another platform draws wider than itself.
   function platform(p, all = []) {
     if (p.hidden) return;
+    if (theme.ground.kind === 'watercolorStone') return stonePlatform(p);
     const surface = art(theme.ground.surface.src);
     if (theme.ground.kind === 'bridge') {
       if (surface) bridge(p, surface);
@@ -296,7 +333,9 @@ export function createRenderer(canvas, S) {
   function crate(c, targeted, t) {
     ctx.save(); ctx.translate(c.x, c.y); const size = 24;
     if (c.frozen) { glow(ctx, 0, 0, 70, '#9de3e527'); circle(ctx, 0, 0, 41 + Math.sin(t * .002) * 2, null, '#a1e3e570'); circle(ctx, 0, 0, 34, null, '#a1e3e52e'); }
-    if (loaded('crate')) { const h = 55, w = h * sprites.crate.naturalWidth / sprites.crate.naturalHeight; ctx.drawImage(sprites.crate, -w / 2, 27.5 - h, w, h); } // fills the 54x54 collision box
+    const watercolorCrate = secondCourtyard ? art('/sprites/courtyard-two/crate.png') : courtyardArt('crate');
+    if (watercolorCrate) ctx.drawImage(watercolorCrate, -27, -27, 54, 54);
+    else if (loaded('crate')) { const h = 55, w = h * sprites.crate.naturalWidth / sprites.crate.naturalHeight; ctx.drawImage(sprites.crate, -w / 2, 27.5 - h, w, h); } // fills the 54x54 collision box
     else {
       ctx.fillStyle = '#61736a'; ctx.fillRect(-size, -size, 48, 48); ctx.strokeStyle = '#d4c99e'; ctx.lineWidth = 3; ctx.strokeRect(-size, -size, 48, 48); ctx.strokeStyle = '#243f3d'; ctx.lineWidth = 2; ctx.strokeRect(-18, -18, 36, 36); line(ctx, [[-20, -20], [20, 20]], '#c7b887', 3); line(ctx, [[20, -20], [-20, 20]], '#c7b887', 3);
       circle(ctx, 0, 0, 11, '#183e42', c.frozen ? cyan : '#d6bc82', 2); circle(ctx, 0, 0, 7, null, '#b6d7cd7a'); line(ctx, [[0, -5], [0, 0], [4, 2]], cyan);
@@ -309,6 +348,16 @@ export function createRenderer(canvas, S) {
   function rope(o, targeted) {
     const { x, y, top } = o, bottom = 2 * y - top;
     const wear = Math.min(1, o.age / meta.rope.breakTicks);
+    const watercolorRope = secondCourtyard ? art('/sprites/courtyard-two/rope.png') : null;
+    if (watercolorRope) {
+      const [first, second] = meta.rope.frayAt;
+      const frame = ROPE_FRAMES[wear >= .9 ? 3 : wear >= second ? 2 : wear >= first ? 1 : 0];
+      const h = bottom - top, w = h * frame.w / frame.h;
+      ctx.drawImage(watercolorRope, frame.x, frame.y, frame.w, frame.h, x - w / 2, top, w, h);
+      if (o.frozen) line(ctx, [[x - 4, top], [x - 4, bottom]], '#a1e3e570');
+      if (targeted) { circle(ctx, x, y, 13, null, '#32262a', 4); circle(ctx, x, y, 13, null, gold, 1.7); }
+      return;
+    }
     const split = top + (bottom - top) * .64;
     const strand = (points, color) => {
       line(ctx, points, '#33262a', 4);
@@ -370,6 +419,8 @@ export function createRenderer(canvas, S) {
   }
   function seed(o, t) {
     ctx.save(); ctx.translate(o.x, o.y); glow(ctx, 0, 0, 26, '#e1c68a22');
+    const watercolorSeed = courtyardArt('seed');
+    if (watercolorSeed) { ctx.drawImage(watercolorSeed, -8, -9, 16, 18); ctx.restore(); return; }
     if (loaded('seed')) { ctx.restore(); return sprite('seed', o.x, o.y + 9, 18, 1); }
     ellipse(ctx, 0, 0, 7, 10, .5, '#b39a5c'); ellipse(ctx, -1.5, -2, 3, 5, .5, '#e6d39a'); line(ctx, [[3, -7], [6, -12 + Math.sin(t * .004)]], '#9fbf7f', 1.5);
     ctx.restore();
@@ -389,6 +440,33 @@ export function createRenderer(canvas, S) {
       ctx.save(); ctx.globalAlpha *= sprout; ctx.drawImage(img, frame % 4 * fw, Math.floor(frame / 4) * fh, fw, fh, x - fw * sx / 2, y - fh * sy, fw * sx, fh * sy); ctx.restore();
     }
     if (targeted) { circle(ctx, x, y - h - 16, 13, '#d7bd7d10', '#e1c68a70'); star(ctx, x, y - h - 16, 5, gold); }
+  }
+  // Source cells have different transparent margins. Use measured art bounds, root anchors and the existing
+  // authoritative canopy width / height, so switching art never changes collisions or where feet are supported.
+  function umbrellaLeaf(o, targeted, t, reduced) {
+    const { growTicks, matureTicks, witherTicks } = meta.plant;
+    const idle = !o.withered && o.age >= growTicks;
+    const name = o.withered ? 'leaf-wilt' : idle ? 'leaf-idle' : 'leaf-grow';
+    const image = courtyardArt(name);
+    // Preload the next stage before the plant reaches it.
+    courtyardArt('leaf-grow'); courtyardArt('leaf-idle'); courtyardArt('leaf-wilt');
+    if (!image) return false;
+    const progress = o.withered ? (o.age - growTicks - matureTicks) / witherTicks : o.age / growTicks;
+    // Wind is decorative: an untouched mature plant can sway without starting its growth / ageing clock.
+    // Keep a separate visual clock so freezing holds the current pose instead of snapping to frame zero.
+    let wind = leafWind.get(o.id);
+    if (!wind) { wind = { time: t, elapsed: 0 }; leafWind.set(o.id, wind); }
+    if (idle && !o.frozen && !reduced) wind.elapsed += Math.min(50, Math.max(0, t - wind.time));
+    wind.time = t;
+    const frame = idle ? (reduced ? 0 : Math.floor(wind.elapsed / 240) % 16) : Math.max(0, Math.min(15, Math.round(progress * 15)));
+    const crop = LEAF_FRAMES[name][frame], h = Math.max(1, o.height), w = Math.max(2, canopyWidth(o));
+    timeRing(o.x, o.base - h / 2, Math.max(22, h / 2 + 12), o, t);
+    // Horizontal foot contact stays centred at o.x, even on a bent wilt frame.
+    const rootOffset = (crop.rootX / crop.w - .5) * w;
+    ctx.drawImage(image, crop.x, crop.y, crop.w, crop.h,
+      o.x - w / 2 - rootOffset, o.base - h, w, h);
+    if (targeted) { circle(ctx, o.x, o.base - h - 16, 13, '#d7bd7d10', '#e1c68a70'); star(ctx, o.x, o.base - h - 16, 5, gold); }
+    return true;
   }
   // The vine sheet is 4x2 frames of 443.5px, each vine growing right from the cell's left edge. Per frame: the
   // art's left and right edge in the cell, and the y of the stem's top (where travellers stand). The frame for
@@ -420,6 +498,7 @@ export function createRenderer(canvas, S) {
   }
   function plant(o, targeted, t, reduced) {
     if (o.wall) return vine(o, targeted, t);
+    if (firstCourtyard && umbrellaLeaf(o, targeted, t, reduced)) return;
     if (loaded('seed', 'mushroom-grow', 'mushroom-die')) return mushroom(o, targeted, t);
     const h = o.height, x = o.x, y = o.base, dead = o.withered, g = Math.min(1, h / meta.plant.maxHeight), top = y - h;
     timeRing(x, y - h / 2, Math.max(22, h / 2 + 12), o, t);
@@ -660,7 +739,7 @@ export function createRenderer(canvas, S) {
       const deep = ctx.createLinearGradient(0, H, 0, Math.max(H + 1, bottom)); deep.addColorStop(0, '#16131f00'); deep.addColorStop(1, '#16131f66');
       ctx.fillStyle = deep; ctx.fillRect(left, H, right - left, bottom - H);
     }
-    if (theme.ground.kind === 'bridge') {
+    if (theme.ground.kind === 'bridge' || theme.ground.kind === 'watercolorStone') {
       if (bottom > H) {
         ctx.save(); ctx.beginPath(); ctx.rect(left, H, right - left, bottom - H); ctx.clip();
         for (const p of state.platforms) platform(p, state.platforms);
@@ -746,6 +825,7 @@ export function createRenderer(canvas, S) {
   // Still's pickup: the hourglass rocks inside its floating badge.
   function frostCrystal(c, t) {
     const y = c.y + Math.sin(t * .0025 + c.x) * 4;
+    if (timeSeed(c, y, 'still-charge')) return;
     chargeBadge(c.x, y, '#a5e5ee', '#bdf0f640');
     ctx.save(); ctx.translate(c.x, y); ctx.rotate(Math.sin(t * .0012 + c.x) * .18);
     ctx.beginPath(); ctx.moveTo(-8, -11); ctx.lineTo(8, -11); ctx.bezierCurveTo(8, -4, 2, -2, 1.5, 0); ctx.bezierCurveTo(2, 2, 8, 4, 8, 11);
@@ -760,12 +840,20 @@ export function createRenderer(canvas, S) {
   }
   function lightningCrystal(c, t) {
     const y = c.y + Math.sin(t * .0025 + c.x) * 4;
+    if (timeSeed(c, y, 'bloom-charge')) return;
     chargeBadge(c.x, y, '#f5ce83', '#fbe09e55');
     ctx.save(); ctx.translate(c.x, y);
     ctx.beginPath(); ctx.moveTo(2, -15); ctx.lineTo(-9, 1); ctx.lineTo(-2, 1);
     ctx.lineTo(-5, 14); ctx.lineTo(10, -4); ctx.lineTo(2, -4); ctx.closePath();
     ctx.fillStyle = '#f8d17d'; ctx.fill(); ctx.strokeStyle = '#fff2c6'; ctx.lineWidth = 1.5; ctx.stroke();
     ctx.restore();
+  }
+  function timeSeed(c, y, name) {
+    const image = secondCourtyard ? art(`/sprites/courtyard-one/${name}.png`) : courtyardArt(name);
+    if (!image) return false;
+    const h = 42, w = h * image.naturalWidth / image.naturalHeight;
+    ctx.drawImage(image, c.x - w / 2, y - h / 2, w, h);
+    return true;
   }
   function aimedCast({ actor, origin, point, range, radius, target, reason }) {
     const color = reason === 'ok' || reason === 'aim' ? actor === 0 ? '#e9dcae' : '#ffe293' : '#f4a58a'; // Still: the Freeze Area's grey-yellow
@@ -898,6 +986,9 @@ export function createRenderer(canvas, S) {
   function draw(state, time, options = {}) {
     sampleFrame(time, state, options);
     resize();
+    if (leafWindScene !== options.sceneKey) { leafWind.clear(); leafWindScene = options.sceneKey; }
+    firstCourtyard = state.level === 0;
+    secondCourtyard = state.level === 1;
     theme = themeFor(state.level); worldWidth = state.width ?? 1280; worldHeight = state.height ?? 640; updateBackground();
     const dt = lastTime === null ? 0 : Math.min(.05, Math.max(0, (time - lastTime) / 1000));
     lastTime = time;
