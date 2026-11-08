@@ -1,4 +1,9 @@
 import { atExit, meta } from '../src/logic.js';
+import { guardPlatform } from '../src/enemies.js';
+
+export function taskHintOpacity(seconds) {
+  return Math.max(0, Math.min(1, seconds / .2, (6 - seconds) / 1.2));
+}
 
 // Derived from the shared world, never from the locally selected character.
 export function taskHints(state) {
@@ -15,12 +20,27 @@ export function taskHints(state) {
   const needsSeed = state.seeds <= 0 && !plant;
   const bank = state.platforms.filter(p => p.x >= start.x + start.w).sort((a, b) => a.x - b.x)[0];
   const crossing = state.level === 0 && bank && state.actors.some(p => p.x < bank.x);
-  // Level two: the middle ledge is climbed off the slowed snail in the trench below it.
-  const ledge = state.level === 1 ? state.platforms[2] : null;
-  const below = p => ledge && p.y > ledge.y + 2 && p.x < ledge.x + ledge.w;
-  const snail = state.objects.find(o => o.kind === 'guard');
+  const guard = state.level === 1 && state.objects.find(o => o.kind === 'guard');
+  const guardFloor = guard && guardPlatform(state, guard);
+  const middle = state.level === 1 && state.platforms.find(p => p.x >= (guardFloor?.x ?? Infinity) + (guardFloor?.w ?? 0) && p !== gate);
+  const beyondGuard = p => middle && p.x >= middle.x && p.y <= middle.y + 2;
 
-  if (crossing) {
+  if (guard && guardFloor && state.actors.some(p => !beyondGuard(p))) {
+    const nearEdge = guard.x >= guardFloor.x + guardFloor.w - 190;
+    if (guard.frozen && nearEdge) {
+      state.actors.forEach((p, actor) => { hints[actor] = beyondGuard(p) ? 'Wait here while your partner climbs.' : p.on === guard.id ? 'Jump from its shell to the right platform.' : 'Jump onto the slowed snail\'s shell.'; });
+    } else if (guard.frozen) {
+      hints[0] = 'End Freeze; lure the snail farther right.';
+      hints[1] = 'Bring the snail closer to the right wall.';
+    } else if (nearEdge) {
+      hints[0] = 'Freeze the snail at the right edge.';
+      hints[1] = 'Stay clear until Still slows the snail.';
+    } else {
+      hints[0] = guard.target === 0 ? 'Lure it right, then Freeze it at the edge.' : 'Wait nearby; Freeze the snail at the edge.';
+      hints[1] = state.seeds <= 0 && looseSeed ? 'Collect the seed, then lure the snail right.' : guard.target === 0 ? 'Keep clear while Still lures the snail.' : 'Lure the snail toward the right wall.';
+    }
+    state.actors.forEach((p, actor) => { if (beyondGuard(p)) hints[actor] = 'Wait here while your partner climbs.'; });
+  } else if (crossing) {
     const crates = state.objects.filter(o => o.kind === 'crate');
     const slowed = crates.find(o => o.frozen && o.x > start.x + start.w - 35 && o.x < bank.x);
     const flying = crates.find(o => o.held === null && !o.frozen && o.x > start.x + start.w - 35 && o.x < bank.x);
@@ -31,13 +51,6 @@ export function taskHints(state) {
       else if (actor === 0 && flying) hints[actor] = 'Cast Freeze around the flying crate.';
       else if (p.carrying) hints[actor] = 'Throw the crate across the gap.';
       else hints[actor] = actor === 0 ? 'Pick up a crate. Throw, then Freeze it.' : 'Pick up a crate; Still will slow it.';
-    });
-  } else if (state.actors.some(below)) {
-    state.actors.forEach((p, actor) => {
-      if (!below(p)) hints[actor] = `Wait on the ledge for ${actor === 0 ? 'Bloom' : 'Still'}.`;
-      else if (actor === 1 && needsSeed && looseSeed) hints[actor] = 'Grab the seed in the trench; mind the snail.';
-      else if (snail?.frozen) hints[actor] = p.on === snail.id ? 'Jump from the snail to the ledge above.' : 'Jump onto the slowed snail.';
-      else hints[actor] = actor === 0 ? 'Freeze the snail by the right wall.' : 'Lure the snail to the right wall.';
     });
   } else if (needsSeed && looseSeed) {
     hints[1] = bloom.carrying ? 'Throw the crate, then collect the seed.' : 'Walk over the seed to collect it.';
@@ -59,7 +72,7 @@ export function taskHints(state) {
   state.actors.forEach((p, actor) => {
     if (atExit(state, p)) hints[actor] = `Wait at the gate for ${actor === 0 ? 'Bloom' : 'Still'}.`;
     else if (gate && p.x >= gate.x && p.y <= gate.y + 2) hints[actor] = 'Walk to the moon gate.';
-    else if (actor === 0 && state.freezeCharges <= 0 && /Freeze|slow/i.test(hints[actor])) {
+    else if (actor === 0 && state.freezeCharges <= 0 && /\b(Freeze|slow)\b/i.test(hints[actor]) && !hints[actor].startsWith('End Freeze')) {
       hints[actor] = state.pickups.some(p => p.kind === 'frost' && !p.taken) ? 'Collect an hourglass for Freeze.' : 'No Freeze left — restart from Pause.';
     } else if (actor === 1 && state.bloomCharges <= 0 && /Speed/.test(hints[actor])) {
       hints[actor] = state.pickups.some(p => p.kind === 'bolt' && !p.taken) ? 'Collect lightning to restore Speed.' : plant?.speed > 0 ? 'Ride the mushroom; save your jump.' : 'No Speed left — restart from Pause.';
@@ -71,9 +84,18 @@ export function taskHints(state) {
 export function createTaskHints(root) {
   root.innerHTML = [0, 1].map(actor => `<div class="task-hint" data-actor="${actor}" data-testid="task-hint-${actor}" hidden><strong></strong><span></span></div>`).join('');
   const nodes = [...root.children];
+  let scene, lastTick = -1;
+  const shown = new Map();
   return {
-    update(state, view, camera, enabled) {
-      const hints = enabled ? taskHints(state) : [];
+    update(state, view, camera, enabled, sceneKey) {
+      if (scene !== sceneKey || state.tick < lastTick) { scene = sceneKey; shown.clear(); }
+      lastTick = state.tick;
+      const hints = (enabled ? taskHints(state) : []).filter(hint => {
+        let current = shown.get(hint.actor);
+        if (current?.text !== hint.text) { current = { text: hint.text, start: state.tick }; shown.set(hint.actor, current); }
+        hint.opacity = taskHintOpacity((state.tick - current.start) / 60);
+        return state.tick - current.start < 360;
+      });
       const width = root.clientWidth, height = root.clientHeight;
       const cardWidth = Math.min(208, (width - 32) / 2), cardHeight = 66;
       const boxes = hints.map(hint => {
@@ -91,6 +113,7 @@ export function createTaskHints(root) {
         const node = nodes[actor], box = boxes.find(b => b.hint.actor === actor);
         node.hidden = !box;
         if (!box) continue;
+        node.style.opacity = String(box.hint.opacity);
         const label = node.querySelector('strong'), text = node.querySelector('span');
         if (label.textContent !== box.hint.name) label.textContent = box.hint.name;
         if (text.textContent !== box.hint.text) text.textContent = box.hint.text;

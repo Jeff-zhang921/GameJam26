@@ -14,6 +14,7 @@ import { createViewport } from './viewport.js';
 import { createShoreCaption } from './shore-caption.js';
 import { createDialogue } from './dialogue.js';
 import { createTaskHints } from './task-hints.js';
+import { GATE_DURATION } from './portal.js';
 
 // One music player: menus play MENU_MUSIC, a courtyard plays the track its theme names (themes.js).
 const music = createMusic();
@@ -420,7 +421,7 @@ function startCelebration() {
   resetTouchState(); freezePreview = tapEffect = null;
   document.querySelector('#toast').classList.remove('show');
   const finale = state.level === levelCount - 1;
-  celebration = { start: performance.now(), duration: reduced ? 550 : 2400, finale };
+  celebration = { start: performance.now(), duration: reduced ? 1200 : GATE_DURATION, finale };
   modal = 'celebration'; syncStage(); renderModal();
 }
 function advanceStage(time) {
@@ -1098,7 +1099,7 @@ function runFrame(time) {
   }
   if (!outgoing) {
     const camera = renderer.inspect().camera;
-    sharedTasks.update(state, displayState, camera, !!camera && !worldPaused && !rewind);
+    sharedTasks.update(state, displayState, camera, !!camera && !worldPaused && !rewind, sceneKey);
     updateTouchControls(displayState);
     checkWarning();
     frameCount++; if (frameCount % 10 === 0) updateUI();

@@ -1,6 +1,6 @@
 export const CONVERSATIONS = [
   [[0, 'The bridge is broken. Perhaps we can borrow a moment.'], [1, 'Throw the crate. I trust you to slow its fall.']],
-  [[1, 'Our seed rolled into the trench, right beside that snail.'], [0, 'Its shell looks sturdy. If I slow it, we can climb on its back.']],
+  [[1, 'Our seed rolled into the trench. I can lure that snail to the right edge.'], [0, 'It cannot leave its platform. I will slow it so we can climb on its shell.']],
   [[0, 'Even this ancient mushroom has an ending.'], [1, 'Then let it finish its story. We will plant another.']],
   [[1, 'That platform is waiting for a little encouragement.'], [0, 'Grow a path to it. We will cross the last gap together.']],
   [[0, 'The garden is restless. Watch for the glow before they strike.'], [1, 'And the moon lamps?'], [0, 'A place to begin again. Stay close.']],
@@ -9,7 +9,7 @@ export function dialogueFrame(lines, elapsed) {
   let time = Math.max(0, elapsed);
   for (const [speaker, text] of lines) {
     const typing = text.length * 28, duration = typing + 2100;
-    if (time < duration) return { speaker, text, shown: text.slice(0, Math.floor(time / 28)), typing: time < typing };
+    if (time < duration) return { speaker, text, shown: text.slice(0, Math.floor(time / 28)), typing: time < typing, opacity: Math.max(0, Math.min(1, time / 160, (duration - time) / 600)) };
     time -= duration;
   }
   return null;
@@ -28,6 +28,7 @@ export function createDialogue(root) {
       const frame = dialogueFrame(CONVERSATIONS[level] ?? CONVERSATIONS[0], elapsed);
       root.hidden = !frame;
       if (!frame) return;
+      root.style.opacity = String(frame.opacity);
       if (lastLine !== frame.text) {
         lastLine = frame.text; root.dataset.speaker = String(frame.speaker);
         label.textContent = frame.speaker === 0 ? 'STILL' : 'BLOOM';

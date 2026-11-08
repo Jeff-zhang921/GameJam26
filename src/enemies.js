@@ -49,7 +49,7 @@ export function enemyBox(o) {
 
 export function makeEnemy(kind, data, id) {
   const base = { kind, id, x: data.x, y: data.y, speed: 0, age: 0, frozen: false, timer: 0, attack: 0 };
-  if (kind === 'guard') return { ...base, minX: data.minX, maxX: data.maxX, dir: 1, chasing: false };
+  if (kind === 'guard') return { ...base, minX: data.minX, maxX: data.maxX, dir: 1, chasing: false, target: null, platformIndex: null };
   if (kind === 'lantern') return { ...base, homeX: data.x, homeY: data.y, chasing: false, bob: 0 };
   if (kind === 'launcher') return { ...base, dx: data.dir[0], dy: data.dir[1], every: data.every ?? ENEMY.launcher.every, shot: data.shot ?? 'dart' };
   if (kind === 'nest') return { ...base, every: data.every ?? ENEMY.nest.every, max: data.max ?? ENEMY.nest.max, spawned: 0 };
@@ -60,6 +60,33 @@ export function makeEnemy(kind, data, id) {
 
 const overlap = (a, b) => a.x + a.w > b.x && a.x < b.x + b.w && a.y + a.h > b.y && a.y < b.y + b.h;
 const center = o => { const b = enemyBox(o); return { x: b.x + b.w / 2, y: b.y + b.h / 2 }; };
+
+export function guardPlatform(state, guard) {
+  const saved = state.platforms[guard.platformIndex];
+  if (saved && Math.abs(saved.y - guard.y) < 2) return saved;
+  return state.platforms.find(f => Math.abs(f.y - guard.y) < 2 && guard.x >= f.x && guard.x <= f.x + f.w) ?? null;
+}
+
+function actorPlatform(state, actor) {
+  const index = /^platform-(\d+)$/.exec(actor.on ?? '')?.[1];
+  const standing = index === undefined ? null : state.platforms[Number(index)];
+  if (actor.grounded && standing && Math.abs(actor.y - standing.y) < 2 && actor.x >= standing.x && actor.x <= standing.x + standing.w) return standing;
+  // Airborne travellers belong to the first ledge below their feet, not a
+  // neighbouring ledge at a similar height. This also handles a guard rider.
+  return state.platforms.filter(f => actor.x >= f.x && actor.x <= f.x + f.w && f.y >= actor.y - 2).sort((a, b) => a.y - b.y)[0] ?? null;
+}
+
+export function guardTarget(state, guard) {
+  const platform = guardPlatform(state, guard), spec = ENEMY.guard;
+  if (!platform) return null;
+  let target = null, closest = Infinity;
+  for (const actor of state.actors) {
+    if (actorPlatform(state, actor) !== platform || Math.abs(actor.y - guard.y) > spec.seeHeight || Math.abs(actor.x - guard.x) > spec.see) continue;
+    const distance = Math.hypot(actor.x - guard.x, actor.y - 26 - (guard.y - spec.h / 2));
+    if (distance < closest) { closest = distance; target = actor; }
+  }
+  return target;
+}
 
 export function updateEnemies(state, { event, nextId }) {
   const strikes = [];
@@ -109,11 +136,29 @@ export function updateEnemies(state, { event, nextId }) {
       }
     } else o.attack = 0;
     if (o.kind === 'guard') {
-      const p = state.actors.filter(a => Math.abs(a.y - o.y) <= spec.seeHeight && Math.abs(a.x - o.x) <= spec.see && (o.chasing || Math.sign(a.x - o.x) === o.dir)).sort((a, b) => Math.abs(a.x - o.x) - Math.abs(b.x - o.x))[0];
+      const home = guardPlatform(state, o);
+      if (!home) { o.chasing = false; o.target = null; continue; }
+      o.platformIndex = state.platforms.indexOf(home);
+      const half = spec.w / 2, left = home.x + half, right = home.x + home.w - half;
+      o.x = Math.max(left, Math.min(right, o.x));
+      const p = guardTarget(state, o);
       o.chasing = !!p;
+      o.target = p?.id ?? null;
       if (p) {
-        if (Math.abs(p.x - o.x) > 2) { o.dir = Math.sign(p.x - o.x); walk(o, o.dir * spec.chase * k, x => x >= o.minX && x <= o.maxX); }
-      } else if (!walk(o, o.dir * spec.patrol * k, x => x >= o.minX && x <= o.maxX)) o.dir = -o.dir;
+        const distance = p.x - o.x;
+        if (Math.abs(distance) > 2) {
+          o.dir = Math.sign(distance);
+          o.x = Math.max(left, Math.min(right, o.x + o.dir * Math.min(Math.abs(distance), spec.chase * k)));
+        }
+      } else {
+        const patrolLeft = Math.max(left, Math.min(right, o.minX ?? left));
+        const patrolRight = Math.max(patrolLeft, Math.min(right, o.maxX ?? right));
+        if (o.x > patrolRight) o.dir = -1;
+        else if (o.x < patrolLeft) o.dir = 1;
+        const edge = o.dir > 0 ? patrolRight : patrolLeft, distance = edge - o.x;
+        o.x += Math.sign(distance) * Math.min(Math.abs(distance), spec.patrol * k);
+        if (Math.abs(o.x - edge) < .001) o.dir = -o.dir;
+      }
     }
     if (o.kind === 'lantern') {
       const near = nearest(o, a => a.on !== o.id);

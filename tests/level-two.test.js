@@ -124,20 +124,23 @@ describe('courtyard 2 route', () => {
     stand(s, BLOOM, trench, level.seeds[0].x);
     s = tick(s);
     expect(s.seeds).toBe(1);
-    // Both wait at the trench's right wall until the guard has chased them there.
-    stand(s, STILL, trench, 1400); stand(s, BLOOM, trench, 1470);
-    for (let i = 0; i < 400 && guard(s).x < 1330; i++) s = tick(s);
+    // Stay within sight while luring it; teleporting beyond its detection range
+    // should not lock a guard onto an actor it cannot currently reach or see.
+    stand(s, STILL, trench, guard(s).x + 180); stand(s, BLOOM, trench, 1470);
+    for (let i = 0; i < 600 && guard(s).x < 1430; i++) {
+      s = act(s, { type: 'move', actor: STILL, dir: s.actors[STILL].x < Math.min(1480, guard(s).x + 180) ? 1 : 0 });
+      s = tick(s);
+    }
+    s = act(s, { type: 'move', actor: STILL, dir: 0 });
     expect(guard(s).chasing).toBe(true);
     s = act(s, { type: 'ability', actor: STILL, x: guard(s).x, y: guard(s).y - 25 });
     s = tick(s, 5);
     expect(guard(s).frozen).toBe(true);
-    // Even slowed it still strikes now and then: Still keeps well clear (it still creeps after them) while Bloom climbs.
-    stand(s, STILL, trench, guard(s).x + 120);
     s = climb(s, BLOOM);
     s = act(s, { type: 'jumpRelease', actor: BLOOM });
     s = climb(s, STILL);
     expect(s.actors.map(a => a.on)).toEqual(['platform-2', 'platform-2']);
-    expect(s.actors.every(a => a.x > middle.x)).toBe(true); // nobody was sent back
+    expect(s.events.some(e => e.kind === 'hit')).toBe(false);
     expect(s.flags.guardRide).toBe(true);
     // Bloom plants the seed; both stand on it and Bloom wakes it at full speed.
     const pit = s.pits[0];
