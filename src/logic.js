@@ -7,6 +7,8 @@ export const meta = {
   controls: { speed: 4.2, airSpeed: 4.8, jump: -12.5, springJump: -15.3, gravity: 0.48, fallGravity: 0.8, maxFall: 16, jumpCut: 0.45, coyote: 7, jumpBuffer: 7, range: 300, reach: 95, pitReach: 50 },
   time: { moverSpeed: 1, maxSpeed: 3, hintTicks: 90 * 60, invulnTicks: 60, frozenRate: FROZEN_RATE },
   plant: { maxHeight: 235, springHeight: 45, growTicks: 960, matureTicks: 480, witherTicks: 480 },
+  // A vine grows horizontally out of a wall pit, as long as `maxLength`, on the mushroom's clock.
+  vine: { maxLength: 240 },
   // Still's Freeze Area: a circle cast at a chosen point. `range` is how far from Still the centre may be,
   // `duration` is in ticks (60 per second), `rate` is local time inside it.
   freeze: { rate: FROZEN_RATE, radius: 130, range: 380, duration: 600 },
@@ -56,13 +58,19 @@ export function anchor(o) {
 const witherProgress = age => (age - meta.plant.growTicks - meta.plant.matureTicks) / meta.plant.witherTicks;
 // A mushroom rises while growing, holds while mature, then sinks with its wilting animation.
 const heightAt = age => { const { growTicks, matureTicks, maxHeight } = meta.plant; return age > growTicks + matureTicks ? dieFrame(witherProgress(age)).height * maxHeight : Math.min(age, growTicks) / growTicks * maxHeight; };
+// A vine reaches out while growing, holds while mature, then shrinks back evenly while withered.
+const vineLengthAt = age => { const { growTicks, matureTicks } = meta.plant; return age > growTicks + matureTicks ? Math.max(0, 1 - witherProgress(age)) * meta.vine.maxLength : Math.min(age, growTicks) / growTicks * meta.vine.maxLength; };
+// A plant's size: a mushroom's height, or a vine's length (a vine is a plant in a wall pit).
+const sizeAt = (plant, age) => plant.wall ? vineLengthAt(age) : heightAt(age);
 // The standable cap is as wide as the mushroom art drawn at this height.
 export const canopyWidth = plant => plant.height * (plant.withered ? dieFrame(witherProgress(plant.age)).ratio : growFrame(plant.height, meta.plant.maxHeight, meta.plant.springHeight).ratio);
 
 function makePlant(id, pit, grown = 0, barrier = false) {
   pit.plant = id;
   const age = grown * (meta.plant.growTicks + meta.plant.matureTicks);
-  return { kind: 'plant', id, pit: pit.id, x: pit.x, base: pit.y, age, height: heightAt(age), withered: false, speed: 0, frozen: false, barrier };
+  const plant = { kind: 'plant', id, pit: pit.id, x: pit.x, base: pit.y, age, height: 0, withered: false, speed: 0, frozen: false, barrier, ...(pit.wall && { wall: pit.wall }) };
+  plant.height = sizeAt(plant, age);
+  return plant;
 }
 
 // A seed lying in the courtyard; Bloom collects it by touch.
@@ -71,7 +79,8 @@ const makeSeed = (id, x, y) => ({ kind: 'seed', id, x, y, vx: 0, vy: 0, frozen: 
 function makeLevel(index, players, unlocked, totalShards, collected = LEVELS.map(() => false)) {
   const level = LEVELS[index];
   // A pit marked `plantable: false` only holds the plant the level starts with (it cannot be planted again).
-  const pits = level.pits.map((p, i) => ({ id: `pit-${i}`, x: p.x, y: p.y, plant: null, ...(p.plantable === false && { plantable: false }) }));
+  // A pit with `wall: 1 | -1` sits on a wall face; its vine grows toward +x / −x.
+  const pits = level.pits.map((p, i) => ({ id: `pit-${i}`, x: p.x, y: p.y, plant: null, ...(p.plantable === false && { plantable: false }), ...(p.wall && { wall: p.wall }) }));
   const objects = [
     ...level.crates.map((p, i) => ({ kind: 'crate', id: `crate-${i}`, x: p.x, y: p.y, vx: 0, vy: 0, frozen: false, held: null, spawnX: p.x, spawnY: p.y })),
     ...level.seeds.map((p, i) => makeSeed(`seed-${i}`, p.x, p.y)),
@@ -348,10 +357,11 @@ function ageObjects(state) {
         continue;
       }
       if (!o.withered && o.age > growTicks + matureTicks) { event(state, 'wither', o.x, o.base); o.withered = true; if (o.barrier) state.flags.withered = true; }
-      const rise = heightAt(o.age) - o.height;
+      const rise = sizeAt(o, o.age) - o.height;
       o.height += rise;
-      if (rise > 0 && state.tick % 60 === 0) event(state, 'growth', o.x, o.base - o.height);
-      if (rise) for (const p of state.actors) if (p.on === o.id && p.grounded) {
+      if (rise > 0 && state.tick % 60 === 0) event(state, 'growth', o.wall ? o.x + o.wall * o.height : o.x, o.wall ? o.base : o.base - o.height);
+      // A rising cap lifts whoever stands on it; a vine only lengthens under them.
+      if (rise && !o.wall) for (const p of state.actors) if (p.on === o.id && p.grounded) {
         p.y -= rise;
         if (o.height > meta.plant.springHeight) state.flags.treeLifted = true;
       }

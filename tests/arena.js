@@ -31,3 +31,11 @@ export function rootriseArena(options = {}) {
   s.needs = ['treeLifted']; s.freezeCharges = 1; s.seeds = 1;
   return s;
 }
+
+// rootriseArena with a wall pit on the exit ledge's left face (x 760): its vine grows left (toward −x) at y 420,
+// 120 above the ground and 130 below the exit ledge, so a full vine is a step up to the gate.
+export function vineArena(options = {}) {
+  const s = rootriseArena(options);
+  s.pits.push({ id: 'pit-1', x: 760, y: 420, wall: -1, plant: null });
+  return s;
+}
