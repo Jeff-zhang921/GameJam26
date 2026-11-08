@@ -1,6 +1,6 @@
 import { applyAction, validateAction, heldPosition } from '../src/logic.js';
 
-const predictionActions = new Set(['move', 'jump', 'jumpRelease', 'grab']);
+const predictionActions = new Set(['move', 'jump', 'jumpRelease', 'grab', 'takeSeed']);
 const sessionKey = 'moonclock-online';
 export function interpolateGame(older, newer, alpha, ownActor) {
   const game = { ...newer, actors: newer.actors.map(actor => ({ ...actor })) };
@@ -149,7 +149,7 @@ export function createNetwork({ onRoom, onState, onConnection, onError, onReplay
     if (value.type === 'pause') return send({ type: 'pause', paused: latest?.status !== 'paused' });
     if (['restart', 'next'].includes(value.type)) return send({ type: 'control', action: value.type });
     if (value.type === 'level') return Number.isInteger(value.level) && send({ type: 'control', action: 'level', level: value.level });
-    if (!['move', 'jump', 'jumpRelease', 'grab', 'ability'].includes(value.type) || room.status !== 'PLAYING' || room.rewinding || latest?.status !== 'playing') return false;
+    if (!['move', 'jump', 'jumpRelease', 'grab', 'takeSeed', 'ability'].includes(value.type) || room.status !== 'PLAYING' || room.rewinding || latest?.status !== 'playing') return false;
     const input = { ...value, actor };
     if (input.type === 'move' && input.dir === lastMove) return true;
     if (input.type === 'move') lastMove = input.dir;
