@@ -434,6 +434,26 @@ export function createRenderer(canvas, S) {
       -CROSSBOW.length / 2, -CROSSBOW.rail * k, w * k, h * k);
     ctx.restore();
   }
+  function dart(o, cx, cy) {
+    const rim = '#241d26';
+    if (o.frozen) glow(ctx, cx, cy, 26, '#bceef088');
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(Math.atan2(o.dy, o.dx));
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    line(ctx, [[-21, 0], [18, 0]], rim, 5.4);
+    line(ctx, [[-21, 0], [18, 0]], o.frozen ? '#bceef0' : '#d5a27e', 2.7);
+    if (!o.frozen && loaded('arrow')) ctx.drawImage(sprites.arrow, 82, 258, 2006, 192, -23, -3, 46, 6);
+
+    ctx.beginPath(); ctx.moveTo(-22, -3.8); ctx.quadraticCurveTo(-16, -3.8, -13, 0);
+    ctx.quadraticCurveTo(-16, 3.8, -22, 3.8); ctx.lineTo(-20, 0); ctx.closePath();
+    ctx.fillStyle = o.frozen ? '#a3dce7' : '#d77f63'; ctx.fill();
+    ctx.strokeStyle = rim; ctx.lineWidth = 1.4; ctx.stroke();
+
+    ctx.beginPath(); ctx.moveTo(14, -1.5); ctx.lineTo(17, -3.8); ctx.lineTo(23, 0);
+    ctx.lineTo(17, 3.8); ctx.lineTo(14, 1.5); ctx.closePath();
+    ctx.fillStyle = o.frozen ? '#e6faff' : '#fff2d6'; ctx.fill(); ctx.stroke();
+    line(ctx, [[15, 1], [21.5, 0]], o.frozen ? '#7db7c9' : '#b98769', 1);
+    ctx.restore();
+  }
   const SNAIL = { cell: 300, top: 76, bottom: 244, shellX: 128 };
   let snailTint;
   function snail(o, b, pose) {
@@ -492,20 +512,7 @@ export function createRenderer(canvas, S) {
       ctx.fillStyle = '#56656a'; ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, 6); ctx.fill(); circle(ctx, cx, cy, 13, null, '#b8ac7188', 1.5);
       circle(ctx, cx + o.dx * 12, cy + o.dy * 12, 6, '#1c2b2c'); circle(ctx, cx, cy, 3, o.speed ? gold : '#8aa89b');
     }
-    // A dart is the arrow sprite (pointing right, its shaft in [82, 258, 2006, 192]) turned along its flight; slowed,
-    // it carries a cold glow.
-    if (o.kind === 'dart' && loaded('arrow')) {
-      const length = 46, k = length / 2006;
-      if (o.frozen) glow(ctx, cx, cy, 26, '#bceef088');
-      ctx.save(); ctx.translate(cx, cy); ctx.rotate(Math.atan2(o.dy, o.dx));
-      ctx.drawImage(sprites.arrow, 82, 258, 2006, 192, -length / 2, -96 * k, length, 192 * k);
-      ctx.restore();
-    } else if (o.kind === 'dart') {
-      const len = 18, hx = cx + o.dx * len, hy = cy + o.dy * len, tx = cx - o.dx * len, ty = cy - o.dy * len;
-      line(ctx, [[tx, ty], [hx, hy]], o.frozen ? '#bceef0' : '#d9c27a', 3);
-      ctx.fillStyle = o.frozen ? '#bceef0' : '#f0dc96'; ctx.beginPath(); ctx.moveTo(hx + o.dx * 6, hy + o.dy * 6); ctx.lineTo(hx - o.dy * 5, hy + o.dx * 5); ctx.lineTo(hx + o.dy * 5, hy - o.dx * 5); ctx.fill();
-      line(ctx, [[tx, ty], [tx - o.dx * 6 - o.dy * 5, ty - o.dy * 6 + o.dx * 5]], '#c98f6b', 2); line(ctx, [[tx, ty], [tx - o.dx * 6 + o.dy * 5, ty - o.dy * 6 - o.dx * 5]], '#c98f6b', 2);
-    }
+    if (o.kind === 'dart') dart(o, cx, cy);
     if (o.kind === 'orb') { if (!o.frozen) glow(ctx, cx, cy, 30, '#e3b8ff55'); circle(ctx, cx, cy, b.w / 2, o.frozen ? '#cfeaf0' : '#f2d6ff', '#b98be0', 1.5); circle(ctx, cx - 3, cy - 3, 3, '#ffffffcc'); }
     if (o.kind === 'nest') {
       ellipse(ctx, cx, b.y + b.h * .6, b.w / 2, b.h / 2, 0, '#6b5a45'); ellipse(ctx, cx, b.y + b.h * .45, b.w / 2.6, b.h / 2.6, 0, '#7d6a50');
@@ -621,10 +628,15 @@ export function createRenderer(canvas, S) {
     const x = b.x + b.w / 2 + Math.sin(t * .003 + b.x) * 3, y = b.y - 10;
     ctx.save(); ctx.globalAlpha *= .85; glow(ctx, x, y, 12, '#e6d6a366'); star(ctx, x, y, 4, '#f6ecc8'); ctx.restore();
   }
-  // Still's pickup (an extra Freeze charge): a small hourglass that bobs and slowly rocks, its sand trickling.
+  function chargeBadge(x, y, accent, halo) {
+    glow(ctx, x, y, 30, halo);
+    circle(ctx, x, y, 18, '#111c29');
+    circle(ctx, x, y, 16.5, '#192d3b', accent, 1.4);
+  }
+  // Still's pickup: the hourglass rocks inside its floating badge.
   function frostCrystal(c, t) {
     const y = c.y + Math.sin(t * .0025 + c.x) * 4;
-    glow(ctx, c.x, y, 34, '#bdf0f640');
+    chargeBadge(c.x, y, '#a5e5ee', '#bdf0f640');
     ctx.save(); ctx.translate(c.x, y); ctx.rotate(Math.sin(t * .0012 + c.x) * .18);
     ctx.beginPath(); ctx.moveTo(-8, -11); ctx.lineTo(8, -11); ctx.bezierCurveTo(8, -4, 2, -2, 1.5, 0); ctx.bezierCurveTo(2, 2, 8, 4, 8, 11);
     ctx.lineTo(-8, 11); ctx.bezierCurveTo(-8, 4, -2, 2, -1.5, 0); ctx.bezierCurveTo(-2, -2, -8, -4, -8, -11); ctx.closePath();
@@ -638,7 +650,7 @@ export function createRenderer(canvas, S) {
   }
   function lightningCrystal(c, t) {
     const y = c.y + Math.sin(t * .0025 + c.x) * 4;
-    glow(ctx, c.x, y, 28, '#fbe09e71');
+    chargeBadge(c.x, y, '#f5ce83', '#fbe09e55');
     ctx.save(); ctx.translate(c.x, y);
     ctx.beginPath(); ctx.moveTo(2, -15); ctx.lineTo(-9, 1); ctx.lineTo(-2, 1);
     ctx.lineTo(-5, 14); ctx.lineTo(10, -4); ctx.lineTo(2, -4); ctx.closePath();
