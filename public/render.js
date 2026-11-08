@@ -594,7 +594,7 @@ export function createRenderer(canvas, S) {
     if (!options.paused && !options.reduced) visualTime += dt * 1000;
     const t = options.reduced ? 0 : visualTime;
     transform = camera.update(state, { width: frameWidth, height: frameHeight, dt, mode: options.mode, reduced: options.reduced, paused: options.paused, sceneKey: options.sceneKey, resetCamera: lastReset !== options.cameraReset, bottomInset: options.bottomInset || 0 });
-    const coda = state.level === 0 && options.celebration?.tower ? options.celebration : null;
+    const coda = options.shoreCaption;
     const codaProgress = coda?.progress ?? 0;
     lastReset = options.cameraReset;
     effects.update(state, { dt, reduced: options.reduced, paused: options.paused && state.status !== 'won', sceneKey: options.sceneKey });
@@ -665,7 +665,7 @@ export function createRenderer(canvas, S) {
       if (carrier) { ctx.setLineDash([12, 9]); circle(ctx, carrier.x, carrier.y - (options.tap.area ? 30 : 0), options.tap.ringRadius ?? meta.controls.range, '#f4e7b40c', '#f4e7b4c0', 2); ctx.setLineDash([]); }
       ctx.restore();
     }
-    if (options.celebration && !coda) celebrateGate(state, options.celebration, options.reduced);
+    if (options.celebration) celebrateGate(state, options.celebration, options.reduced);
     if (options.preview) freezePreview(options.preview);
     if (options.aim) aimedCast(options.aim);
     if (options.throwArc) throwArc(options.throwArc);
@@ -681,11 +681,7 @@ export function createRenderer(canvas, S) {
     ctx.restore();
     if (coda) {
       ctx.save(); ctx.setTransform(currentDpr, 0, 0, currentDpr, 0, 0);
-      const framing = smooth(Math.min(1, codaProgress / .14)) * (1 - smooth(Math.max(0, (codaProgress - .9) / .1)));
-      ctx.fillStyle = '#102420'; ctx.globalAlpha = framing;
-      const bar = frameHeight * .065;
-      ctx.fillRect(0, 0, frameWidth, bar); ctx.fillRect(0, frameHeight - bar, frameWidth, bar);
-      ctx.globalAlpha = Math.max(0, Math.min(1, (codaProgress - .48) / .09)) * (1 - smooth(Math.max(0, (codaProgress - .88) / .12)));
+      ctx.globalAlpha = smooth(Math.min(1, codaProgress / .12)) * (1 - smooth(Math.max(0, (codaProgress - .85) / .15)));
       const gradient = ctx.createLinearGradient(0, frameHeight * .55, 0, frameHeight);
       gradient.addColorStop(0, '#10292500'); gradient.addColorStop(1, '#102925ed');
       ctx.fillStyle = gradient; ctx.fillRect(0, frameHeight * .55, frameWidth, frameHeight * .45);
@@ -694,7 +690,7 @@ export function createRenderer(canvas, S) {
       ctx.font = `${fontSize}px Georgia, serif`;
       ctx.shadowColor = '#061d18'; ctx.shadowBlur = 8;
       ctx.fillText('The world stopped.', frameWidth / 2, frameHeight * .77);
-      ctx.globalAlpha *= Math.max(0, Math.min(1, (codaProgress - .58) / .08));
+      ctx.globalAlpha *= Math.max(0, Math.min(1, (codaProgress - .16) / .12));
       ctx.fillText('But something is still counting.', frameWidth / 2, frameHeight * .77 + fontSize * 1.6);
       ctx.restore();
     }

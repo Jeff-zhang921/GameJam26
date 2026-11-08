@@ -189,6 +189,24 @@ export function timeObjectAt(state, point, slop = 0, candidates = state.objects)
   return best;
 }
 
+// Bloom can target the object carrying their feet even when their sprite covers it.
+export function bloomSupport(state) {
+  const player = state.actors[BLOOM];
+  return player?.grounded ? abilityTargets(state, BLOOM).find(o => o.id === player.on) ?? null : null;
+}
+
+export function bloomTargetAt(state, point, slop = 40) {
+  const candidates = abilityTargets(state, BLOOM);
+  const exact = timeObjectAt(state, point, 0, candidates);
+  if (exact) return exact;
+  const player = state.actors[BLOOM], support = bloomSupport(state);
+  if (support && Math.abs(point.x - player.x) <= 26 && point.y >= player.y - 58 && point.y <= player.y + 16) return support;
+  // Assistance stays near the aimed point; crates cannot steal a Speed tap.
+  return timeObjectAt(state, point, slop, candidates.filter(o => o.speed < meta.time.maxSpeed))
+    ?? timeObjectAt(state, point, slop, candidates)
+    ?? timeObjectAt(state, point, slop);
+}
+
 // The object Bloom aimed at (`action.target`), if Bloom's ability can reach it. Nothing is chosen for the player.
 export function abilityTarget(state, actor, action = {}) {
   return action.target === undefined ? undefined : abilityTargets(state, actor).find(o => o.id === action.target);
