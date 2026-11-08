@@ -1061,7 +1061,7 @@ export function createRenderer(canvas, S) {
     courtyardTwoArt = state.level === 1 || state.level === 3 || state.level === 4;
     fourthCourtyard = state.level === 3;
     fifthCourtyard = state.level === 4;
-    waterCycleArt = state.level === 1;
+    waterCycleArt = state.level === 1 || state.level === 3;
     theme = themeFor(state.level); worldWidth = state.width ?? 1280; worldHeight = state.height ?? 640; updateBackground();
     const dt = lastTime === null ? 0 : Math.min(.05, Math.max(0, (time - lastTime) / 1000));
     lastTime = time;

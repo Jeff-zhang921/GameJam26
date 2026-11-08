@@ -1,0 +1,10 @@
+Mode: built-in image_gen
+Reference: codex-clipboard-87224f32-2731-4e73-ad80-ae1b476fa31e.png
+transparent_background: true
+
+Use case: precise-object-edit. Asset type: transparent 2D side-view cloud platform sprite.
+Edit the attached cloud platform to make it noticeably THICKER and MORE VISIBLE during gameplay.
+Preserve its identity: a single horizontally elongated cream-ivory watercolor cloud, overlapping rounded puffs and a few hand-drawn curling wisps, cool blue-gray and subtle lavender shadows, delicate hand-painted paper texture inside the shape.
+Increase the cloud's actual vertical body thickness to about 1.6 times its present thickness while retaining its long horizontal span. Aim for a substantial cushion cloud with total silhouette width about 3.4 to 3.8 times its height. Add fullness primarily to the lower cloud puffs, with a gently undulating broad upper standing surface. Keep the upper middle broad and near-level for a game character to stand.
+Make the outer slate-blue pencil contour clearer and moderately darker, especially along sides and underside. Strengthen the lower blue-gray watercolor shadows and separation between overlapping lobes by about 25 percent so the cloud reads as a foreground interactive platform against a pale detailed background. Keep warm ivory lit tops and airy soft cloud volume; avoid a heavy black cartoon outline. Plant shapes, scenery or a face must not be added.
+One cloud only, full silhouette centered, all edges visible with clean transparent padding. Genuine transparent alpha outside the cloud; opaque creamy cloud core so background does not wash through. No background paper, no landscape, no ground shadow, no floating debris, no glowing aura or colored halo, no lettering, no checkerboard. Preserve original watercolor game art style rather than glossy rendering.
