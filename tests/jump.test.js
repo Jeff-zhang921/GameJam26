@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import { setup, applyAction, validateAction, meta, atExit } from '../src/logic.js';
-import { classicCourtyard, rootriseArena } from './arena.js';
+import { classicCourtyard, rootriseArena, withtimeArena } from './arena.js';
 
 const send = (state, type, actor = 0, extra = {}) => applyAction(state, 'local', { type, actor, ...extra });
 const step = (state, count = 1) => { for (let i = 0; i < count; i++) state = send(state, 'tick'); return state; };
@@ -204,7 +204,7 @@ describe('courtyard jump routes', () => {
   });
 
   test('the last courtyard moving platform still reaches a frozen crate and the exit ledge', () => {
-    let state = setup({ level: 3 });
+    let state = withtimeArena();
     Object.assign(state.objects.find(o => o.kind === 'mover'), { x: 640, frozen: true });
     Object.assign(state.actors[0], { x: 740, y: 290, on: 'mover-0', carrying: 'crate-0' });
     Object.assign(state.objects.find(o => o.kind === 'crate'), { held: 0, x: 777, y: 237 });

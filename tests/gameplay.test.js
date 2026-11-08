@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import { setup, applyAction, validateAction, meta, exitStatus, failureReason, assessFailure, freezeAreaAt, freezePoint } from '../src/logic.js';
-import { classicCourtyard, rootriseArena } from './arena.js';
+import { classicCourtyard, rootriseArena, withtimeArena } from './arena.js';
 import { createCamera } from '../public/presentation.js';
 
 const act = (state, action) => applyAction(state, 'local', action);
@@ -206,7 +206,7 @@ describe('Freeze Areas', () => {
   });
 
   test('Bloom keeps its acceleration and can hasten things inside an area', () => {
-    let s = setup({ level: 3 });
+    let s = withtimeArena();
     Object.assign(s.actors[BLOOM], { x: 505 });
     Object.assign(s.actors[STILL], { x: 480 });
     s = send(s, 'ability', STILL, { x: 600, y: 300 });
@@ -252,7 +252,7 @@ describe('role-specific resources', () => {
   });
 
   test('only a successful cast spends Hasten and an empty budget keeps the target unchanged', () => {
-    let s = setup({ level: 3 });
+    let s = withtimeArena();
     s.actors[BLOOM].x = 510;
     expect(act(s, { type: 'ability', actor: BLOOM, target: 'missing' })).toBe(s);
     s = send(s, 'ability', BLOOM, { target: 'mover-0' });
@@ -294,9 +294,9 @@ describe('possible dead ends raise a warning; the game goes on', () => {
   });
 
   test('a crossing that needs Freeze warns only when charges, crystals and active areas are all gone', () => {
-    // Courtyard 4: the crossing is needed by anyone below the gate's ledge (no `crossingFrom`).
+    // The old courtyard 4 arena: the crossing is needed by anyone still on the start ledge (crossingFrom 0).
     const lost = () => {
-      const s = setup({ level: 3 });
+      const s = withtimeArena();
       s.freezeCharges = 0; s.pickups.forEach(c => { c.taken = true; });
       Object.assign(s.actors[STILL], { x: 1100, y: 300, on: 'platform-1' });
       return s;

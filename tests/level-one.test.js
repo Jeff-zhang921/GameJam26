@@ -2,7 +2,7 @@ import { describe, test, expect } from 'bun:test';
 import { setup, applyAction, failureReason } from '../src/logic.js';
 import { LEVELS } from '../src/levels/index.js';
 import { createCamera } from '../public/presentation.js';
-import { classicCourtyard } from './arena.js';
+import { classicCourtyard, withtimeArena } from './arena.js';
 
 // Courtyard 1: a start ledge with two crates, a gap crossed on crates caught in Freeze Areas, a low middle ledge
 // with a seed and a pit, and the highest ledge (with the moon gate) reached on the mushroom.
@@ -142,7 +142,7 @@ describe('courtyard 1 crates do not come back', () => {
     s = act(s, { type: 'restart' });
     expect(s.objects.filter(o => o.kind === 'crate')).toHaveLength(2); // restarting brings both back
 
-    for (const other of [classicCourtyard(), setup({ level: 3 })]) {
+    for (const other of [classicCourtyard(), withtimeArena()]) {
       let o = other;
       const id = o.objects.find(c => c.kind === 'crate').id;
       Object.assign(get(o, id), { x: 600, y: 700, vy: 5 });

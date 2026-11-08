@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import { setup, applyAction, validateAction, meta, abilityCheck, abilityTargets, timeObjectAt, bloomTargetAt, bloomSupport, anchor } from '../src/logic.js';
-import { classicCourtyard, rootriseArena } from './arena.js';
+import { classicCourtyard, rootriseArena, withtimeArena } from './arena.js';
 
 const send = (state, type, actor = 0, extra = {}) => {
   const action = { type, actor, ...extra };
@@ -40,7 +40,7 @@ describe('ability reach of 300 keeps every courtyard route open', () => {
   });
 
   test('courtyard 4: Bloom on the ground edge can wake the moving platform', () => {
-    const state = setup({ level: 3 });
+    const state = withtimeArena();
     state.actors[BLOOM].x = 505;
     expect(abilityCheck(state, BLOOM, 'mover-0')).toBe('ok');
   });
@@ -67,7 +67,7 @@ describe('ability reach of 300 keeps every courtyard route open', () => {
 
 describe('tapping time objects', () => {
   test('Speed selects the platform under Bloom even when their body or a crate hides it', () => {
-    const state = setup({ level: 3 }), mover = get(state, 'mover-0');
+    const state = withtimeArena(), mover = get(state, 'mover-0');
     Object.assign(state.actors[BLOOM], { x: mover.x + 60, y: mover.y, grounded: true, on: mover.id });
     Object.assign(get(state, 'crate-0'), { x: mover.x + 60, y: mover.y - 27 });
     expect(bloomSupport(state)?.id).toBe(mover.id);
@@ -94,7 +94,7 @@ describe('tapping time objects', () => {
   });
 
   test('easier targeting retains maximum speed, charge and range restrictions', () => {
-    const state = setup({ level: 3 }), mover = get(state, 'mover-0');
+    const state = withtimeArena(), mover = get(state, 'mover-0');
     Object.assign(state.actors[BLOOM], { x: mover.x + 60, y: mover.y, grounded: true, on: mover.id });
     mover.speed = meta.time.maxSpeed;
     const target = bloomTargetAt(state, { x: mover.x + 60, y: mover.y });
@@ -115,7 +115,7 @@ describe('tapping time objects', () => {
   });
 
   test('prefers the smaller object when one sits on another, and ignores carried crates', () => {
-    let state = setup({ level: 3 });
+    let state = withtimeArena();
     const mover = get(state, 'mover-0');
     Object.assign(get(state, 'crate-0'), { x: mover.x + 60, y: mover.y - 27 });
     expect(timeObjectAt(state, { x: mover.x + 60, y: mover.y - 1 }, 20)?.id).toBe('crate-0');
@@ -135,10 +135,10 @@ describe('tapping time objects', () => {
     state.actors[STILL].x = 1100;
     expect(abilityCheck(state, STILL, 'crate-0')).toBe('range');
     expect(abilityCheck(state, STILL, 'nothing')).toBe('missing');
-    const level3 = setup({ level: 3 });
-    level3.actors[BLOOM].x = 505;
-    get(level3, 'mover-0').speed = meta.time.maxSpeed;
-    expect(abilityCheck(level3, BLOOM, 'mover-0')).toBe('maxSpeed');
+    const old4 = withtimeArena();
+    old4.actors[BLOOM].x = 505;
+    get(old4, 'mover-0').speed = meta.time.maxSpeed;
+    expect(abilityCheck(old4, BLOOM, 'mover-0')).toBe('maxSpeed');
   });
 
   test('a tapped target is the same Ability action the server validates', () => {

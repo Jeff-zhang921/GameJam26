@@ -2,7 +2,7 @@ import { describe, test, expect } from 'bun:test';
 import { LEVELS } from '../src/levels/index.js';
 import { ENEMY } from '../src/enemies.js';
 import { setup, validateAction, applyAction, isGameOver, viewFor, hintLevel, meta, abilityTarget, levelCount } from '../src/logic.js';
-import { classicCourtyard, rootriseArena } from './arena.js';
+import { classicCourtyard, rootriseArena, withtimeArena } from './arena.js';
 
 function step(state, n = 1) { for (let i = 0; i < n; i++) state = applyAction(state, 'local', { type: 'tick' }); return state; }
 function action(state, value) { expect(validateAction(state, 'local', value).valid).toBe(true); return applyAction(state, 'local', value); }
@@ -259,7 +259,7 @@ describe('still', () => {
 
 describe('aiming is always the player\'s', () => {
   test('an ability with no aim is refused: nothing is picked for the player', () => {
-    const s = setup({ level: 3 });
+    const s = withtimeArena();
     Object.assign(s.actors[0], { x: 300 }); Object.assign(s.actors[1], { x: 300 });
     expect(validateAction(s, 'local', { type: 'ability', actor: 0 }).error).toBe('aim');
     expect(validateAction(s, 'local', { type: 'ability', actor: 1 }).error).toBe('aim');
@@ -267,7 +267,7 @@ describe('aiming is always the player\'s', () => {
   });
 
   test('an aimed cast works: a point for Still, a named object within reach for Bloom', () => {
-    const s = setup({ level: 3 });
+    const s = withtimeArena();
     Object.assign(s.actors[0], { x: 300 }); Object.assign(s.actors[1], { x: 520 });
     expect(validateAction(s, 'local', { type: 'ability', actor: 0, x: 360, y: 480 }).valid).toBe(true);
     const near = s.objects.find(o => o.kind === 'mover');
@@ -323,7 +323,7 @@ describe('crate collision', () => {
 });
 
 describe('movers', () => {
-  const moverLevel = () => { const s = setup({ level: 3 }); s.actors[0].x = 600; s.actors[0].y = 290; s.actors[0].on = 'mover-0'; s.actors[1].x = 450; return s; };
+  const moverLevel = () => { const s = withtimeArena(); s.actors[0].x = 600; s.actors[0].y = 290; s.actors[0].on = 'mover-0'; s.actors[1].x = 450; return s; };
 
   test('a mover rests until bloomed, carries its rider, and crawls when frozen', () => {
     let s = step(moverLevel(), 30);

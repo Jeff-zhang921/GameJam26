@@ -39,3 +39,28 @@ export function vineArena(options = {}) {
   s.pits.push({ id: 'pit-1', x: 760, y: 420, wall: -1, plant: null });
   return s;
 }
+
+// The original fourth courtyard, kept as a fixed test arena: a start ledge (x 0-520, y 520) with a crate at
+// (300, 493), seeds at x 110 / 150 / 480 (Bloom holds one more), pits at x 400 and x 60, a sleeping mover
+// (x 540-640, y 290, 120 wide) and the exit ledge (platform-1, y 300) with the moon gate at (1160, 300).
+// Two Freeze charges plus an hourglass. Built on level index 0, whose `crossingNeedsFreeze` rule (from platform 0)
+// drives fail checks.
+export function withtimeArena(options = {}) {
+  const s = setup({ ...options, level: 0 });
+  const seed = (x, i) => ({ kind: 'seed', id: `seed-${i}`, x, y: 510, vx: 0, vy: 0, frozen: false, held: null, spawnX: x, spawnY: 510 });
+  s.width = 1280;
+  s.platforms = [{ x: 0, y: 520, w: 520, h: 160 }, { x: 1040, y: 300, w: 240, h: 400 }];
+  s.objects = [
+    { kind: 'crate', id: 'crate-0', x: 300, y: 493, vx: 0, vy: 0, frozen: false, held: null, spawnX: 300, spawnY: 493 },
+    ...[110, 150, 480].map(seed),
+    { kind: 'mover', id: 'mover-0', x: 540, y: 290, w: 120, x1: 540, x2: 640, dir: 1, speed: 0, frozen: false },
+  ];
+  s.pits = [{ id: 'pit-0', x: 400, y: 520, plant: null }, { id: 'pit-1', x: 60, y: 520, plant: null }];
+  s.nextPlant = 0; s.nextEnemy = s.objects.length;
+  s.actors.forEach((p, i) => Object.assign(p, { x: [250, 170][i], y: 520, spawnX: [250, 170][i], spawnY: 520 }));
+  s.checkpoints = [];
+  s.pickups = [{ x: 470, y: 430, id: 'frost-0', kind: 'frost', taken: false }, { x: 345, y: 494, id: 'bolt-0', kind: 'bolt', taken: false }];
+  s.exit = { x: 1160, y: 300 }; s.shards = [{ x: 400, y: 240, id: 0, taken: false }];
+  s.needs = ['treeLifted', 'moverRide', 'frozenTouched']; s.freezeCharges = 2; s.seeds = 1; s.crateRespawn = true;
+  return s;
+}

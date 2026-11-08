@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import { setup, applyAction, validateAction, meta, atExit } from '../src/logic.js';
+import { withtimeArena } from './arena.js';
 
 const act = (s, a) => applyAction(s, 'local', a);
 const send = (s, type, actor, extra = {}) => {
@@ -90,7 +91,7 @@ describe('starting Freeze charges are enough for every crossing that needs them'
   });
 
   test('courtyard 4: the last rift takes one cast per traveller, and the starting two suffice', () => {
-    let s = setup({ level: 3 });
+    let s = withtimeArena();
     expect(s.freezeCharges).toBe(2);
     const mover = s.objects.find(o => o.kind === 'mover');
     Object.assign(mover, { x: mover.x2, speed: 0 });
