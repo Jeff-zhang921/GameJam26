@@ -263,7 +263,7 @@ describe('checkpoints and hits', () => {
     get(s, 'g').attack = ENEMY.guard.attackEvery - 1;
     const stay = st => { Object.assign(get(st, 'g'), { x: st.actors[0].x }); return st; };
     expect(hitsOver(s, 59, stay).hits).toBe(1);
-    expect(hitsOver(s, ENEMY.guard.attackEvery + 5, stay).hits).toBe(2);
+    expect(hitsOver(s, meta.time.invulnTicks + ENEMY.guard.attackEvery + 5, stay).hits).toBe(2);
   });
 
   test('two actors on one dart in the same tick cost one hit event and the dart', () => {

@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import { setup, applyAction } from '../src/logic.js';
+import { rootriseArena } from './arena.js';
 import { createHistory, compactFrame, rewindFrame, easeRewind, REWIND } from '../public/rewind.js';
 
 const act = (s, a) => applyAction(s, 'local', a);
@@ -44,7 +45,7 @@ describe('rewind history', () => {
 describe('rewind playback', () => {
   const recorded = () => {
     // Courtyard 2 has long flat ground: Still walks right for two seconds (no falls, no respawns).
-    let s = setup({ level: 1 });
+    let s = rootriseArena();
     const history = createHistory();
     history.reset(s);
     s = act(s, { type: 'move', actor: 0, dir: 1 });
@@ -55,7 +56,7 @@ describe('rewind playback', () => {
   test('starts at the present, ends exactly at the courtyard start, and moves steadily back in time', () => {
     const { s, frames } = recorded();
     expect(rewindFrame(frames, 0).actors[0].x).toBeCloseTo(s.actors[0].x, 6);
-    const end = rewindFrame(frames, 1), start = compactFrame(setup({ level: 1 }));
+    const end = rewindFrame(frames, 1), start = compactFrame(rootriseArena());
     expect(end.actors).toEqual(start.actors);
     expect(end.objects).toEqual(start.objects);
     expect(end.freezeAreas).toEqual([]);

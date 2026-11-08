@@ -1,12 +1,12 @@
 import { describe, test, expect } from 'bun:test';
 import { setup, applyAction, validateAction, meta, atExit } from '../src/logic.js';
-import { classicCourtyard } from './arena.js';
+import { classicCourtyard, rootriseArena } from './arena.js';
 
 const send = (state, type, actor = 0, extra = {}) => applyAction(state, 'local', { type, actor, ...extra });
 const step = (state, count = 1) => { for (let i = 0; i < count; i++) state = send(state, 'tick'); return state; };
 
 function flat(spring = false) {
-  const state = setup({ level: 1 });
+  const state = rootriseArena();
   state.actors[0].x = 200;
   if (spring) {
     state.objects.push({ id: 'plant-test', kind: 'plant', pit: 'pit-0', x: 200, base: 540, age: 123, height: 30, withered: false, speed: 0, frozen: true });
@@ -173,19 +173,19 @@ describe('courtyard jump routes', () => {
     state = until(state, s => s.status === 'won', 5);
   });
 
-  function treeCheckpoint(level, x, height) {
+  function treeCheckpoint(level, x, height, ledge = 0) {
     const state = setup({ level });
     state.objects = state.objects.filter(o => o.kind !== 'plant');
-    state.objects.push({ id: 'route-tree', kind: 'plant', pit: 'pit-0', x, base: state.platforms[0].y, age: height / meta.plant.maxHeight * meta.plant.growTicks, height, frozen: true, withered: false, speed: 1 });
-    Object.assign(state.actors[0], { x, y: state.platforms[0].y - height, on: 'route-tree' });
+    state.objects.push({ id: 'route-tree', kind: 'plant', pit: 'pit-0', x, base: state.platforms[ledge].y, age: height / meta.plant.maxHeight * meta.plant.growTicks, height, frozen: true, withered: false, speed: 1 });
+    Object.assign(state.actors[0], { x, y: state.platforms[ledge].y - height, on: 'route-tree' });
     return state;
   }
 
-  test('a mature tree still provides the jump to the second courtyard ledge', () => {
-    let state = treeCheckpoint(1, 600, meta.plant.maxHeight);
+  test('a mature tree on the middle ledge provides the jump to the second courtyard\'s gate ledge', () => {
+    let state = treeCheckpoint(1, 1840, meta.plant.maxHeight, 2);
     state = send(send(state, 'move', 0, { dir: 1 }), 'jump');
     state = until(state, s => s.actors[0].on === 'platform-1');
-    expect(state.actors[0].y).toBe(290);
+    expect(state.actors[0].y).toBe(180);
   });
 
   test('a young sprout still launches onto the third courtyard cliff', () => {

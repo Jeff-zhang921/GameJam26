@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import { setup, applyAction, validateAction, heldPosition, interactionFor, aimedThrowVelocity, throwPath, meta } from '../src/logic.js';
-import { classicCourtyard } from './arena.js';
+import { classicCourtyard, rootriseArena } from './arena.js';
 import { attachCarried } from '../public/network.js';
 
 const send = (state, type, actor = 0, extra = {}) => {
@@ -86,7 +86,7 @@ describe('contextual interaction label', () => {
   });
 
   test('Bloom with a seed in the count is offered Plant beside an empty pit, and nothing to plant elsewhere', () => {
-    const state = setup({ level: 1 });
+    const state = rootriseArena();
     state.actors[1].x = 450;
     expect(interactionFor(state, 1)).toEqual({ kind: 'pickup', available: false });
     state.actors[1].x = 600;

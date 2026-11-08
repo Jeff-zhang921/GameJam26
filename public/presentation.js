@@ -9,7 +9,9 @@ export function createCamera() {
   return {
     update(state, { width, height, dt = 0, mode = 'solo', reduced = false, paused = false, sceneKey, resetCamera = false, bottomInset = 0 }) {
       const worldWidth = state.width ?? 1280, worldHeight = state.height ?? 640;
-      const fit = Math.min(width / worldWidth, height / worldHeight);
+      // Zoom is based on a standard 1280 x 640 view, so wider courtyards scroll instead of shrinking to fit
+      // (which would also leave bands above and below the world). Reduced motion holds a still view of it all.
+      const fit = Math.min(width / Math.min(1280, worldWidth), height / worldHeight), whole = Math.min(width / worldWidth, height / worldHeight);
       const actor = state.actors[state.active];
       let targetX = actor.x + actor.facing * 60, targetY = actor.y - 100, targetZoom = 1.2;
       const reset = !initialized || sceneKey !== previousScene || resetCamera;
@@ -32,7 +34,7 @@ export function createCamera() {
         camera.x = blend(camera.x, mode === 'coop' ? targetX : deadzoneTarget(camera.x, targetX, 100), dt, .18);
         camera.y = blend(camera.y, mode === 'coop' ? targetY : deadzoneTarget(camera.y, targetY, 60), dt, .28);
       }
-      camera.scale = fit * zoom;
+      camera.scale = reduced ? whole : fit * zoom;
       camera.x = boundedCenter(camera.x, width / camera.scale, worldWidth);
       camera.y = boundedCenter(camera.y, height / camera.scale, worldHeight);
       if (mode === 'coop' && !paused && !reduced) {

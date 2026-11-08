@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import { setup, applyAction, validateAction, meta, abilityCheck, abilityTargets, timeObjectAt, bloomTargetAt, bloomSupport, anchor } from '../src/logic.js';
-import { classicCourtyard } from './arena.js';
+import { classicCourtyard, rootriseArena } from './arena.js';
 
 const send = (state, type, actor = 0, extra = {}) => {
   const action = { type, actor, ...extra };
@@ -26,7 +26,7 @@ describe('ability reach of 300 keeps every courtyard route open', () => {
   });
 
   test('courtyard 2: Still on the ground can freeze a full-grown mushroom', () => {
-    let state = setup({ level: 1 });
+    let state = rootriseArena();
     state.actors[BLOOM].x = 600; state = send(state, 'grab', BLOOM);
     Object.assign(get(state, 'plant-0'), { age: meta.plant.growTicks, height: meta.plant.maxHeight, speed: 1 });
     state.actors[STILL].x = 450;
@@ -81,7 +81,7 @@ describe('tapping time objects', () => {
   });
 
   test('underfoot Speed covers mushroom caps but never chooses ordinary ground or an airborne support', () => {
-    const state = setup({ level: 1 });
+    const state = rootriseArena();
     const mushroom = { kind: 'plant', id: 'test-mushroom', x: 400, base: 520, height: 180, age: 700, speed: 1, frozen: false, withered: false };
     state.objects.push(mushroom);
     Object.assign(state.actors[BLOOM], { x: 400, y: 340, grounded: true, on: mushroom.id });

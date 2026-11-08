@@ -2,7 +2,7 @@ import { describe, test, expect } from 'bun:test';
 import { LEVELS } from '../src/levels/index.js';
 import { ENEMY } from '../src/enemies.js';
 import { setup, validateAction, applyAction, isGameOver, viewFor, hintLevel, meta, abilityTarget, levelCount } from '../src/logic.js';
-import { classicCourtyard } from './arena.js';
+import { classicCourtyard, rootriseArena } from './arena.js';
 
 function step(state, n = 1) { for (let i = 0; i < n; i++) state = applyAction(state, 'local', { type: 'tick' }); return state; }
 function action(state, value) { expect(validateAction(state, 'local', value).valid).toBe(true); return applyAction(state, 'local', value); }
@@ -13,7 +13,7 @@ const apex = (s, actor) => { let top = s.actors[actor].y; for (let i = 0; i < 60
 
 // Level 1 (index 1) has one empty pit at x=600 on ground y=540 and seeds at x=90 / x=380.
 function planted() {
-  let s = setup({ level: 1 });
+  let s = rootriseArena();
   s.actors[1].x = 600;
   s = action(s, { type: 'grab', actor: 1 });
   return s;
@@ -21,7 +21,7 @@ function planted() {
 
 describe('seeds and pits', () => {
   test('Bloom collects a seed by touch and plants from the count beside an empty pit', () => {
-    let s = setup({ level: 1 });
+    let s = rootriseArena();
     expect(s.seeds).toBe(1);
     Object.assign(s.actors[0], { x: 380 }); // Still walks over a seed: it stays, and Still cannot take it
     s = step(s);
@@ -55,7 +55,7 @@ describe('seeds and pits', () => {
   });
 
   test('bloom ignores loose seeds and crates', () => {
-    let s = setup({ level: 1 });
+    let s = rootriseArena();
     s.actors[1].x = 380;
     expect(validateAction(s, 'local', { type: 'ability', actor: 1, target: 'seed-1' }).error).toBe('bloomRange');
     s = classicCourtyard();
@@ -163,7 +163,7 @@ describe('time flow', () => {
     expect(s.actors[1].on).toBe(plantOf(s).id);
     const jumped = action(s, { type: 'jump', actor: 1 });
     const springRise = s.actors[1].y - apex(jumped, 1);
-    const ground = setup({ level: 1 });
+    const ground = rootriseArena();
     const groundRise = ground.actors[1].y - apex(action(ground, { type: 'jump', actor: 1 }), 1);
     expect(springRise).toBeGreaterThan(groundRise * 1.4);
     expect(step(jumped).flags.sproutJump).toBe(true);
@@ -176,7 +176,7 @@ describe('time flow', () => {
     s.actors[0].x = 450; // Still walks within reach of the mushroom
     s = action(s, { type: 'ability', actor: 0, target: 'plant-0' });
     const rise = s.actors[1].y - apex(action(s, { type: 'jump', actor: 1 }), 1);
-    const ground = setup({ level: 1 });
+    const ground = rootriseArena();
     expect(rise).toBeCloseTo(ground.actors[1].y - apex(action(ground, { type: 'jump', actor: 1 }), 1), 0);
   });
 
@@ -371,7 +371,7 @@ describe('movers', () => {
 
 describe('assists', () => {
   test('rewind is no longer an action and the state keeps no rewind history', () => {
-    const s = step(setup({ level: 1 }), 30);
+    const s = step(rootriseArena(), 30);
     expect(validateAction(s, 'local', { type: 'rewind', actor: 0 }).valid).toBe(false);
     expect(applyAction(s, 'local', { type: 'rewind' })).toBe(s);
     expect('history' in s).toBe(false);
@@ -379,7 +379,7 @@ describe('assists', () => {
   });
 
   test('the clock starts on first input and the hint escalates after 90 idle seconds of play', () => {
-    let s = step(setup({ level: 1 }), 100);
+    let s = step(rootriseArena(), 100);
     expect(s.elapsed).toBe(0);
     s = action(s, { type: 'move', actor: 0, dir: 1 });
     s = step(s, 10);

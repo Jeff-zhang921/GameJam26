@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { createGameServer } from '../server.js';
 import { setup } from '../src/logic.js';
+import { rootriseArena } from './arena.js';
 
 const servers = [], sockets = [];
 afterEach(() => { for (const ws of sockets.splice(0)) ws.close(); for (const server of servers.splice(0)) server.stop(); });
@@ -79,7 +80,7 @@ describe('real WebSocket multiplayer', () => {
   });
   test('shared existing time abilities and animation identities agree on both clients', async () => {
     const server = serve(), p = await pair(server); await start(p);
-    p.room.game = setup({ level: 1, players: p.room.game.playerIds }); p.room.epoch++;
+    p.room.game = rootriseArena({ players: p.room.game.playerIds }); p.room.epoch++;
     Object.assign(p.room.game.actors[1], { x: 380 }); // Bloom touches a seed: both clients see the count go up
     const picked = await p.host.next('snapshot', m => m.game.seeds === 2 && !m.game.objects.some(o => o.id === 'seed-1'));
     expect((await p.guest.next('snapshot', m => m.game.tick === picked.game.tick)).game.seeds).toBe(2);

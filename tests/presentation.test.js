@@ -56,6 +56,15 @@ describe('camera', () => {
     const reset = camera.update(s, { ...viewport, resetCamera: true });
     expect(reset.x).toBeGreaterThan(old.x);
   });
+  test('a wider courtyard scrolls at the usual zoom instead of shrinking, leaving no bands above or below', () => {
+    for (const width of [1920, 2560]) for (const view of [{ width: 1280, height: 720 }, { width: 1920, height: 1080 }, { width: 2560, height: 1080 }]) {
+      const s = { ...state(), width }, camera = createCamera().update(s, { ...viewport, ...view });
+      const normal = createCamera().update(state(), { ...viewport, ...view });
+      expect(camera.scale).toBeCloseTo(normal.scale, 6);
+      expect(640 * camera.scale).toBeGreaterThanOrEqual(view.height - 1e-6);
+    }
+  });
+
   test('reduced motion always shows the whole level without tracking', () => {
     const s = state(), camera = createCamera();
     const initial = { ...camera.update(s, { ...viewport, reduced: true }) };

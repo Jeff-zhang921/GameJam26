@@ -15,3 +15,19 @@ export function classicCourtyard(options = {}) {
   s.freezeCharges = 2; s.seeds = 1; s.crateRespawn = true;
   return s;
 }
+
+// The original second courtyard, kept as a fixed test arena for the same reason: one flat ground (y 540) with
+// seeds at x=90 / x=380 (Bloom holds one more), one empty pit at x=600, and the exit ledge (platform-1, y 290)
+// with the moon gate at (1160, 290). One Freeze charge, no creatures.
+export function rootriseArena(options = {}) {
+  const s = setup({ ...options, level: 1 });
+  s.width = 1280;
+  s.platforms = [{ x: 0, y: 540, w: 1280, h: 120 }, { x: 760, y: 290, w: 520, h: 360 }];
+  s.objects = [90, 380].map((x, i) => ({ kind: 'seed', id: `seed-${i}`, x, y: 530, vx: 0, vy: 0, frozen: false, held: null, spawnX: x, spawnY: 530 }));
+  s.pits = [{ id: 'pit-0', x: 600, y: 540, plant: null }]; s.nextPlant = 0; s.nextEnemy = s.objects.length;
+  s.actors.forEach((p, i) => Object.assign(p, { x: [195, 270][i], y: 540, spawnX: [195, 270][i], spawnY: 540 }));
+  s.checkpoints = []; s.pickups = [{ x: 470, y: 514, id: 'bolt-0', kind: 'bolt', taken: false }];
+  s.exit = { x: 1160, y: 290 }; s.shards = [{ x: 600, y: 250, id: 0, taken: false }];
+  s.needs = ['treeLifted']; s.freezeCharges = 1; s.seeds = 1;
+  return s;
+}

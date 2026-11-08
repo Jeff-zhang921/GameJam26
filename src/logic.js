@@ -86,7 +86,7 @@ function makeLevel(index, players, unlocked, totalShards, collected = LEVELS.map
     platforms: clone(level.platforms), objects, pits, nextPlant: level.plants.length, nextEnemy: objects.length,
     checkpoints: (level.checkpoints ?? []).map((c, i) => ({ id: `cp-${i}`, x: c.x, y: c.y, lit: false })), checkpoint: null,
     exit: clone(level.exit), shards: level.shards.map((p, i) => ({ ...p, id: i, taken: false })),
-    flags: { frozenTouched: false, treeLifted: false, withered: false, sproutJump: false, moverRide: false, dartRide: false, miteGone: false },
+    flags: { frozenTouched: false, treeLifted: false, withered: false, sproutJump: false, moverRide: false, dartRide: false, miteGone: false, guardRide: false },
     needs: clone(level.need), needsDone: 0, events: [], eventSeq: 0,
     started: false, elapsed: 0, lastProgressTick: 0, falls: 0,
     freezeAreas: [], nextArea: 0, freezeCharges: level.freezeCharges ?? 1, bloomCharges: meta.charges.bloomStart,
@@ -478,6 +478,7 @@ function moveActors(state) {
         p.y = f.y; p.vy = 0; p.grounded = true; p.on = f.id;
         if (o?.kind === 'crate' && o.frozen) state.flags.frozenTouched = true;
         if ((o?.kind === 'dart' || o?.kind === 'orb') && o.frozen) state.flags.dartRide = true;
+        if (o?.kind === 'guard' && o.frozen) state.flags.guardRide = true;
       }
     }
     if (p.grounded && airborne) event(state, 'land', p.x, p.y, { actor: p.id, strength: Math.min(1, impact / meta.controls.maxFall) });
