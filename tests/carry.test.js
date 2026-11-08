@@ -138,6 +138,31 @@ describe('online rendering of carried boxes', () => {
   });
 });
 
+describe('a loose crate is solid to the travellers', () => {
+  // A crate in the air at (x, y) with velocity (vx, vy); Still at stillX, Bloom out of the way.
+  function flying(x, y, vx, vy, stillX) {
+    const state = setup({ level: 0 });
+    Object.assign(crate(state), { x, y, vx, vy });
+    state.actors[0].x = stillX; state.actors[1].x = 60;
+    return state;
+  }
+
+  test('a crate flying sideways stops against a traveller instead of passing through', () => {
+    let state = send(flying(330, 470, -5, -2, 200), 'move', 0, { dir: 1 });
+    state = tick(state, 40);
+    expect(crate(state).x - 27).toBeGreaterThanOrEqual(state.actors[0].x + 15 - 0.01);
+  });
+
+  test('jumping up into a falling crate bumps your head, and the crate comes to rest on it', () => {
+    let state = send(flying(200, 300, 0, 1, 200), 'jump');
+    let top = 520;
+    for (let i = 0; i < 60; i++) { state = tick(state); top = Math.min(top, state.actors[0].y); expect(crate(state).y + 27).toBeLessThanOrEqual(state.actors[0].y - 52 + 0.01); }
+    expect(top).toBeGreaterThan(300 + 27 + 52);
+    state = tick(state, 60);
+    expect(crate(state).y + 27).toBeCloseTo(state.actors[0].y - 52, 5);
+  });
+});
+
 describe('aimed throws', () => {
   test('full power is accepted at every sampled angle, with proportional power below the rim', () => {
     const state = carrying(), fullPowerDistance = 360;
@@ -171,6 +196,7 @@ describe('aimed throws', () => {
 
   test('the dashed preview is the real flight, tick for tick, until the crate lands', () => {
     const aim = { vx: -3, vy: -7 }, held = carrying(); // lands back on the starting ledge
+    held.actors[1].x = 60; // out of the crate's way
     const path = throwPath(held, 0, aim);
     let state = send(held, 'grab', 0, { aim });
     expect(path[0]).toEqual({ x: crate(state).x, y: crate(state).y });

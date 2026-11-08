@@ -350,13 +350,15 @@ const stemBoxes = state => state.objects.filter(o => o.kind === 'plant' && !o.wi
 function stepItem(state, o, all) {
   const half = o.kind === 'crate' ? 27 : 10, k = o.frozen ? meta.time.frozenRate : 1, previous = o.y + half;
   let landed = null, wall = false;
+  // A crate is solid to the travellers: it stops against their sides and comes to rest on their heads.
+  const bodies = o.kind === 'crate' ? state.actors.map(p => ({ id: `actor-${p.id}`, x: p.x - 15, y: p.y - 52, w: 30, h: 51 })) : [];
   o.vy += 0.3 * k; o.x += o.vx * k;
   // Platform sides and mushroom stems are walls: an item flying into one stops against it instead of passing through.
-  for (const f of [...state.platforms, ...stemBoxes(state)]) if (o.y + half > f.y + 3 && o.y - half < f.y + f.h && o.x + half > f.x && o.x - half < f.x + f.w) {
+  for (const f of [...state.platforms, ...stemBoxes(state), ...bodies]) if (o.y + half > f.y + 3 && o.y - half < f.y + f.h && o.x + half > f.x && o.x - half < f.x + f.w) {
     o.x = o.x < f.x + f.w / 2 ? f.x - half : f.x + f.w + half; o.vx = 0; wall = true;
   }
   o.y += o.vy * k;
-  for (const f of all) if (f.id !== o.id) if (o.vy >= 0 && previous <= f.y + 3 && o.y + half >= f.y && o.x + half > f.x && o.x - half < f.x + f.w) {
+  for (const f of [...all, ...bodies]) if (f.id !== o.id) if (o.vy >= 0 && previous <= f.y + 3 && o.y + half >= f.y && o.x + half > f.x && o.x - half < f.x + f.w) {
     landed = { y: f.y, speed: o.vy };
     o.y = f.y - half; o.vy = 0; o.vx *= 0.88 ** k;
   }

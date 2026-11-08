@@ -393,7 +393,7 @@ export function createRenderer(canvas, S) {
       if (!freezeWash) {
         freezeWash = document.createElement('canvas'); freezeWash.width = freezeWash.height = 256;
         const wash = freezeWash.getContext('2d'), gradient = wash.createRadialGradient(128, 128, 0, 128, 128, 128);
-        gradient.addColorStop(0, 'rgba(178,168,130,.42)'); gradient.addColorStop(.45, 'rgba(178,168,130,.315)'); gradient.addColorStop(1, 'rgba(178,168,130,0)');
+        gradient.addColorStop(0, 'rgba(176,158,104,.6)'); gradient.addColorStop(.45, 'rgba(176,158,104,.46)'); gradient.addColorStop(1, 'rgba(176,158,104,0)');
         wash.fillStyle = gradient; wash.fillRect(0, 0, 256, 256);
       }
       ctx.save(); ctx.globalAlpha *= alpha;
@@ -407,9 +407,9 @@ export function createRenderer(canvas, S) {
       return g;
     };
     ctx.save(); ctx.beginPath(); ctx.arc(a.x, a.y, r, 0, Math.PI * 2);
-    ctx.globalCompositeOperation = 'saturation'; ctx.fillStyle = ramp('128,128,128', .9); ctx.fill();
-    ctx.globalCompositeOperation = 'color'; ctx.fillStyle = ramp(SEPIA.join(','), .75); ctx.fill();
-    ctx.globalCompositeOperation = 'source-over'; ctx.fillStyle = ramp('214,200,150', .12); ctx.fill();
+    ctx.globalCompositeOperation = 'saturation'; ctx.fillStyle = ramp('128,128,128', 1); ctx.fill();
+    ctx.globalCompositeOperation = 'color'; ctx.fillStyle = ramp(SEPIA.join(','), .92); ctx.fill();
+    ctx.globalCompositeOperation = 'source-over'; ctx.fillStyle = ramp('200,180,120', .22); ctx.fill();
     ctx.restore();
   }
   // Its marks, drawn first (under everything): a faint dashed reach, the wave while it spreads, its remaining time
@@ -417,12 +417,12 @@ export function createRenderer(canvas, S) {
   function freezeArea(a, t) {
     const { r, spread, alpha } = freezeLook(a, t), life = Math.max(0, a.ticksLeft / a.duration);
     ctx.save(); ctx.globalAlpha *= alpha;
-    if (spread < 1) { ctx.globalAlpha *= 1 - spread; circle(ctx, a.x, a.y, r, null, '#efe3bb', 3); ctx.globalAlpha /= 1 - spread; }
-    ctx.setLineDash([5, 12]); ctx.lineDashOffset = -t * .012; circle(ctx, a.x, a.y, Math.max(0, r - 2), null, '#e9dcb042', 1.2); ctx.setLineDash([]);
-    ctx.beginPath(); ctx.arc(a.x, a.y, r + 5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * life); ctx.strokeStyle = '#efe3bb88'; ctx.lineWidth = 2; ctx.stroke();
+    if (spread < 1) { ctx.globalAlpha *= 1 - spread; circle(ctx, a.x, a.y, r, null, '#f2d98e', 4.5); ctx.globalAlpha /= 1 - spread; }
+    ctx.setLineDash([5, 12]); ctx.lineDashOffset = -t * .012; circle(ctx, a.x, a.y, Math.max(0, r - 2), null, '#e6cc80b0', 2.2); ctx.setLineDash([]);
+    ctx.beginPath(); ctx.arc(a.x, a.y, r + 5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * life); ctx.strokeStyle = '#f2d98ee6'; ctx.lineWidth = 3; ctx.stroke();
     for (let i = 0; i < 10; i++) {
       const turn = i * 2.39996 + t * .00025 * (i % 2 ? 1 : -1), d = r * (.15 + ((i * 37) % 70) / 100);
-      circle(ctx, a.x + Math.cos(turn) * d, a.y + Math.sin(turn) * d, 1 + (i % 3) * .6, '#f3e8c4aa');
+      circle(ctx, a.x + Math.cos(turn) * d, a.y + Math.sin(turn) * d, 1.3 + (i % 3) * .7, '#f6e2a6dd');
     }
     ctx.restore();
   }
@@ -487,7 +487,7 @@ export function createRenderer(canvas, S) {
       return;
     }
     ctx.save(); ctx.setLineDash([8, 8]);
-    circle(ctx, p.x, p.y, p.radius, p.valid ? '#e9dcae14' : '#f1a58f10', p.valid ? '#e9dcaeaa' : '#f1a58faa', 1.5);
+    circle(ctx, p.x, p.y, p.radius, p.valid ? '#e6cc8024' : '#f1a58f1c', p.valid ? '#ecd38ae6' : '#f1a58fe6', 2.2);
     ctx.setLineDash([]); star(ctx, p.x, p.y, 5, p.valid ? '#f6ecc8' : '#f6c3b5'); ctx.restore();
   }
   // Rewind: a cool wash with a vignette, a clock hand sweeping backwards and streaks of time running right to left.
