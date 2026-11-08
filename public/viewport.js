@@ -1,5 +1,5 @@
 // Expand fractional viewport edges outwards so the compositor cannot expose a
-// one-device-pixel strip. Standalone windows keep their full backdrop behind
+// one-device-pixel strip. All game windows keep their full backdrop behind
 // safe areas, while text entry still follows the smaller keyboard viewport.
 export function viewportBounds(visual, layout, { standalone = false, editing = false } = {}) {
   const left = Math.floor(visual.offsetLeft || 0), top = Math.floor(visual.offsetTop || 0);
@@ -7,8 +7,8 @@ export function viewportBounds(visual, layout, { standalone = false, editing = f
   const bottom = Math.ceil((visual.offsetTop || 0) + visual.height);
   return {
     left, top,
-    width: Math.max(1, right - left, standalone && !editing ? layout.width - left : 0),
-    height: Math.max(1, bottom - top, standalone && !editing ? layout.height - top : 0),
+    width: Math.max(1, right - left, !editing ? layout.width - left : 0),
+    height: Math.max(1, bottom - top, !editing ? layout.height - top : 0),
   };
 }
 

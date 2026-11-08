@@ -5,67 +5,36 @@ const deadzoneTarget = (center, target, radius) => center + Math.sign(target - c
 
 export function createCamera() {
   const camera = { scale: 1, offsetX: 0, offsetY: 0, x: 640, y: 320 };
-  let initialized = false, previousScene, zoom = 1.2;
+  let initialized = false, previousScene, previousSize;
   return {
-    update(state, { width, height, dt = 0, mode = 'solo', reduced = false, paused = false, sceneKey, resetCamera = false, bottomInset = 0 }) {
+    update(state, { width, height, dt = 0, reduced = false, paused = false, sceneKey, resetCamera = false, bottomInset = 0 }) {
       const worldWidth = state.width ?? 1280, worldHeight = state.height ?? 640;
-      // Zoom is based on a standard 1280 x 640 view, so wider courtyards scroll instead of shrinking to fit
-      // (which would also leave bands above and below the world). Reduced motion holds a still view of it all.
-      const fit = Math.min(width / Math.min(1280, worldWidth), height / worldHeight);
       const actor = state.actors[state.active];
-      const tracked = mode === 'coop' ? state.actors : [actor];
-      // High mushroom jumps can rise above y=0. Include that airspace in the camera bounds.
-      const worldTop = Math.min(0, ...tracked.map(p => p.y - 52 - 80));
-      const verticalCenter = center => worldTop + boundedCenter(center - worldTop, height / camera.scale, worldHeight - worldTop);
-      let targetX = actor.x + actor.facing * 60, targetY = actor.y - 100, targetZoom = 1.2;
-      const reset = !initialized || sceneKey !== previousScene || resetCamera;
-      if (mode === 'coop') {
-        let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
-        for (const player of state.actors) {
-          left = Math.min(left, player.x - 140); right = Math.max(right, player.x + 140);
-          top = Math.min(top, player.y - 52 - 120); bottom = Math.max(bottom, player.y + 120);
-        }
-        targetX = (left + right) / 2; targetY = (top + bottom) / 2;
-        targetZoom = Math.min(1.2, Math.min(width / (right - left), height / (bottom - top)) / fit);
+      // A fixed scale for this viewport and courtyard. Only this client's active traveller can move the view.
+      const fit = Math.min(width / Math.min(1280, worldWidth), height / worldHeight);
+      camera.scale = Math.max(fit * 1.2, width / worldWidth, height / worldHeight);
+      const size = `${width}:${height}:${worldWidth}:${worldHeight}`;
+      const reset = !initialized || sceneKey !== previousScene || resetCamera || size !== previousSize;
+      const targetX = actor.x + actor.facing * 60, targetY = actor.y - 100;
+      if (reset) { camera.x = targetX; camera.y = targetY; }
+      else if (!paused) {
+        const x = deadzoneTarget(camera.x, targetX, 100), y = deadzoneTarget(camera.y, targetY, 60);
+        camera.x = reduced ? x : blend(camera.x, x, dt, .18);
+        camera.y = reduced ? y : blend(camera.y, y, dt, .28);
       }
-      if (reduced) {
-        camera.x = worldWidth / 2; camera.y = (worldTop + worldHeight) / 2; zoom = 1;
-      } else if (reset) {
-        camera.x = targetX; camera.y = targetY; zoom = targetZoom;
-      } else if (!paused) {
-        zoom = blend(zoom, targetZoom, dt, .22);
-        if (mode === 'coop') zoom = Math.min(zoom, targetZoom);
-        camera.x = blend(camera.x, mode === 'coop' ? targetX : deadzoneTarget(camera.x, targetX, 100), dt, .18);
-        camera.y = blend(camera.y, mode === 'coop' ? targetY : deadzoneTarget(camera.y, targetY, 60), dt, .28);
-      }
-      const cover = Math.max(width / worldWidth, height / (worldHeight - worldTop));
-      camera.scale = reduced ? Math.min(width / worldWidth, height / (worldHeight - worldTop))
-        : mode === 'coop' && worldTop < 0 ? fit * zoom : Math.max(fit * zoom, cover);
-      camera.x = boundedCenter(camera.x, width / camera.scale, worldWidth);
-      camera.y = verticalCenter(camera.y);
-      if (!paused && !reduced) {
-        const halfWidth = width / camera.scale / 2, halfHeight = height / camera.scale / 2;
-        for (const player of tracked) {
-          if (mode === 'coop') camera.x = clamp(camera.x, player.x - halfWidth + 30, player.x + halfWidth - 30);
-          camera.y = clamp(camera.y, player.y - halfHeight + 20, player.y - 52 + halfHeight - 80);
-        }
-        camera.x = boundedCenter(camera.x, width / camera.scale, worldWidth);
-        camera.y = verticalCenter(camera.y);
+      const halfWidth = width / camera.scale / 2, halfHeight = height / camera.scale / 2;
+      if (!paused || reset) {
+        camera.x = boundedCenter(camera.x, halfWidth * 2, worldWidth);
+        camera.y = boundedCenter(camera.y, halfHeight * 2, worldHeight);
+        // Move the camera, never zoom out, to keep the whole sprite clear of the HUD and touch buttons.
+        const bottom = Math.max(20, Math.min(bottomInset + 12, height * .55)) / camera.scale;
+        const top = 40 / camera.scale;
+        camera.x = boundedCenter(clamp(camera.x, actor.x - halfWidth + 30, actor.x + halfWidth - 30), halfWidth * 2, worldWidth);
+        camera.y = clamp(camera.y, actor.y - halfHeight + bottom, actor.y - 84 + halfHeight - top);
       }
       camera.offsetX = width / 2 - camera.x * camera.scale;
       camera.offsetY = height / 2 - camera.y * camera.scale;
-      // Taller screens (iPad) show the whole world height with room to spare. With touch controls along
-      // the bottom, sit the world as low as the controls allow (ground stays above the joystick) and give
-      // the rest to the top, where the HUD lives, instead of leaving an empty band under the world.
-      const slack = height - worldHeight * camera.scale;
-      if (bottomInset > 0 && slack > 0.5 && worldTop === 0) {
-        const grounds = (state.platforms ?? []).filter(p => p.y + p.h >= worldHeight - 1).map(p => p.y);
-        const depth = worldHeight - (grounds.length ? Math.max(...grounds) : worldHeight);
-        const band = clamp(bottomInset + 8 - depth * camera.scale, 0, slack);
-        camera.offsetY = height - band - worldHeight * camera.scale;
-        camera.y = (height / 2 - camera.offsetY) / camera.scale;
-      }
-      initialized = true; previousScene = sceneKey;
+      initialized = true; previousScene = sceneKey; previousSize = size;
       return camera;
     },
   };
@@ -89,6 +58,7 @@ const effects = {
   win: { kind: 'spark', color: '#fff2b8', count: 24, speed: 130, life: 1.25 },
   hit: { kind: 'spark', color: '#ffb3a1', count: 20, speed: 110, life: .7 },
   strike: { kind: 'spark', color: '#ff9b7a', count: 16, speed: 120, life: .4 },
+  guardStrike: { kind: 'dust', color: '#d8c495', count: 16, speed: 85, life: .4 },
   checkpoint: { kind: 'spark', color: '#f4e2a6', count: 16, speed: 70, life: .9 },
   pop: { kind: 'dust', color: '#e8deb6', count: 8, speed: 40, life: .35 },
   spawn: { kind: 'dust', color: '#c9b58a', count: 10, speed: 45, life: .5 },
@@ -132,7 +102,7 @@ export function createParticles() {
       for (const event of state.events) {
         if (event.id <= seenEvent) continue;
         seenEvent = event.id;
-        const effect = effects[event.kind];
+        const effect = effects[event.kind === 'strike' && event.sourceKind === 'guard' ? 'guardStrike' : event.kind];
         if (!effect || state.tick - event.tick > 45) continue;
         for (let i = 0; i < effect.count; i++) {
           const p = particles[next]; next = next === 255 ? 24 : next + 1;

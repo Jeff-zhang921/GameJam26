@@ -565,7 +565,7 @@ function moveActors(state) {
       const hazard = state.objects.find(o => isHazard(o) && rectOverlap(body(), enemyBox(o)));
       if (hazard) {
         if (hazard.kind === 'dart' || hazard.kind === 'orb') state.objects = state.objects.filter(o => o !== hazard);
-        respawn(state, p, 'hit');
+        respawn(state, p, 'hit', hazard);
       }
     }
     if (p.id === BLOOM) for (const seed of state.objects.filter(o => o.kind === 'seed' && free(o) && !o.thrown && dist({ x: p.x, y: p.y - 20 }, o) < meta.seeds.reach)) {
@@ -578,12 +578,12 @@ function moveActors(state) {
   }
 }
 
-function respawn(state, p, kind) {
+function respawn(state, p, kind, source) {
   if (kind === 'hit' && p.carrying !== null) {
     const o = find(state, p.carrying);
     o.held = null; o.x = p.x; o.y = p.y - (o.kind === 'crate' ? 27 : 10); o.vx = 0; o.vy = 0; p.carrying = null;
   }
-  if (kind === 'hit') event(state, 'hit', p.x, p.y - 26, { actor: p.id });
+  if (kind === 'hit') event(state, 'hit', p.x, p.y - 26, { actor: p.id, ...(source && { source: source.id, sourceKind: source.kind }) });
   const cp = state.checkpoints.find(c => c.id === p.checkpoint);
   p.x = cp ? cp.x + (p.id ? 18 : -18) : p.spawnX; p.y = cp ? cp.y : p.spawnY;
   p.vx = 0; p.vy = 0; p.grounded = true; p.on = 'ground'; p.jumpHeld = false; p.jumpCut = true; p.jumpBuffer = 0;
@@ -612,7 +612,7 @@ function resolveStrikes(state, strikes) {
   for (const id of strikes) {
     const o = find(state, id); if (!o) continue;
     const b = enemyBox(o), reach = { x: b.x - 2, y: b.y - 2, w: b.w + 4, h: b.h + 4 };
-    for (const p of state.actors) if (p.invuln <= 0 && rectOverlap({ x: p.x - 15, y: p.y - 52, w: 30, h: 51 }, reach)) respawn(state, p, 'hit');
+    for (const p of state.actors) if (p.invuln <= 0 && rectOverlap({ x: p.x - 15, y: p.y - 52, w: 30, h: 51 }, reach)) respawn(state, p, 'hit', o);
   }
 }
 

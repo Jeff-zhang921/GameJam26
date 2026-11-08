@@ -51,6 +51,7 @@ export function createMusic() {
       }).catch(error => { console.warn('Background music failed to load:', error); }).finally(() => { loading.delete(t.src); }));
   }
   return {
+    inspect: () => ({ track: track?.src ?? null, enabled: wanted, playing: !!source }),
     unlock() {
       try {
         context ??= new (window.AudioContext || window.webkitAudioContext)();

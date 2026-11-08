@@ -14,11 +14,13 @@ import { createViewport } from './viewport.js';
 import { createDialogue } from './dialogue.js';
 import { createTaskHints } from './task-hints.js';
 import { GATE_DURATION, ARRIVAL_DURATION } from './portal.js';
+import { createHitFeedback } from './hit-feedback.js';
 
 // One music player: menus play MENU_MUSIC, a courtyard plays the track its theme names (themes.js).
 const music = createMusic();
 const growthAudio = createGrowthAudio();
 const rewindAudio = createRewindAudio();
+const hitFeedback = createHitFeedback();
 const icons = {
   moon: '<path d="M19 15.5A8 8 0 0 1 8.5 5a8.5 8.5 0 1 0 10.5 10.5Z"/><path d="m17 3 .5 2.5L20 6l-2.5.5L17 9l-.5-2.5L14 6l2.5-.5Z"/>',
   leaf: '<path d="M19 4C7 3 3 10 7 16c6 4 13 0 12-12Z"/><path d="M5 21 17 7M10 15l-1-5m5 1 4 1"/>',
@@ -66,7 +68,7 @@ const touchDevice = () => touchMedia.matches || iPadDesktop;
 const touchLayout = () => touchControls || touchDevice();
 let reduced = saved.reduced ?? window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 let best = Array.from({ length: levelCount }, (_, i) => Array.isArray(saved.best) && Number.isFinite(saved.best[i]) ? saved.best[i] : null);
-let modal = 'intro', seenEvent = 0, shownHint = 0, toastTimer, audioContext;
+let modal = 'intro', seenEvent = 0, shownHint = 0, toastTimer, audioContext, pauseContext = false;
 const clock = ticks => { const sec = Math.floor(ticks / 60); return `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`; };
 let lastTime = 0, accumulator = 0, frameCount = 0, sceneKey = 0, cameraReset = 0;
 let onlineMode = false, networkEpoch = null, networkStatus = 'offline';
@@ -171,6 +173,7 @@ const network = createNetwork({
       const from = live && !rewind && game.status === 'playing' && network.room.status !== 'STARTING' && !entrance.active
         ? { state: previous, sceneKey, cameraReset } : null;
       networkEpoch = info.epoch; sceneKey++; cameraReset++; seenEvent = state.eventSeq;
+      hitFeedback.reset(state.eventSeq);
       shownHint = 0; uiChapter = ''; resetTouchState(); history.reset(game);
       if (rewind) rewind.arrived = true; // the server has installed the courtyard's start
       nextPending = false;
@@ -179,14 +182,19 @@ const network = createNetwork({
     }
     const seenBefore = seenEvent;
     for (const e of state.events) if (e.id > seenEvent) {
+      hitFeedback.handle(e, network.actor);
       if (!(e.kind === 'return' && state.events.some(h => h.kind === 'hit' && h.actor === e.actor && h.id > seenBefore))) chime(e);
       if (e.kind === 'return' && e.actor === network.actor) cameraReset++; seenEvent = e.id;
     }
     if (game.status === 'won' && !rewind && !network.room.canReturnLobby) {
       if (!celebration && !sceneFade && !nextPending && modal !== 'advancing') startCelebration();
     }
-    else if (game.status === 'paused' && (!modal || modal === 'online')) modal = 'pause';
-    else if (game.status === 'playing' && modal === 'pause' && previous.status === 'paused') modal = null;
+    else if (game.status === 'paused' && (previous.status !== 'paused' || !pauseContext || !live || modal === 'online')) {
+      pauseContext = true; resetTouchState(); modal = 'pause';
+    } else if (game.status === 'playing' && previous.status === 'paused' && pauseContext) {
+      if (['pause', 'help', 'settings', 'confirm-restart', 'confirm-level'].includes(modal)) modal = null;
+      pauseContext = false; resetTouchState(); accumulator = 0; previousTick = null;
+    }
     if (network.room.status === 'STARTING' || network.room.canReturnLobby || entrance.active) modal = 'online';
     if (!sceneFade?.from) updateUI();
     if (modalRoot.dataset.phase !== String(modal)) { renderModal(); if (!modal && !stageBusy()) canvas.focus({ preventScroll: true }); }
@@ -256,6 +264,7 @@ function leaveOnline() {
   network.leave(); lobby.hide(); onlineMode = false; networkEpoch = null;
   document.body.classList.remove('online-mode');
   state = setup({ level: Number.isInteger(saved.level) ? saved.level : 0 });
+  hitFeedback.reset();
   sceneKey++; seenEvent = 0; uiChapter = ''; uiMode = ''; modal = 'intro'; history.reset(state);
   updateUI(); renderModal();
 }
@@ -265,6 +274,7 @@ function returnToMenu() {
   clearInputs(); persist();
   const { level, unlocked } = state;
   state = setup({ level }); state.unlocked = unlocked;
+  hitFeedback.reset();
   sceneKey++; cameraReset++; seenEvent = 0; shownHint = 0; uiChapter = ''; uiMode = ''; modal = 'intro'; history.reset(state);
   updateUI(); renderModal();
 }
@@ -305,10 +315,11 @@ function dispatch(action, quiet = false) {
   if (action.type === 'switch') chime({ kind: 'switch' });
   if (state.level !== oldLevel || ['restart', 'level', 'next'].includes(action.type)) {
     seenEvent = state.eventSeq; sceneKey++; cameraReset++; shownHint = 0;
+    hitFeedback.reset(state.eventSeq);
     history.reset(state);
   }
   const seenBefore = seenEvent;
-  for (const e of state.events) if (e.id > seenEvent) { if (!(e.kind === 'return' && state.events.some(h => h.kind === 'hit' && h.actor === e.actor && h.id > seenBefore))) chime(e); if (e.kind === 'return' && e.actor !== undefined) cameraReset++; seenEvent = e.id; }
+  for (const e of state.events) if (e.id > seenEvent) { hitFeedback.handle(e, state.active); if (!(e.kind === 'return' && state.events.some(h => h.kind === 'hit' && h.actor === e.actor && h.id > seenBefore))) chime(e); if (e.kind === 'return' && e.actor === state.active) cameraReset++; seenEvent = e.id; }
   if (state.status === 'won' && oldStatus !== 'won') {
     best[state.level] = Math.min(best[state.level] ?? Infinity, state.elapsed); persist();
     startCelebration();
@@ -384,8 +395,10 @@ function resetTouchState() {
   for (const button of document.querySelectorAll('.touch-controls .pressed')) button.classList.remove('pressed');
 }
 function measureControls() {
-  const base = document.querySelector('.joystick-base'), frameEl = document.querySelector('.game-frame');
-  controlsReserve = base && frameEl && document.body.classList.contains('touch-layout') ? Math.max(0, frameEl.getBoundingClientRect().bottom - base.getBoundingClientRect().top) : 0;
+  const frameEl = document.querySelector('.game-frame');
+  const controls = [...document.querySelectorAll('.joystick-base, .touch-controls button')].filter(node => node.getBoundingClientRect().height > 0);
+  controlsReserve = frameEl && controls.length && document.body.classList.contains('touch-layout')
+    ? Math.max(0, frameEl.getBoundingClientRect().bottom - Math.min(...controls.map(node => node.getBoundingClientRect().top))) : 0;
 }
 // In a courtyard where Bloom runs time backwards, say so once per visit, as soon as play begins.
 function noticeRewind() {
@@ -413,6 +426,7 @@ function syncStage() {
 function clearStage() {
   entrance.cancel();
   sceneFade = celebration = arrival = null;
+  pauseContext = false;
   nextPending = false;
   veil.hidden = true;
   syncStage();
@@ -513,10 +527,22 @@ function finishRewind() {
 }
 function setModal(type) {
   if (rewind || stageBusy()) return;
+  if (type === 'pause') {
+    clearInputs();
+    if (onlineMode && state.status !== 'paused' && !network.pause(true)) return;
+    if (!onlineMode && state.status === 'playing') dispatch({ type: 'pause' }, true);
+    pauseContext = true;
+  }
   if (type && modal === null) { clearInputs(); if (!onlineMode && state.status === 'playing') dispatch({ type: 'pause' }, true); }
   modal = type; renderModal();
 }
-function resume() { modal = null; if (state.status === 'paused') { if (onlineMode) network.pause(false); else dispatch({ type: 'pause' }, true); } accumulator = 0; renderModal(); canvas.focus({ preventScroll: true }); }
+function resume() {
+  if (pauseContext && modal !== 'pause') { modal = 'pause'; renderModal(); return; }
+  if (onlineMode && (pauseContext || state.status === 'paused')) { clearInputs(); network.pause(false); return; }
+  if (state.status === 'paused') dispatch({ type: 'pause' }, true);
+  pauseContext = false; modal = null; accumulator = 0;
+  renderModal(); canvas.focus({ preventScroll: true });
+}
 function renderModal() {
   const root = modalRoot;
   root.dataset.phase = String(modal);
@@ -1054,6 +1080,7 @@ touchMedia.addEventListener('change', () => { updateUI(); viewport.refresh(); })
 window.__moonclock = {
   snapshot: () => ({ ...viewFor(state, onlineMode ? network.playerId : 'local'), phase: modal || state.status, players: structuredClone(state.actors) }),
   presentation: () => renderer.inspect(),
+  audio: () => music.inspect(),
   transition: () => ({ phase: celebration ? 'entering' : sceneFade ? 'crossing' : arrival ? 'landing' : null }),
   history: () => ({ frames: history.frames.length, stride: history.stride, bytes: history.bytes(), first: history.frames[0]?.tick ?? null, last: history.frames[history.frames.length - 1]?.tick ?? null }),
   rewind: () => rewind && { progress: rewind.u, frames: rewind.frames.length, online: rewind.online },
@@ -1071,7 +1098,7 @@ function blendTicks(a, b, t) {
   };
 }
 // The title screen and the pause / settings / help menus have their own music.
-const menuScreen = () => ['intro', 'pause', 'settings', 'help', 'confirm-restart', 'confirm-level'].includes(modal);
+const menuScreen = () => ['intro', 'online', 'pause', 'settings', 'help', 'confirm-restart', 'confirm-level'].includes(modal);
 const currentTrack = () => menuScreen() ? MENU_MUSIC : themeFor(state.level).music;
 let entranceDrawAt = null;
 // The loop always schedules its next frame, even if this one fails: an error in one frame (a drawing glitch,
@@ -1116,9 +1143,9 @@ function runFrame(time) {
   const outgoing = sceneFade?.from;
   const displayState = outgoing?.state ?? (rewindView && rewind ? rewindView : liveView);
   frame.previous = time;
-  // Online, a local menu does not stop the shared world, so keep animating behind it.
+  // Explicit Pause is shared; help/settings opened directly during play remain local.
   const localMenu = ['pause', 'help', 'settings', 'confirm-restart', 'confirm-level'].includes(modal);
-  const worldPaused = (!onlineMode && viewport.blocked) || stageBusy() || (onlineMode ? modal !== null && !localMenu : !!modal) || state.status !== 'playing' || (onlineMode && (!network.connected || network.room?.suspended));
+  const worldPaused = (!onlineMode && viewport.blocked) || stageBusy() || (onlineMode ? pauseContext || modal !== null && !localMenu : !!modal) || state.status !== 'playing' || (onlineMode && (!network.connected || network.room?.suspended));
   dialogue.update({ sceneKey, level: state.level, time, enabled: !worldPaused && !rewind });
   const touch = touchLayout(), viewActor = onlineMode ? network.actor : state.active;
   updateSkillAim(); updateThrowAim();
@@ -1130,7 +1157,7 @@ function runFrame(time) {
   if (!entrance.active || entranceDrawAt === null || time - entranceDrawAt >= 100) {
     entranceDrawAt = entrance.active ? time : null;
     renderer.draw(displayState, time, {
-      reduced, mode: touch ? 'coop' : 'solo', paused: worldPaused && !rewindInfo,
+      reduced, paused: worldPaused && !rewindInfo,
       sceneKey: outgoing?.sceneKey ?? sceneKey, cameraReset: outgoing?.cameraReset ?? cameraReset,
       celebration: celebration && { progress: Math.max(0, Math.min(1, (time - celebration.start) / celebration.duration)), finale: celebration.finale },
       arrival: arrival ? { progress: Math.max(0, Math.min(1, (time - arrival.start) / arrival.duration)) } : sceneFade?.arrive && sceneFade.revealAt !== null ? { progress: 0 } : null,

@@ -10,11 +10,11 @@ test('a standalone backdrop includes the window area beyond the visual viewport'
   const visual = { width: 1194, height: 813 };
   const layout = { width: 1194, height: 834 };
   expect(viewportBounds(visual, layout, { standalone: true }).height).toBe(834);
-  expect(viewportBounds(visual, layout).height).toBe(813);
+  expect(viewportBounds(visual, layout).height).toBe(834);
 });
 test('text entry continues to fit above the keyboard in both standalone and browser windows', () => {
   const visual = { width: 844, height: 210, offsetTop: 35 };
   const layout = { width: 844, height: 390 };
   expect(viewportBounds(visual, layout, { standalone: true, editing: true })).toEqual({ left: 0, top: 35, width: 844, height: 210 });
-  expect(viewportBounds(visual, layout)).toEqual({ left: 0, top: 35, width: 844, height: 210 });
+  expect(viewportBounds(visual, layout, { editing: true })).toEqual({ left: 0, top: 35, width: 844, height: 210 });
 });

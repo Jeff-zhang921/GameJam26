@@ -18,6 +18,41 @@ function fixture(options = {}) {
   return { manager, host, guest, credentials, room, socket, send, last, advance, pair, ready, start };
 }
 
+describe('shared pause', () => {
+  test('either player pauses and the other resumes with cleared controls and a frozen world', () => {
+    for (const initiator of ['host', 'guest']) {
+      const f = fixture(); f.start();
+      f.send(f.host, { type: 'input', seq: 1, action: { type: 'move', dir: 1 } });
+      f.send(f.guest, { type: 'input', seq: 1, action: { type: 'jump' } });
+      f.advance(100);
+      f.send(f[initiator], { type: 'pause', paused: true });
+      const paused = structuredClone(f.room.game);
+      expect(paused.status).toBe('paused');
+      expect(paused.actors.every(p => p.move === 0 && !p.jumpHeld && p.jumpBuffer === 0)).toBe(true);
+      expect(f.last(f.host, 'snapshot').game).toEqual(f.last(f.guest, 'snapshot').game);
+      f.send(f[initiator], { type: 'pause', paused: true });
+      f.send(f.host, { type: 'input', seq: 2, action: { type: 'move', dir: 1 } });
+      f.advance(500);
+      expect(f.room.game).toEqual(paused);
+      f.send(f[initiator === 'host' ? 'guest' : 'host'], { type: 'pause', paused: false });
+      expect(f.room.game.status).toBe('playing');
+      expect(f.room.game.actors.every(p => p.move === 0 && !p.jumpHeld)).toBe(true);
+      f.advance(100);
+      expect(f.room.game.tick).toBeGreaterThan(paused.tick);
+    }
+  });
+  test('reconnecting to a paused room receives its actual paused state', () => {
+    const f = fixture(); f.start();
+    f.send(f.guest, { type: 'pause', paused: true });
+    f.manager.disconnect(f.host);
+    const next = f.socket();
+    f.send(next, { type: 'resume', code: f.room.code, playerId: f.credentials.playerId, token: f.credentials.token });
+    expect(f.last(next, 'snapshot').game.status).toBe('paused');
+    f.send(next, { type: 'pause', paused: false });
+    expect(f.room.game.status).toBe('playing');
+  });
+});
+
 describe('rooms and shared lobby', () => {
   test('authenticated retry waits for an active connection, then reclaims the same slot', () => {
     const f = fixture(), retry = f.socket();
