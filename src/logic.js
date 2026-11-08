@@ -24,15 +24,16 @@ export const meta = {
   // multiplied by the thrower's facing). The crate leaves from `offset` beside the thrower's chest.
   throw: { maxSpeed: 11, default: { vx: 6.8, vy: -6 }, offset: { x: 48, y: -48 } },
   // A cloud and the water in its pool are one thing in two forms, on a clock of its own that always runs: the water
-  // lies in its pool for `waterTicks`, rises as mist over `formTicks`, holds as a cloud for `cloudTicks` (cloud :
-  // water is 1 : 6) and rains back over `rainTicks`. Only the fully formed cloud is solid; it is `h` thick. While it
+  // lies in its pool for `waterTicks`, rises as mist over `formTicks`, holds as a cloud for `cloudTicks` and rains
+  // back over `rainTicks`. Water hastened by Speed rises within `hastedWaterTicks` (it never waits longer than it
+  // would have anyway). Only the fully formed cloud is solid; it is `h` thick. While it
   // rises as mist or is a cloud, abilities act on the cloud; while it rains back or is water, on the water (each has
   // its own point and area). Bloom's Speed runs its clock (1 + speed) times as fast; a Freeze Area touching the form
   // it is in slows it, so that form lasts longer. Neither carries over: the moment it starts to turn into the other
   // form, Speed is gone and the Freeze Areas already cast no longer hold it (a new one does). The first time anyone
   // stands on a newly formed cloud, it blinks and rains back after `standTicks` (real time, whatever its clock), or
   // sooner if it had less time left; once both travellers stand on it at the same time, within `crowdTicks`.
-  cloud: { waterTicks: 1440, formTicks: 60, cloudTicks: 240, rainTicks: 60, standTicks: 180, crowdTicks: 60, h: 20 },
+  cloud: { waterTicks: 360, hastedWaterTicks: 120, formTicks: 60, cloudTicks: 240, rainTicks: 60, standTicks: 180, crowdTicks: 60, h: 20 },
   // In water a traveller moves sideways at `move` of their speed and their vertical speed is damped by `drag` each
   // tick; a loose crate is damped by `itemDrag` each tick of its local time. Both scale with how deep they are in it
   // (a full pool reaches a traveller's waist).
@@ -89,6 +90,12 @@ function rainStart(o) {
 }
 // How fast a cloud's clock runs, before any Freeze Area: forward at 1 + speed, or, rewound (speed < 0), backwards.
 export const cloudRate = o => o.speed < 0 ? o.speed : 1 + o.speed;
+// Hastened water rises within `hastedWaterTicks` at its pace now: its clock moves on to that much before its rise,
+// unless it was already closer.
+function rushWater(o) {
+  const { formTicks, cloudTicks, hastedWaterTicks } = meta.cloud, rise = rainStart(o) - cloudTicks - formTicks;
+  o.age = Math.max(o.age, rise - hastedWaterTicks * cloudRate(o));
+}
 // Real ticks a cloud has left as a cloud at its pace right now: until it starts to rain back, or, rewound, until it
 // sinks back into its rise.
 function cloudTimeLeft(o) {
@@ -172,6 +179,8 @@ function makeLevel(index, players, unlocked, totalShards, collected = LEVELS.map
     spawnX: p.x, spawnY: p.respawnY ?? p.y, ...(p.ropeTop !== undefined && { rope: `rope-${i}` }),
     ...(p.respawnBelow !== undefined && { respawnBelow: p.respawnBelow }),
     ...(p.respawnRight !== undefined && { respawnRight: p.respawnRight }),
+    // `homes`: the platforms (indexes) it may come to rest on; landing on any other, or carried onto one, it returns.
+    ...(p.homes && { homes: [...p.homes] }),
   }));
   const ropes = level.crates.flatMap((p, i) => {
     if (p.ropeTop === undefined) return [];
@@ -211,6 +220,8 @@ function makeLevel(index, players, unlocked, totalShards, collected = LEVELS.map
     bloomReverses: level.bloomReverses ?? false,
     // In a courtyard with `walkingTime`, plants and movers carry a `walker` and keep that traveller's pace.
     walkingTime: level.walkingTime ?? false,
+    // Once Still reaches this x, their Freeze runs out for the rest of the courtyard (null: never).
+    freezeEndsX: level.freezeEndsX ?? null,
     pickups: [
       ...(level.freezePickups ?? []).map((p, i) => ({ ...p, id: `frost-${i}`, kind: 'frost', taken: false })),
       ...level.bloomPickups.map((p, i) => ({ ...p, id: `bolt-${i}`, kind: 'bolt', taken: false })),
@@ -563,6 +574,8 @@ function ageObjects(state) {
           o.stood = false;
         }
         if (now.form !== 'cloud') o.vanish = o.vanishTotal = null;
+        // Rain hastened by Speed turns into hastened water.
+        if (now.form === 'water' && !backwards && o.speed > 0) rushWater(o);
         // Rewound, rain played backwards is water rising (mist), and mist played backwards is a cloud sinking (rain).
         const kind = backwards ? { rain: 'mist', cloud: 'cloudForm', mist: 'rain' }[now.form] : { mist: 'mist', cloud: 'cloudForm', rain: 'rain' }[now.form];
         const at = kind === 'mist' ? { x: o.x, y: o.pool.y } : { x: o.x, y: o.y + meta.cloud.h / 2 };
@@ -664,7 +677,7 @@ function stepItem(state, o, all) {
   o.y += o.vy * k;
   let left = Infinity, right = -Infinity;
   for (const f of [...all, ...bodies]) if (f.id !== o.id) if (o.vy >= 0 && previous <= f.y + 3 && o.y + half >= f.y && o.x + half > f.x && o.x - half < f.x + f.w) {
-    landed = { y: f.y, speed: o.vy };
+    landed = { y: f.y, speed: o.vy, on: f.id };
     o.y = f.y - half; o.vy = 0; o.vx *= 0.88 ** k;
     left = Math.min(left, f.x); right = Math.max(right, f.x + f.w);
   }
@@ -703,7 +716,9 @@ function moveItems(state) {
       if (landed) o.thrown = false;
     }
     if (landed && landed.speed > 1) event(state, crate ? 'crateLand' : 'seedLand', o.x, landed.y);
-    if (o.y > (o.respawnBelow ?? 720) || o.x < 20 || o.x > Math.min(state.width - 20, o.respawnRight ?? Infinity)) {
+    // A crate with `homes` that comes to rest on any other platform returns too.
+    const strayed = crate && o.homes && /^platform-\d+$/.test(landed?.on ?? '') && !o.homes.includes(Number(landed.on.slice(9)));
+    if (strayed || o.y > (o.respawnBelow ?? 720) || o.x < 20 || o.x > Math.min(state.width - 20, o.respawnRight ?? Infinity)) {
       if (o.fromHand) {
         const bloom = state.actors[BLOOM];
         lost.add(o.id); state.seeds++;
@@ -718,6 +733,33 @@ function moveItems(state) {
   }
   if (lost.size || planted.size) state.objects = state.objects.filter(o => !lost.has(o.id) && !planted.has(o.id));
   return reset;
+}
+
+// A crate with `homes` cannot be carried away from them either: once its carrier stands on any other platform, it
+// leaves their hands and returns to its spot.
+function returnStrayCrates(state) {
+  for (const p of state.actors) {
+    const o = p.carrying !== null && find(state, p.carrying);
+    if (!o || o.kind !== 'crate' || !o.homes || !p.grounded) continue;
+    const index = /^platform-(\d+)$/.exec(p.on ?? '')?.[1];
+    if (index === undefined || o.homes.includes(Number(index))) continue;
+    p.carrying = null; o.held = null;
+    o.x = respawnX(state, o, 27); o.y = o.spawnY; o.vx = 0; o.vy = 0;
+    event(state, 'return', o.x, o.y);
+  }
+}
+
+// Past `freezeEndsX`, Still's Freeze runs out for the rest of the courtyard: no charges left, and every Freeze Area
+// still up fades at once.
+function endFreeze(state) {
+  const still = state.actors[STILL];
+  if (state.freezeEndsX === null || state.freezeEndsX === undefined || !still || still.x < state.freezeEndsX) return;
+  if (state.freezeCharges <= 0 && !state.freezeAreas.length) return;
+  state.freezeCharges = 0;
+  for (const a of state.freezeAreas) event(state, 'thaw', a.x, a.y, { area: a.id });
+  state.freezeAreas = [];
+  applyFreezeAreas(state);
+  event(state, 'freezeSpent', still.x, still.y - 70, { actor: STILL });
 }
 
 // A lost item returns to its spawn, but never inside a character standing there: it takes the nearest
@@ -909,6 +951,8 @@ function tick(state) {
   });
   carryRiders(state, before, moveItems(state));
   moveActors(state);
+  returnStrayCrates(state);
+  endFreeze(state);
   resolveStrikes(state, strikes);
   // Carriers have finished moving for this tick, so carried items land exactly on them (no one-tick trail).
   attachHeld(state);
@@ -1070,6 +1114,8 @@ export function applyAction(state, playerId, action) {
       // A cloud's clock never sleeps, so Speed always hastens it.
       const woke = o.speed === 0 && o.kind !== 'cloud';
       o.speed += s.bloomReverses ? -1 : 1;
+      // Hastened water rises within two seconds.
+      if (o.kind === 'cloud' && o.speed > 0 && cloudPhase(o).form === 'water') rushWater(o);
       if (s.bloomReverses && o.kind === 'plant' && o.wall) s.flags.vineRewound = true;
       event(s, woke ? 'wake' : 'grow', anchor(o).x, anchor(o).y, { caster: action.actor, target: o.id, ...(s.bloomReverses && { rewind: true }) });
     }

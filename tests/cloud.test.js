@@ -2,7 +2,7 @@ import { describe, test, expect } from 'bun:test';
 import { setup, applyAction, validateAction, abilityCheck, meta, cloudPhase, cloudSolid, waterRect, anchor, objectBox, timeObjectAt } from '../src/logic.js';
 
 // A cloud and its water are one thing in two forms (courtyard 2's basin is the arena): the water lies in the groove,
-// rises as mist, holds as a small cloud (solid only then) and rains back. Cloud : water is 1 : 6. Abilities act on
+// rises as mist, holds as a small cloud (solid only then) and rains back. Cloud : water is 1 : 3. Abilities act on
 // the cloud while it rises or is a cloud, on the water while it rains back or is water. Speed runs its clock faster
 // and a Freeze Area makes whichever form it is in last longer, but neither carries over once it starts to turn into
 // the other form. Its first visitor sets a new cloud fading. Water slows whoever wades in it.
@@ -39,10 +39,11 @@ function formLengths(prepare = () => {}) {
 }
 
 describe('cloud and water take turns', () => {
-  test('a cloud lasts a sixth as long as its water, with a short rise and rain between', () => {
+  test('water lasts six seconds and a cloud four, with a short rise and rain between', () => {
     const lengths = formLengths();
     expect(lengths).toEqual({ mist: meta.cloud.formTicks, cloud: meta.cloud.cloudTicks, rain: meta.cloud.rainTicks, water: meta.cloud.waterTicks });
-    expect(meta.cloud.waterTicks).toBe(meta.cloud.cloudTicks * 6);
+    expect(meta.cloud.waterTicks).toBe(6 * 60);
+    expect(meta.cloud.cloudTicks).toBe(4 * 60);
     expect(waterRect(cloud(arena('water'))).h).toBe(cloud(arena('water')).pool.h);
     expect(waterRect(cloud(arena('cloud'))).h).toBe(0);
   });
@@ -65,6 +66,26 @@ describe('cloud and water take turns', () => {
     [n, s] = formTicksLeft(s);
     expect(n).toBe(meta.cloud.formTicks);
     expect(formTicksLeft(s)[0]).toBe(meta.cloud.cloudTicks);
+  });
+
+  test('Speed on the water makes it rise within two seconds, never later than it would have', () => {
+    const { waterTicks, formTicks, cloudTicks, hastedWaterTicks } = meta.cloud;
+    expect(hastedWaterTicks).toBe(2 * 60);
+    const hasten = s => { stand(s, BLOOM, HIGH, 2390); return act(s, { type: 'ability', actor: BLOOM, target: cloud(s).id }); };
+    // Fresh water: two seconds to its rise. A second cast hastens what is left of it again.
+    let s = hasten(arena('water'));
+    expect(formTicksLeft(s)[0]).toBe(hastedWaterTicks);
+    s = hasten(hasten(arena('water')));
+    expect(formTicksLeft(s)[0]).toBe(Math.round(hastedWaterTicks * 2 / 3));
+    // Water already rising within a second only goes faster.
+    s = arena('water'); cloud(s).age = waterTicks - 60;
+    expect(formTicksLeft(hasten(s))[0]).toBe(30);
+    // Hastened while it rains back, the water after it lasts two seconds too.
+    s = arena('rain'); cloud(s).age = waterTicks + formTicks + cloudTicks + 10;
+    s = hasten(s);
+    let n; [n, s] = formTicksLeft(s);
+    expect(cloudPhase(cloud(s)).form).toBe('water');
+    expect(formTicksLeft(s)[0]).toBe(hastedWaterTicks);
   });
 
   test('a Freeze Area makes the form it is in last five times as long, then lets the next form go', () => {
@@ -239,7 +260,8 @@ describe('in courtyard 4, Bloom rewinds it', () => {
     let s = setup({ level: 3 });
     s.objects = s.objects.filter(o => o.kind === 'cloud');
     cloud(s).age = age;
-    stand(s, BLOOM, 5, 2540); stand(s, STILL, 5, 2200);
+    // Bloom at the cliff's edge (the cloud is wide and far enough out that a step back is out of reach).
+    stand(s, BLOOM, 5, 2570); stand(s, STILL, 5, 2200);
     expect(abilityCheck(s, BLOOM, cloud(s).id)).toBe('ok');
     s = act(s, { type: 'ability', actor: BLOOM, target: cloud(s).id });
     expect(cloud(s).speed).toBe(-1);

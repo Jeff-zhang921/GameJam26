@@ -39,7 +39,7 @@ describe('courtyard 4 layout', () => {
   test('rewinding courtyard, platforms in order, gate on its own ledge past the cloud basin', () => {
     const s = setup({ level: 3 });
     expect(s.bloomReverses).toBe(true);
-    expect(s.width).toBe(3360);
+    expect(s.width).toBe(3460);
     expect(start.y - floor.y).toBe(200);
     expect(roof.ceiling && roof.y + roof.h).toBe(251);
     expect(floor.y - (roof.y + roof.h)).toBe(69);
@@ -57,12 +57,16 @@ describe('courtyard 4 layout', () => {
     expect(basinLeft.y - cliff.y).toBe(70);
     expect(c.pool).toEqual({ x: groove.x, y: basinLeft.y, w: groove.w, h: groove.y - basinLeft.y });
     expect(c.x - c.w / 2 >= groove.x && c.x + c.w / 2 <= groove.x + groove.w).toBe(true);
-    // Too high to jump to from the cliff (a jump rises about 163), reachable from the crate.
-    expect(cliff.y - c.y).toBe(180);
-    expect(gate.x - (cliff.x + cliff.w)).toBe(400);
+    // Too high to jump to from the cliff (a jump rises about 163), reachable from the crate. The gate's ledge lies
+    // beyond any jump from the crate, even one caught in the air while it is still rising from a throw.
+    expect(cliff.y - c.y).toBe(175);
+    expect(gate.x - (cliff.x + cliff.w)).toBe(540);
+    expect(c.w).toBe(160);
     expect(s.objects.filter(o => o.kind === 'crate')).toHaveLength(1);
-    expect(box).toMatchObject({ y: cliff.y - 27, respawnRight: cliff.x + cliff.w });
+    expect(box).toMatchObject({ y: cliff.y - 27, homes: [level.platforms.indexOf(lower), level.platforms.indexOf(cliff)] });
+    expect(box.respawnRight).toBeUndefined();
     expect(on(cliff, box.x)).toBe(true);
+    expect(s.freezeEndsX).toBe(cliff.x);
   });
 
   test('the dead tree sleeps, withered and low; the vine sleeps, full and thorny', () => {
@@ -157,7 +161,8 @@ describe('courtyard 4: the cloud basin', () => {
   });
 
   test('from the cloud the gate\'s ledge is a jump away', () => {
-    for (const x of [2730, 2780, 2805]) expect(anyJumpReaches(section({ formed: true, prepare: s => stand(s, STILL, x, get(s, 'cloud-0').y, 'cloud-0') }), GATE)).toBe(true);
+    const c = get(setup({ level: 3 }), 'cloud-0');
+    for (const x of [c.x - 60, c.x, c.x + 60]) expect(anyJumpReaches(section({ formed: true, prepare: s => stand(s, STILL, x, c.y, 'cloud-0') }), GATE)).toBe(true);
   });
 
   test('without the cloud, nothing reaches the gate\'s ledge: not the cliff, the crate, a crate held in mid-air, or the basin', () => {
@@ -166,8 +171,9 @@ describe('courtyard 4: the cloud basin', () => {
       Object.assign(get(s, 'crate-0'), { x: edge - 30 });
       stand(s, STILL, edge - 20, cliff.y - 54, 'crate-0');
     } }), GATE)).toBe(false);
-    // A crate slowed in mid-air can only hover over the cliff (it returns once past the edge): a block there, at
-    // any height, is not a step to the gate.
+    // A crate in the air at the cliff's edge, at any height, is not a step to the gate either. (Freeze is spent here,
+    // and a crate thrown from the cliff and caught while still rising never gets far enough: checked by brute force
+    // outside these tests.)
     for (const top of [-60, 60, 160, 260]) {
       expect(anyJumpReaches(section({ prepare: s => {
         s.platforms.push({ x: edge - 27, y: top, w: 54, h: 54 });
@@ -185,13 +191,66 @@ describe('courtyard 4: the cloud basin', () => {
     }
   });
 
-  test('the crate never leaves the cliff: past its edge it returns to its spot', () => {
+  test('the crate may rest on the cliff, down in the shaft or on the vine, and is never sent back for leaving the cliff', () => {
     let s = setup({ level: 3 });
-    const box = get(s, 'crate-0');
-    Object.assign(box, { x: edge - 20, vx: 4 });
-    s = tick(s, 20);
-    expect(get(s, 'crate-0')).toMatchObject({ x: box.spawnX, y: box.spawnY });
-    expect(s.events.some(e => e.kind === 'return')).toBe(true);
+    s.objects = s.objects.filter(o => o.kind !== 'plant');
+    Object.assign(get(s, 'crate-0'), { x: cliff.x - 20, y: 420, vx: -1, vy: 0 });
+    s = tick(s, 80);
+    expect(get(s, 'crate-0')).toMatchObject({ y: lower.y - 27 });
+    expect(on(lower, get(s, 'crate-0').x)).toBe(true);
+    s = setup({ level: 3 });
+    Object.assign(get(s, 'crate-0'), { x: 1990, y: 300, vx: 0, vy: 0 });
+    s = tick(s, 30);
+    expect(get(s, 'crate-0').y).toBe(get(s, 'plant-1').base - 27);
+    expect(s.events.some(e => e.kind === 'return')).toBe(false);
+  });
+
+  test('a crate that lands in the basin or out of reach (the gate\'s ledge, the hanging block) returns to the cliff', () => {
+    let s = setup({ level: 3 });
+    const home = { x: get(s, 'crate-0').spawnX, y: get(s, 'crate-0').spawnY };
+    // Thrown off the edge, it flies out and falls into the basin first, and only then returns.
+    Object.assign(get(s, 'crate-0'), { x: edge - 10, vx: 3 });
+    let flew = false, returned = false;
+    for (let i = 0; i < 80 && !returned; i++) {
+      s = tick(s);
+      const box = get(s, 'crate-0');
+      if (box.x > edge + 27) flew = true;
+      if (flew && box.x === home.x && box.y === home.y) returned = true;
+    }
+    expect(flew && returned).toBe(true);
+    for (const [x, y] of [[gate.x + 100, gate.y - 160], [block.x + 100, block.y - 100]]) {
+      s = setup({ level: 3 });
+      Object.assign(get(s, 'crate-0'), { x, y, vx: 0, vy: 0 });
+      s = tick(s, 40);
+      expect(get(s, 'crate-0')).toMatchObject(home);
+    }
+  });
+
+  test('carried down into the basin, the crate leaves its carrier\'s hands and returns to the cliff', () => {
+    let s = setup({ level: 3 });
+    stand(s, STILL, 2330, cliff.y, 'platform-5');
+    s = act(s, { type: 'grab', actor: STILL });
+    expect(s.actors[STILL].carrying).toBe('crate-0');
+    s = act(s, { type: 'move', actor: STILL, dir: 1 });
+    for (let i = 0; i < 120 && s.actors[STILL].on !== `platform-${level.platforms.indexOf(basinLeft)}`; i++) s = tick(s);
+    expect(s.actors[STILL].carrying).toBeNull();
+    expect(get(s, 'crate-0')).toMatchObject({ held: null, x: get(s, 'crate-0').spawnX, y: get(s, 'crate-0').spawnY });
+  });
+
+  test('Still\'s Freeze is spent once Still reaches the cliff', () => {
+    let s = setup({ level: 3 });
+    s.freezeCharges = 2;
+    s.freezeAreas.push({ id: 'freeze-x', owner: 'local', x: 2000, y: 400, radius: meta.freeze.radius, ticksLeft: 300, duration: 600 });
+    stand(s, STILL, cliff.x - 15, lower.y, 'platform-3');
+    s = tick(s);
+    expect(s.freezeCharges).toBe(2);
+    expect(s.freezeAreas).toHaveLength(1);
+    stand(s, STILL, cliff.x + 40, cliff.y, 'platform-5');
+    s = tick(s);
+    expect(s.freezeCharges).toBe(0);
+    expect(s.freezeAreas).toHaveLength(0);
+    expect(s.events.some(e => e.kind === 'freezeSpent')).toBe(true);
+    expect(validateAction(s, 'local', { type: 'ability', actor: STILL, x: cliff.x + 200, y: 300 }).error).toBe('noCharges');
   });
 
   test('Bloom rewinds the cloud here: water that has just rained away rises back into a fresh cloud', () => {
@@ -260,17 +319,22 @@ describe('courtyard 4 can be finished', () => {
       expect(s.actors[who].on).toBe(box.id);
     }
 
-    // Once a cloud has formed: Still jumps onto it and Bloom follows as Still lands (never both on it for long); each
-    // walks to its right end and jumps on to the gate's ledge.
+    // Freeze was spent as Still came up onto the cliff.
+    expect(s.freezeCharges).toBe(0);
+    // Once a cloud has formed: Still walks to the crate's right end and jumps onto it, and Bloom follows as Still
+    // lands (never both on it for long); each walks on to the cloud's right part and jumps to the gate's ledge.
     for (let i = 0; i < 2400 && !cloudSolid(get(s, 'cloud-0')); i++) s = tick(s);
     expect(cloudSolid(get(s, 'cloud-0'))).toBe(true);
-    const stage = [0, 0];
+    const cloud = get(s, 'cloud-0'), stage = [0, 0];
     for (let i = 0; i < 400 && !s.actors.every(a => a.on === GATE); i++) {
       for (const who of [STILL, BLOOM]) {
         const a = s.actors[who];
-        if (stage[who] === 0 && (who === STILL || stage[STILL] >= 2)) { s = act(s, { type: 'move', actor: who, dir: 1 }); s = act(s, { type: 'jump', actor: who }); stage[who] = 1; }
+        if (stage[who] === 0 && (who === STILL || stage[STILL] >= 2)) {
+          s = act(s, { type: 'move', actor: who, dir: 1 });
+          if (a.x >= box.x + 12) { s = act(s, { type: 'jump', actor: who }); stage[who] = 1; }
+        }
         else if (stage[who] === 1 && a.on === 'cloud-0') { s = act(s, { type: 'jumpRelease', actor: who }); stage[who] = 2; }
-        else if (stage[who] === 2 && a.x >= get(s, 'cloud-0').x + 30) { s = act(s, { type: 'jump', actor: who }); stage[who] = 3; }
+        else if (stage[who] === 2 && a.x >= cloud.x + cloud.w / 2 - 20) { s = act(s, { type: 'jump', actor: who }); stage[who] = 3; }
         else if (stage[who] === 3 && a.on === GATE && a.move) s = act(s, { type: 'move', actor: who, dir: 0 });
       }
       s = tick(s);
