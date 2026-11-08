@@ -12,6 +12,8 @@ export function createCamera() {
       // Zoom is based on a standard 1280 x 640 view, so wider courtyards scroll instead of shrinking to fit
       // (which would also leave bands above and below the world). Reduced motion holds a still view of it all.
       const fit = Math.min(width / Math.min(1280, worldWidth), height / worldHeight), whole = Math.min(width / worldWidth, height / worldHeight);
+      // Never zoom out past the world's edges: screens taller than 2:1 (16:10, iPad) would otherwise show bands above and below.
+      let cover = Math.max(width / worldWidth, height / worldHeight);
       const actor = state.actors[state.active];
       let targetX = actor.x + actor.facing * 60, targetY = actor.y - 100, targetZoom = 1.2;
       const reset = !initialized || sceneKey !== previousScene || resetCamera;
@@ -22,7 +24,10 @@ export function createCamera() {
           top = Math.min(top, player.y - 52 - 120); bottom = Math.max(bottom, player.y + 120);
         }
         targetX = (left + right) / 2; targetY = (top + bottom) / 2;
-        targetZoom = clamp(Math.min(width / (right - left), height / (bottom - top)) / fit, 1, 1.2);
+        const needed = Math.min(width / (right - left), height / (bottom - top));
+        targetZoom = clamp(needed / fit, 1, 1.2);
+        // Keeping both partners on screen matters more than filling it.
+        cover = Math.min(cover, needed);
       }
       if (reduced) {
         camera.x = worldWidth / 2; camera.y = worldHeight / 2; zoom = 1;
@@ -34,7 +39,7 @@ export function createCamera() {
         camera.x = blend(camera.x, mode === 'coop' ? targetX : deadzoneTarget(camera.x, targetX, 100), dt, .18);
         camera.y = blend(camera.y, mode === 'coop' ? targetY : deadzoneTarget(camera.y, targetY, 60), dt, .28);
       }
-      camera.scale = reduced ? whole : fit * zoom;
+      camera.scale = reduced ? whole : Math.max(fit * zoom, cover);
       camera.x = boundedCenter(camera.x, width / camera.scale, worldWidth);
       camera.y = boundedCenter(camera.y, height / camera.scale, worldHeight);
       if (mode === 'coop' && !paused && !reduced) {

@@ -65,6 +65,16 @@ describe('camera', () => {
     }
   });
 
+  test('taller screens (16:10, iPad 4:3) fill the frame with the world instead of showing bands', () => {
+    for (const view of [{ width: 1440, height: 900 }, { width: 1194, height: 834 }, { width: 1024, height: 768 }, { width: 1280, height: 720, mode: 'coop' }]) {
+      const cam = createCamera().update(state(), { ...viewport, ...view });
+      expect(cam.offsetY).toBeLessThanOrEqual(1e-6);
+      expect(cam.offsetY + 640 * cam.scale).toBeGreaterThanOrEqual(view.height - 1e-6);
+      expect(cam.offsetX).toBeLessThanOrEqual(1e-6);
+      expect(cam.offsetX + 1280 * cam.scale).toBeGreaterThanOrEqual(view.width - 1e-6);
+    }
+  });
+
   test('reduced motion always shows the whole level without tracking', () => {
     const s = state(), camera = createCamera();
     const initial = { ...camera.update(s, { ...viewport, reduced: true }) };

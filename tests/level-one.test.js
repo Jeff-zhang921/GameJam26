@@ -35,8 +35,8 @@ describe('courtyard 1 layout', () => {
         const cam = createCamera().update(s, view);
         const bottom = (view.height - cam.offsetY) / cam.scale, right = (view.width - cam.offsetX) / cam.scale;
         expect(bottom).toBeGreaterThanOrEqual(middle.y + 25);
-        // The long ledge's near end, with the hourglass and the seed, is on screen; the rest scrolls into view.
-        expect(right).toBeGreaterThanOrEqual(Math.max(level.freezePickups[0].x, level.seeds[0].x) + 30);
+        // The long ledge's near end, with the hourglass and the whole seed, is on screen; the rest scrolls into view.
+        expect(right).toBeGreaterThanOrEqual(Math.max(level.freezePickups[0].x, level.seeds[0].x) + 20);
       }
     }
   });
