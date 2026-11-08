@@ -1,26 +1,53 @@
 import { afterEach, expect, test } from 'bun:test';
-import { OPENING_DURATION, NEWSPAPER_DURATION, openingFrame, newspaperFrame, newspaperTransform } from '../src/cinematic-timeline.js';
+import { OPENING_DURATION, NEWSPAPER_DURATION, openingFrame, openingTransform, newspaperFrame, newspaperTransform } from '../src/cinematic-timeline.js';
 import { createCinematic } from '../public/cinematic.js';
 import { createGameServer } from '../server.js';
 import { ARRIVAL_DURATION } from '../public/portal.js';
 
 test('opening holds three readable cards in order before pulling away', () => {
   expect(openingFrame(0).phase).toBe('door');
-  for (const [time, page] of [[6800, 0], [14300, 1], [21800, 2]]) {
+  for (const [time, page] of [[9400, 0], [16900, 1], [24400, 2]]) {
     expect(openingFrame(time).phase).toBe(`story-${page + 1}`);
     expect(openingFrame(time).cards[page]).toBe(1);
     expect(openingFrame(time + 6000).cards[page]).toBe(1);
   }
-  expect(openingFrame(28300).lift).toBeCloseTo(0, 8);
+  expect(openingFrame(30900).lift).toBeCloseTo(0, 8);
   expect(openingFrame(OPENING_DURATION)).toMatchObject({ phase: 'pull', opacity: 0, lift: -115 });
 });
 
-test('first story waits for the open door, then dissolves over 2.6 seconds', () => {
+test('first story waits for the open door and camera approach, then dissolves over 2.6 seconds', () => {
   expect(openingFrame(4000)).toMatchObject({ door: 1, backdrop: 1, cards: [0, 0, 0] });
-  expect(openingFrame(4200).cards[0]).toBe(0);
-  expect(openingFrame(5500)).toMatchObject({ backdrop: .5, cards: [.5, 0, 0] });
-  expect(openingFrame(6800)).toMatchObject({ backdrop: 0, cards: [1, 0, 0] });
-  expect(openingFrame(13299).cards[1]).toBe(0);
+  expect(openingFrame(4000).phase).toBe('approach');
+  expect(openingFrame(6800).cards[0]).toBe(0);
+  expect(openingFrame(8100)).toMatchObject({ backdrop: .5, cards: [.5, 0, 0] });
+  expect(openingFrame(9400)).toMatchObject({ backdrop: 0, cards: [1, 0, 0] });
+  expect(openingFrame(15899).cards[1]).toBe(0);
+});
+
+test('opening camera follows the door into the viewport centre without uncovering edges', () => {
+  for (const [width, height] of [[844, 390], [1194, 834], [1440, 900]]) {
+    const base = openingTransform(openingFrame(4000), width, height), cover = base.width / 1600;
+    const startDistance = Math.hypot(base.x + 1125 * cover - width / 2, base.y + 659 * cover - height / 2);
+    let previousScale = 1, previousDistance = startDistance;
+    expect(openingTransform(openingFrame(0), width, height)).toEqual(base);
+    for (const time of [4000, 4400, 4800, 5400, 6000, 6800, 7200, 7400]) {
+      const camera = openingTransform(openingFrame(time), width, height);
+      const distance = Math.hypot(camera.x + 1125 * cover * camera.scale - width / 2, camera.y + 659 * cover * camera.scale - height / 2);
+      expect(camera.scale).toBeGreaterThanOrEqual(previousScale);
+      expect(distance).toBeLessThanOrEqual(previousDistance + .000001);
+      expect(camera.x).toBeLessThanOrEqual(.000001); expect(camera.y).toBeLessThanOrEqual(.000001);
+      expect(camera.x + camera.width * camera.scale).toBeGreaterThanOrEqual(width - .000001);
+      expect(camera.y + camera.height * camera.scale).toBeGreaterThanOrEqual(height - .000001);
+      previousScale = camera.scale; previousDistance = distance;
+    }
+    expect(previousScale).toBeCloseTo(4.2);
+    expect(previousDistance).toBeLessThan(.000001);
+    expect(openingTransform(openingFrame(7400, true), width, height)).toEqual(base);
+    for (const boundary of [4000, 7400]) {
+      const before = openingTransform(openingFrame(boundary - .001), width, height), after = openingTransform(openingFrame(boundary + .001), width, height);
+      expect(Math.abs(before.x - after.x) + Math.abs(before.y - after.y) + Math.abs(before.scale - after.scale)).toBeLessThan(.00001);
+    }
+  }
 });
 
 test('newspaper fades through black and caption before revealing the whole sheet', () => {
@@ -94,6 +121,19 @@ test('newspaper is fitted before first visible frame and resets after replay and
   expect(shown[1].opacity).toBe(0);
   root.clientWidth = 844; root.clientHeight = 390; resize();
   expect(nodes['.cinematic-newspaper'].style.transform).toBe(transform(844, 390));
+});
+
+test('opening camera keeps current progress on resize and resets only for a fresh opening', () => {
+  const { film, root, nodes, resize } = controller();
+  const transform = (time, width, height) => { const p = openingTransform(openingFrame(time), width, height); return `translate(${p.x}px,${p.y}px) scale(${p.scale})`; };
+  film.play('opening', { key: 'door', shared: true });
+  expect(nodes['.cinematic-world'].style.transform).toBe(transform(0, 1194, 834));
+  film.advance(0, { elapsed: 5700 });
+  expect(nodes['.cinematic-world'].style.transform).toBe(transform(5700, 1194, 834));
+  root.clientWidth = 844; root.clientHeight = 390; resize();
+  expect(nodes['.cinematic-world'].style.transform).toBe(transform(5700, 844, 390));
+  film.cancel(); film.play('opening', { key: 'again', shared: true });
+  expect(nodes['.cinematic-world'].style.transform).toBe(transform(0, 844, 390));
 });
 
 test('reduced newspaper fades old pose out before switching and fades the next pose in', () => {

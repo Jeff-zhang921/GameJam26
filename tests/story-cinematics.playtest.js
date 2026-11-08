@@ -52,14 +52,26 @@ async function localOpening(options) {
   await page.screenshot({ path: `${output}/${options.width || 1194}-menu.png` });
   await page.getByTestId('start').click(); await waitPhase(page, 'door');
   await page.waitForFunction(() => document.querySelector('[data-testid="story-1"]')?.complete);
+  const originalGate = await page.locator('.cinematic-door').boundingBox();
   const initial = await snapshot(page);
   await page.keyboard.down('KeyD'); await page.waitForTimeout(180); await page.keyboard.up('KeyD');
   assert.equal((await snapshot(page)).tick, initial.tick, 'Gameplay advanced while the opening was visible');
-  for (const [phase, at] of [['door', 2400], ['door', 4000], ['story-1', 5500], ['story-1', 9500], ['story-2', 13800], ['story-2', 17200], ['story-3', 25000], ['pull', 29000]]) {
+  for (const [phase, at] of [['door', 2400], ['approach', 4000], ['approach', 5500], ['story-1', 7500], ['story-1', 11600], ['story-2', 16400], ['story-2', 19800], ['story-3', 27700], ['pull', 31600]]) {
     await seek(page, at); await waitPhase(page, phase);
     assert.equal((await snapshot(page)).tick, initial.tick);
     if (at === 4000) assert.equal(await page.getByTestId('story-1').evaluate(image => Number(image.style.opacity)), 0, 'Story starts before the door finishes opening');
-    if (at === 5500) {
+    if (at === 5500 || at === 7500) {
+      const gate = await page.locator('.cinematic-door').boundingBox();
+      if (options.reduced) assert.ok(Math.abs(gate.width - originalGate.width) < 1, 'Reduced motion unexpectedly zooms the doorway');
+      else {
+        assert.ok(gate.width > originalGate.width * (at === 7500 ? 4 : 2), 'Camera did not enlarge the actual doorway');
+        if (at === 7500) {
+          assert.ok(Math.abs(gate.x + gate.width / 2 - (options.width || 1194) / 2) < 2, 'Doorway did not finish horizontally centered');
+          assert.ok(Math.abs(gate.y + gate.height / 2 - (options.height || 834) / 2) < 2, 'Doorway did not finish vertically centered');
+        }
+      }
+    }
+    if (at === 7500) {
       const alpha = await page.getByTestId('story-1').evaluate(image => Number(image.style.opacity));
       assert.ok(alpha > .1 && alpha < .9, 'The first story image does not fade in gradually');
     }
@@ -69,7 +81,7 @@ async function localOpening(options) {
   await page.evaluate(() => { window.storyClockOffset += 1500; }); await idle(page);
   assert.equal(await page.getByTestId('cinematic').isVisible(), false, 'Opening layer still covers gameplay');
   assert.equal((await snapshot(page)).level, 0);
-  console.log(`PASS local opening ${options.width || 1194}x${options.height || 834}${options.reduced ? ' reduced' : ''}: door, three story holds, pull, arrival, frozen inputs.`);
+  console.log(`PASS local opening ${options.width || 1194}x${options.height || 834}${options.reduced ? ' reduced' : ''}: door, tracked camera approach, three story holds, pull, arrival, frozen inputs.`);
   await page.close();
 }
 try {
@@ -97,7 +109,7 @@ try {
   const initialRoom = await command({ code, type: 'inspect' }), room = initialRoom.room, duration = room.startDuration;
   assert.ok(duration >= OPENING_DURATION + 1200, 'Server start leaves insufficient story reading time');
   const started = room.startAt - duration;
-  for (const [phase, elapsed] of [['story-1', 9500], ['story-2', 17200], ['story-3', 25000]]) {
+  for (const [phase, elapsed] of [['approach', 5500], ['story-1', 11600], ['story-2', 19800], ['story-3', 27700]]) {
     serverNow = started + elapsed; const current = await command({ code, type: 'time', time: serverNow });
     await Promise.all([waitPhase(host, phase), waitPhase(guest, phase)]);
     assert.equal(current.room.status, 'STARTING'); assert.equal(current.tick, 0);
