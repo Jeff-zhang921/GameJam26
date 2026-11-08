@@ -676,14 +676,18 @@ function belowExit(state) {
 // resources that run out are seeds (a planted seed becomes a mushroom that wilts away), Freeze charges and, in
 // such a level, crates. Every rule counts everything that could still help: any seed anywhere, any mushroom at
 // all, any crate anywhere, any charge, any crystal that can still be collected, any Freeze Area still up.
-// With `crossingFrom` (a platform index) the frozen crossing is only needed by travellers still on that ledge.
+// With `crossingFrom` (a platform index) the frozen crossing is only needed by travellers still on that ledge;
+// likewise `plantFrom` limits `exitNeedsPlant` to travellers still on that ledge.
 // While anyone is airborne the answer is "unknown" (they might be landing on the ledge right now).
 export function assessFailure(state) {
   if (state.status !== 'playing') return { known: true, reason: null };
   if (state.actors.some(p => !p.grounded)) return { known: false, reason: null };
   const level = LEVELS[state.level], stuck = belowExit(state);
   if (!level || !stuck.length) return { known: true, reason: null };
-  if (level.exitNeedsPlant && state.seeds <= 0 && !state.objects.some(o => o.kind === 'seed' || o.kind === 'plant')) return { known: true, reason: 'stranded' };
+  // With `plantFrom` (a platform index) only travellers still on that ledge need a plant; beyond it other things
+  // (movers, vines already grown) carry them on.
+  const needPlant = level.plantFrom === undefined ? stuck : stuck.filter(p => onLedge(state.platforms[level.plantFrom], p));
+  if (level.exitNeedsPlant && needPlant.length && state.seeds <= 0 && !state.objects.some(o => o.kind === 'seed' || o.kind === 'plant')) return { known: true, reason: 'stranded' };
   if (!level.crossingNeedsFreeze) return { known: true, reason: null };
   const start = level.crossingFrom === undefined ? null : state.platforms[level.crossingFrom];
   const ahead = start ? stuck.filter(p => onLedge(start, p)) : stuck;

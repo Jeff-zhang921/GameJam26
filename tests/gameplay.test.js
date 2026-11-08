@@ -323,6 +323,20 @@ describe('possible dead ends raise a warning; the game goes on', () => {
     }
   });
 
+  test('with `plantFrom`, only a traveller still on that ledge is stranded without seeds (courtyard 3)', () => {
+    const lost = () => {
+      const s = setup({ level: 2 });
+      s.objects = s.objects.filter(o => o.kind !== 'seed' && o.kind !== 'plant'); s.seeds = 0;
+      const far = s.platforms[3];
+      Object.assign(s.actors[STILL], { x: far.x + 100, y: far.y, on: 'platform-3' });
+      Object.assign(s.actors[BLOOM], { x: far.x + 150, y: far.y, on: 'platform-3' });
+      return s;
+    };
+    expect(failureReason(lost())).toBe(null); // across the canyon the movers carry them on
+    const behind = lost(); Object.assign(behind.actors[STILL], { x: 300, y: 520, on: 'platform-0' });
+    expect(failureReason(behind)).toBe('stranded');
+  });
+
   test('a wilting ancient mushroom still counts as hope until it is gone', () => {
     const s = afterbloomArena();
     s.objects = s.objects.filter(o => o.kind !== 'seed'); s.seeds = 0;

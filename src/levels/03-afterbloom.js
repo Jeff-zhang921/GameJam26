@@ -42,7 +42,9 @@ export default {
   // far cliff. A spare bolt on the high ledge.
   freezeCharges: 1, freezePickups: [{ x: 900, y: 274 }, { x: 2200, y: 174 }],
   bloomPickups: [{ x: 1100, y: 274 }],
-  // The high ledge is out of jumping reach without a mushroom (used by fail detection).
-  exitNeedsPlant: true,
+  // The high ledge is out of jumping reach without a mushroom (used by fail detection). Only travellers still on the
+  // start ground (platform 0) need one: past the high ledge the vines and movers carry them, so a traveller on the
+  // far cliff with no seeds left is not stranded.
+  exitNeedsPlant: true, plantFrom: 0,
   exit: { x: 3700, y: 200 }, shards: [{ x: 1720, y: 200 }], need: ['treeLifted', 'moverRide'],
 };
