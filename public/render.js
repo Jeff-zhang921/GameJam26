@@ -362,10 +362,9 @@ export function createRenderer(canvas, S) {
     ctx.save(); ctx.globalAlpha = f > .9 ? 1 - (f - .9) / .1 * .6 : 1;
     timeRing(cx, cy, Math.max(b.w, b.h) / 2 + 12, o, t);
     const charge = attackCharge(o);
-    // The snail shows its wind-up on its own body (it flushes red); other creatures glow and get a red outline.
+    // The snail shows its wind-up on its own body (it flushes red); other creatures glow red.
     const flush = o.kind === 'guard' && loaded('snail');
     if (charge > 0) { if (!flush) glow(ctx, cx, cy, Math.max(b.w, b.h) * (.9 + charge * .8), `rgba(255, 50, 35, ${.3 + .5 * charge})`); if (!reduced) ctx.translate(Math.sin(t * .08) * 2.5 * charge, 0); }
-    const ice = o.frozen ? '#bceef0' : null;
     if (flush) snail(o, b, charge);
     else if (o.kind === 'guard') {
       // About to strike, its body flushes red.
@@ -400,10 +399,7 @@ export function createRenderer(canvas, S) {
       if (stage === 1) { const gap = (b.w - 16) / 4; for (let i = 0; i < 4; i++) { ctx.fillStyle = color; ctx.beginPath(); ctx.moveTo(b.x + 4 + i * gap, b.y + 10); ctx.lineTo(b.x + 4 + i * gap + gap / 2, b.y); ctx.lineTo(b.x + 4 + (i + 1) * gap, b.y + 10); ctx.fill(); } }
       circle(ctx, cx + o.dir * b.w * .3, b.y + b.h * .45, 2.5, '#1f1a14');
     }
-    if (charge > 0 && !flush) { ctx.strokeStyle = `rgba(255, 70, 50, ${.4 + .6 * charge})`; ctx.lineWidth = 2 + charge * 2; ctx.beginPath(); ctx.roundRect(b.x - 4, b.y - 4, b.w + 8, b.h + 8, 8); ctx.stroke(); }
-    if (ice) { ctx.strokeStyle = ice; ctx.lineWidth = 1.5; ctx.strokeRect(b.x - 2, b.y - 2, b.w + 4, b.h + 4); for (let i = 0; i < 4; i++) star(ctx, b.x + (i % 2 ? b.w + 4 : -4), b.y + (i < 2 ? -4 : b.h + 4), 2, '#c9f3ef'); }
     ctx.restore();
-    if (targeted) { const a = Math.max(b.w, b.h) / 2 + 8; ctx.strokeStyle = cyan; ctx.lineWidth = 1.5; for (const [x, y] of [[-a, -a], [a, -a], [-a, a], [a, a]]) line(ctx, [[cx + x, cy + y - Math.sign(y) * 8], [cx + x, cy + y], [cx + x - Math.sign(x) * 8, cy + y]], gold); }
   }
   // Outside the world: mirror the artwork and continue the ground columns
   // to the screen edge, including wide courtyards and tall tablet viewports.
