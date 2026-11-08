@@ -193,7 +193,7 @@ describe('courtyard 3 in the engine', () => {
   const arrowRide = wakeAfterDart => {
     let s = setup({ level: 2 });
     stand(s, STILL, start, groundPit.x - 10); stand(s, BLOOM, start, groundPit.x + 12);
-    s = act(s, { type: 'grab', actor: BLOOM });
+    s = act(s, { type: 'plant', actor: BLOOM });
     const plant = pitPlant(s, groundPit);
     s = until(s, s => s.objects.some(o => o.kind === 'dart' && Math.abs(o.y - 5 - lowerLane) < 1 && o.x > 640 && o.x <= 645));
     s = tick(s, wakeAfterDart);

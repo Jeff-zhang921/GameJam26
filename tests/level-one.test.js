@@ -236,9 +236,9 @@ describe('courtyard 1 ancient mushroom', () => {
     let s = setup({ level: 0 });
     s.objects = s.objects.filter(o => o.kind !== 'plant'); s.pits[0].plant = null; s.seeds = 1;
     stand(s, BLOOM, middle, s.pits[0].x);
-    expect(act(s, { type: 'grab', actor: BLOOM }).seeds).toBe(1);
+    expect(act(s, { type: 'plant', actor: BLOOM }).seeds).toBe(1);
     stand(s, BLOOM, middle, s.pits[1].x);
-    expect(act(s, { type: 'grab', actor: BLOOM }).seeds).toBe(0);
+    expect(act(s, { type: 'plant', actor: BLOOM }).seeds).toBe(0);
   });
 
   test('its cap is too far from the gate\'s ledge to jump across, even from its far edge', () => {

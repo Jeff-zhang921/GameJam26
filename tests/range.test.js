@@ -27,7 +27,7 @@ describe('ability reach of 300 keeps every courtyard route open', () => {
 
   test('courtyard 2: Still on the ground can freeze a full-grown mushroom', () => {
     let state = rootriseArena();
-    state.actors[BLOOM].x = 600; state = send(state, 'grab', BLOOM);
+    state.actors[BLOOM].x = 600; state = send(state, 'plant', BLOOM);
     Object.assign(get(state, 'plant-0'), { age: meta.plant.growTicks, height: meta.plant.maxHeight, speed: 1 });
     state.actors[STILL].x = 450;
     expect(abilityCheck(state, STILL, 'plant-0')).toBe('ok');

@@ -6,14 +6,14 @@ export const S = {
   intro: 'In a forgotten greenhouse, nothing moves until you touch it.', introBody: 'Bloom sets time flowing and hurries it along. Still slows any moment to a crawl. One clock, two hands.',
   roleNames: ['Stillkeeper', 'Bloomkeeper'], roleLabels: ['STILL', 'BLOOM'], roleDescriptions: ['Casts a Freeze Area: everything inside slows to a crawl — even midair — until it fades. Each cast uses a charge.', 'Starts an object\'s clock and hurries it onward.'],
   current: 'Active', switchRole: 'Switch Role', ability: ['Freeze Area', 'Wake / Hasten'], abilityRewind: 'Rewind',
-  move: 'Move', jump: 'Jump', grab: 'Pick Up / Throw / Plant', touchGrab: 'Interact', skills: 'Skills', restart: 'Restart Level',
+  move: 'Move', jump: 'Jump', grab: 'Pick Up / Throw', touchGrab: 'Interact', skills: 'Skills', restart: 'Restart Level',
   joystick: 'Left half moves left. Right half moves right.',
   tapIntro: 'Tap an object to cast. As Bloom, tap the skill button to hasten what you stand on. Hold and drag to aim elsewhere.',
   cancelAim: 'Cancel skill aim', skillCount: (name, count) => `${name}, ${count} charges`,
   tapTooFar: 'Too far away. Move closer — the ring shows how far your power reaches.',
   tapUnsupported: ['A Freeze Area cannot go there.', 'A crate has no clock for Bloom to hasten.'],
   tapLabels: { freeze: 'Tap · Freeze', wake: 'Tap · Wake', hasten: 'Tap · Hasten', max: 'Full speed', rewind: 'Tap · Rewind' },
-  touchKeys: [['Joystick', 'Touch the left or right half to move.'], ['Jump', 'Use the large bottom-right circle. Tap to hop or hold for a full jump.'], ['Ability', 'Hold and drag to aim: a Freeze Area for Still, an object for Bloom. Release to cast, or drag to × to cancel. Nothing is picked for you. The badge shows your charges.'], ['Tap world', 'Still can place a Freeze Area or tap an existing circle to end it. Bloom can tap an object to hasten it.'], ['Interact', 'Both travelers can carry and throw crates: tap to throw, or drag this button to aim (the dashed arc shows the flight) and drag onto × to cancel. Bloom collects seeds by walking into them and plants them in pits.'], ['Swap', 'Switch between the two roles (local).'], ['Pause', 'Resume, restart or leave.']],
+  touchKeys: [['Joystick', 'Touch the left or right half to move.'], ['Jump', 'Use the large bottom-right circle. Tap to hop or hold for a full jump.'], ['Ability', 'Hold and drag to aim: a Freeze Area for Still, an object for Bloom. Release to cast, or drag to × to cancel. Nothing is picked for you. The badge shows your charges.'], ['Tap world', 'Still can place a Freeze Area or tap an existing circle to end it. Bloom can tap an object to hasten it.'], ['Interact', 'Both travelers can carry and throw crates: tap to throw, or drag this button to aim (the dashed arc shows the flight) and drag onto × to cancel. '], ['Seeds', 'Bloom\'s seed button, above Interact, shows the seeds left. Beside an empty pit, tap it to plant. Elsewhere, press it to take a seed and drag to aim, then let go to throw (into a wall pit, for instance). Bloom collects seeds by walking into them.'], ['Swap', 'Switch between the two roles (local).'], ['Pause', 'Resume, restart or leave.']],
   interact: { pickup: 'Pick Up', throw: 'Throw', plant: 'Plant', drop: 'Drop' },
   restartLevel: 'Restart Level', leaveRoom: 'Leave Room', mainMenu: 'Main Menu', cancel: 'Cancel',
   chooseLevel: 'Choose a courtyard',
@@ -21,7 +21,7 @@ export const S = {
   // Still's Freeze Areas and charges.
   freezeCount: n => `Freeze × ${n}`,
   // Bloom's seeds: collected by touch, planted from the count.
-  seedCount: n => `× ${n}`, seedsLabel: 'Seeds',
+  seedCount: n => `× ${n}`, seedsLabel: 'Seeds', seedActions: { plant: 'Plant', take: 'Take a seed to throw', throw: 'Throw the seed' },
   // Aiming a throw (drag the interact button; the dashed arc shows the flight).
   cancelThrow: 'Cancel throw',
   // Every skill is aimed by the player.
@@ -53,7 +53,7 @@ export const S = {
   complete: 'Time flows once more.', completeBody: 'Every moment you borrowed grew into a path that led you to each other.',
   chamberComplete: 'You rewrote this moment.', chamberCompleteBody: 'The courtyard bells draw a little closer.',
   helpTitle: 'Make Time Your Tool', helpBody: 'Nothing ages until Bloom wakes it, and once awake it never stops on its own — only Still can slow it to a crawl. Each press of Bloom makes time flow faster. A planted seed grows steadily taller, lifting whoever stands on it, then withers and vanishes. Creatures can be stood on, but they strike on a rhythm — they glow red just before. Still casts Freeze Areas: everything inside (never a traveller) runs at a fifth of its speed, strikes included, until the area fades. Each cast uses a Freeze charge; hourglasses give more. Darts and orbs hit on touch unless slowed. Creatures only age once Bloom hastens them. A hit sends you back to the last moon lamp you lit. Suggestions are optional — a courtyard is cleared once both travelers stand in the moon gate.',
-  keys: [['A / D', 'Move'], ['Space', 'Tap for a short hop, hold for a full jump. Young sprouts launch you higher.'], ['E', 'Pick up a crate; while carrying, hold E and point with the mouse to aim the throw (dashed arc), let go to throw, Esc cancels. As Bloom, plant a seed beside an empty pit.'], ['F / Click', 'Hold F and point with the mouse, then let go to cast (Esc cancels): Still places a Freeze Area, Bloom wakes or hastens the object under the pointer. As Bloom, you can also click the object directly, or click your feet to hasten what you stand on. Still can also click to place an area; click a circle again to end it.'], ['Tab', 'Switch between the two roles'], ['Shift + Tab', 'Focus the toolbar'], ['Esc', 'Pause menu: resume, restart or leave']],
+  keys: [['A / D', 'Move'], ['Space', 'Tap for a short hop, hold for a full jump. Young sprouts launch you higher.'], ['E', 'Pick up a crate; while carrying, hold E and point with the mouse to aim the throw (dashed arc), let go to throw, Esc cancels.'], ['R', 'Bloom\'s seeds: beside an empty pit, plant one. Elsewhere, hold R and point with the mouse to aim a seed (into a wall pit, for instance), let go to throw. The seed counter shows how many are left.'], ['F / Click', 'Hold F and point with the mouse, then let go to cast (Esc cancels): Still places a Freeze Area, Bloom wakes or hastens the object under the pointer. As Bloom, you can also click the object directly, or click your feet to hasten what you stand on. Still can also click to place an area; click a circle again to end it.'], ['Tab', 'Switch between the two roles'], ['Shift + Tab', 'Focus the toolbar'], ['Esc', 'Pause menu: resume, restart or leave']],
   targetFreeze: 'Freeze · F', targetWake: 'Wake · F', targetHasten: 'Hasten · F', targetMax: 'Full speed', targetRewind: 'Rewind · F',
   gateClosed: 'Reach the moon gate together', gateOpen: 'Waiting for your partner…',
   shard: 'Optional time shard',

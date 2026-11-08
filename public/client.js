@@ -1,7 +1,7 @@
 import { playEffect, createGrowthAudio, createRewindAudio } from './sfx.js';
 import { createMusic } from './music.js';
 import { themeFor, MENU_MUSIC } from './themes.js';
-import { setup, applyAction, validateAction, viewFor, hintLevel, levelCount, interactionFor, canTakeSeed, aimedThrowVelocity, throwPath, abilityCheck, abilityTargets, bloomTargetAt, bloomSupport, anchor, exitStatus, freezeAreaAt, freezeCheck, meta } from '../src/logic.js';
+import { setup, applyAction, validateAction, viewFor, hintLevel, levelCount, interactionFor, seedActionFor, aimedThrowVelocity, throwPath, abilityCheck, abilityTargets, bloomTargetAt, bloomSupport, anchor, exitStatus, freezeAreaAt, freezeCheck, meta } from '../src/logic.js';
 import { createHistory, compactFrame, rewindFrame, REWIND } from './rewind.js';
 import { S } from './strings.js';
 import { createRenderer } from './render.js';
@@ -83,13 +83,8 @@ let throwAim = null;
 // Desktop aiming: hold F (skill) or E while carrying (throw), point with the mouse, let go to act; Esc cancels.
 // `mouseClient` is the last mouse position on screen (turned into a world point each frame, as the camera moves).
 let mouseAim = null, mouseClient = null;
-// Holding E (or the interact button) for SEED_HOLD_MS with a seed to spare takes one in hand to throw;
-// a shorter press does what grab always did.
-const SEED_HOLD_MS = 300;
-let seedHold = null;
 // What this player's own decisions (carrying? seed to take?) read: the predicted state online, the live state offline.
 const ownState = () => onlineMode ? network.predicted ?? lastView : state;
-function clearSeedHold() { if (seedHold) clearTimeout(seedHold.timer); seedHold = null; }
 // Touch: the last drawn world (for tap hit-testing) and the short-lived feedback of the last tap.
 let lastView = null, tapEffect = null;
 // Height (px) the bottom touch controls take up; the camera lowers the world only as far as keeps the
@@ -117,7 +112,7 @@ app.innerHTML = `
         <span class="dialogue-speaker"></span><button type="button" data-testid="skip-dialogue" aria-label="Skip dialogue">Skip ${icon('arrow')}</button>
         <p class="dialogue-text" aria-hidden="true"></p><p class="dialogue-announcement" aria-live="polite"></p>
       </section>
-      <div class="game-bottom"><div class="status-strip"><span class="live-dot"></span><span id="hud"></span><span class="freeze-count" id="freeze-count" data-testid="freeze-count"></span><span class="seed-chip" data-testid="seed-counter" role="img" hidden><img src="/sprites/seed.png" alt="" draggable="false"><b></b></span><span id="stage-count"></span></div>
+      <div class="game-bottom"><div class="status-strip"><span class="live-dot"></span><span id="hud"></span><span class="freeze-count" id="freeze-count" data-testid="freeze-count"></span><button type="button" class="ability-chip bloom seed-chip seed-button" data-action="seed" data-testid="seed-counter" hidden><img src="/sprites/seed.png" alt="" draggable="false"><span class="seed-label">${S.seedsLabel}</span><b></b>${key('R')}</button><span id="stage-count"></span></div>
         <div class="action-strip"><span class="controls-strip" id="controls"></span><button class="ability-chip" data-action="ability" id="ability" data-testid="ability">${icon('hourglass')}<span id="ability-label"></span>${key('F')}</button><button class="text-button switch-button" data-action="switch" aria-label="${S.switchRole}">${icon('swap')}${key('Tab')}</button></div>
       </div>
       <div class="touch-controls" data-testid="touch-controls">
@@ -126,7 +121,7 @@ app.innerHTML = `
           <button type="button" class="touch-switch" data-touch="switch" data-testid="touch-switch" aria-label="${S.switchRole}">${icon('swap')}</button>
         </div>
         <div class="touch-actions">
-          <span class="seed-chip touch-seeds" data-testid="touch-seed-counter" role="img" hidden><img src="/sprites/seed.png" alt="" draggable="false"><b></b></span>
+          <button type="button" class="touch-skill seed-chip touch-seeds" data-touch="seed" data-testid="touch-seed-counter" hidden><img class="skill-art" src="/sprites/seed.png" alt="" draggable="false"><b class="skill-charges"></b></button>
           <button type="button" class="touch-skill touch-jump" data-touch="jump" data-testid="touch-jump" aria-label="${S.jump}">${icon('up')}<span>${S.jump}</span></button>
           <button type="button" class="touch-skill touch-interact" data-touch="grab" data-testid="touch-interact" aria-label="${S.interact.pickup}">${itemArt('crate')}<span>${S.interact.pickup}</span></button>
           <button type="button" class="touch-skill touch-ability" data-touch="ability" data-testid="touch-ability" aria-label="${S.ability[0]}">${skillArt('hourglass')}<span class="skill-charges" data-testid="skill-charges"></span></button>
@@ -380,13 +375,18 @@ function updateUI() {
   }
   const seeds = state.seeds ?? 0;
   const showSeeds = (onlineMode ? network.actor : state.active) === 1 && !!state.pits?.length;
-  const seedKey = `${seeds}:${showSeeds}`;
+  // Bloom's seed button (R): plant beside an empty pit, otherwise take a seed in hand and aim the throw.
+  const seedAction = showSeeds ? seedActionFor(state, onlineMode ? network.actor : state.active) : null;
+  const seedKey = `${seeds}:${showSeeds}:${seedAction}`;
   if (uiValues.seeds !== seedKey) {
     for (const chip of document.querySelectorAll('.seed-chip')) {
       chip.hidden = !showSeeds;
       chip.classList.toggle('empty', seeds <= 0);
-      chip.querySelector('b').textContent = S.seedCount(seeds);
-      chip.setAttribute('aria-label', `${S.seedsLabel} ${seeds}`); chip.title = S.seedsLabel;
+      chip.classList.toggle('unavailable', !seedAction);
+      chip.dataset.kind = seedAction ?? '';
+      chip.querySelector('b').textContent = chip.classList.contains('touch-seeds') ? String(seeds) : S.seedCount(seeds);
+      const label = S.seedActions[seedAction] ?? S.seedsLabel;
+      chip.setAttribute('aria-label', `${label} · ${S.seedsLabel} ${seeds}`); chip.title = label;
     }
     uiValues.seeds = seedKey;
   }
@@ -396,7 +396,7 @@ function updateUI() {
 }
 // Forget every held key, finger and joystick state without sending anything.
 function resetTouchState() {
-  clearSeedHold(); clearSkillAim(); clearThrowAim(); mouseAim = null;
+  clearSkillAim(); clearThrowAim(); mouseAim = null;
   held.clear(); touchPointers.clear(); touchJumpActor = null;
   Object.assign(joy, { pointer: null, actor: null, dx: 0, dy: 0, dir: 0 });
   const stick = document.querySelector('.joystick');
@@ -668,6 +668,8 @@ document.addEventListener('click', event => {
   if (modal) return;
   canvas.focus({ preventScroll: true });
   if (action === 'switch') { clearInputs(); dispatch({ type: 'switch' }); return; }
+  // A click on the seed counter plants beside a pit, or takes a seed in hand (R or E then aims and throws it).
+  if (action === 'seed') { seedPress(touchActor(), () => {}); canvas.focus({ preventScroll: true }); return; }
   if (action === 'ability') { if (touchActor() !== 1 || !castUnderfoot(lastView)) toast(S.aimMouse); return; }
   dispatch({ type: action });
 });
@@ -681,7 +683,6 @@ document.addEventListener('keydown', event => {
   if (viewport.blocked) return;
   if (rewind) return;
   if (stageBusy()) { event.preventDefault(); return; }
-  if (code === 'Escape' && seedHold) { event.preventDefault(); clearSeedHold(); return; }
   if (code === 'Escape' && (skillAim || throwAim || mouseAim)) { event.preventDefault(); clearSkillAim(); clearThrowAim(); mouseAim = null; return; }
   if (code === 'Escape') { event.preventDefault(); if (modal && !['intro', 'win', 'ending'].includes(modal)) resume(); else if (!modal) setModal('pause'); return; }
   if (modal) {
@@ -704,16 +705,10 @@ document.addEventListener('keydown', event => {
   if (code === 'Tab' && !onlineMode) { clearInputs(); dispatch({ type: 'switch' }); }
   if (['KeyW', 'Space', 'ArrowUp'].includes(code) && !alreadyJumping) dispatch({ type: 'jump', actor });
   if (['KeyE', 'Enter'].includes(code)) {
-    const view = ownState();
-    if (interactionFor(view, actor).kind === 'throw') startMouseAim('throw', code, actor);
-    else if (canTakeSeed(view, actor)) {
-      clearSeedHold();
-      seedHold = { key: code, actor, timer: setTimeout(() => {
-        seedHold = null;
-        if (dispatch({ type: 'takeSeed', actor }, true).valid !== false) startMouseAim('throw', code, actor);
-      }, SEED_HOLD_MS) };
-    } else dispatch({ type: 'grab', actor });
+    if (interactionFor(ownState(), actor).kind === 'throw') startMouseAim('throw', code, actor);
+    else dispatch({ type: 'grab', actor });
   }
+  if (code === 'KeyR') seedPress(actor, () => startMouseAim('throw', code, actor));
   if (['KeyF', 'KeyL'].includes(code)) startMouseAim('skill', code, actor);
 });
 function keyboardJumpHeld() {
@@ -721,7 +716,6 @@ function keyboardJumpHeld() {
 }
 document.addEventListener('keyup', event => {
   held.delete(event.code);
-  if (seedHold && event.code === seedHold.key) { const { actor } = seedHold; clearSeedHold(); dispatch({ type: 'grab', actor }); }
   if (mouseAim && event.code === mouseAim.key) finishMouseAim();
   if (['KeyW', 'Space', 'ArrowUp'].includes(event.code) && !modal) {
     const actor = onlineMode ? network.actor : state.active;
@@ -771,8 +765,18 @@ function releaseTouchJump() {
   if (actor !== null && !keyboardJumpHeld()) dispatch({ type: 'jumpRelease', actor }, true);
 }
 
+// Bloom's seed button (R key, the seed counter): beside an empty pit it plants; otherwise it takes a seed in hand
+// (or uses the one already there) and `aim()` starts aiming the throw, which the release lets fly.
+function seedPress(actor, aim) {
+  const kind = seedActionFor(ownState(), actor);
+  if (kind === 'plant') { dispatch({ type: 'plant', actor }); return; }
+  if (kind === 'take' && dispatch({ type: 'takeSeed', actor }, true).valid === false) return;
+  if (kind) aim(); else toast(S.errors[actor !== 1 ? 'role' : 'noSeeds']);
+}
+
 function touchAction(type) {
   if (viewport.blocked) return;
+  if (type === 'seed') { seedPress(touchActor(), () => {}); return; }
   if (type === 'switch') {
     if (onlineMode) return;
     const stick = joy.pointer !== null && joystick.hasPointerCapture?.(joy.pointer) ? { pointer: joy.pointer, dx: joy.dx, dy: joy.dy } : null;
@@ -795,6 +799,7 @@ function touchAction(type) {
   } else dispatch({ type, actor });
 }
 const interactButton = document.querySelector('.touch-interact');
+const seedButton = document.querySelector('.touch-seeds');
 const abilityButton = document.querySelector('.touch-ability');
 const cancelAimButton = document.querySelector('.touch-cancel');
 const skillCharges = (view, actor) => actor === 0 ? view.freezeCharges : view.bloomCharges;
@@ -916,11 +921,11 @@ function finishSkillAim(event, released) {
 // cancel button (or Escape) keeps the crate.
 function clearThrowAim() {
   if (!throwAim) return;
-  const { pointer } = throwAim;
+  const { pointer, button = interactButton } = throwAim;
   throwAim = null;
-  touchPointers.delete(interactButton); interactButton.classList.remove('pressed');
+  touchPointers.delete(button); button.classList.remove('pressed');
   if (!skillAim) { cancelAimButton.hidden = true; cancelAimButton.classList.remove('over'); document.body.classList.remove('skill-aiming'); }
-  if (interactButton.hasPointerCapture(pointer)) interactButton.releasePointerCapture(pointer);
+  if (button.hasPointerCapture(pointer)) button.releasePointerCapture(pointer);
 }
 function updateThrowAim(event) {
   if (!throwAim || (event && throwAim.pointer !== event.pointerId)) return;
@@ -960,9 +965,10 @@ function throwPreview(view) {
 function finishThrowAim(event, released) {
   if (throwAim?.pointer !== event.pointerId) return;
   updateThrowAim(event);
-  const { actor, active, overCancel } = throwAim, aim = active ? throwVelocity() : null;
+  const { actor, active, overCancel, plantOnTap } = throwAim, aim = active ? throwVelocity() : null;
   clearThrowAim();
   if (!released || overCancel || viewport.blocked || modal || stageBusy() || rewind || actor !== touchActor()) return;
+  if (plantOnTap && !active) { dispatch({ type: 'plant', actor }); return; }
   dispatch(aim ? { type: 'grab', actor, aim } : { type: 'grab', actor });
 }
 
@@ -983,7 +989,7 @@ function finishMouseAim() {
   dispatch(velocity ? { type: 'grab', actor: aim.actor, aim: velocity } : { type: 'grab', actor: aim.actor });
 }
 
-const cancelAim = event => { event?.preventDefault(); clearSeedHold(); clearSkillAim(); clearThrowAim(); cancelAimButton.setAttribute('aria-label', S.cancelAim); };
+const cancelAim = event => { event?.preventDefault(); clearSkillAim(); clearThrowAim(); cancelAimButton.setAttribute('aria-label', S.cancelAim); };
 cancelAimButton.addEventListener('pointerdown', cancelAim);
 cancelAimButton.addEventListener('click', () => cancelAim());
 // Each circle captures only its own pointer, so presses coexist with held movement and with each other.
@@ -999,17 +1005,14 @@ for (const button of document.querySelectorAll('[data-touch]')) {
       updateSkillAim();
     } else if (button === interactButton && interactionFor(ownState(), touchActor()).kind === 'throw') {
       const { clientX: x, clientY: y, pointerId: pointer } = event;
-      throwAim = { pointer, actor: touchActor(), x, y, startX: x, startY: y, travel: Math.max(90, button.clientWidth * 1.4), active: false, overCancel: false };
-    } else if (button === interactButton && canTakeSeed(ownState(), touchActor())) {
-      const { clientX: x, clientY: y, pointerId: pointer } = event, actor = touchActor();
-      clearSeedHold();
-      seedHold = { pointer, actor, x, y, timer: setTimeout(() => {
-        const { x: nowX, y: nowY } = seedHold; seedHold = null;
-        if (dispatch({ type: 'takeSeed', actor }, true).valid === false) return;
-        // Aim from where the finger went down, so a drag that began during the hold already counts.
-        throwAim = { pointer, actor, x: nowX, y: nowY, startX: x, startY: y, travel: Math.max(90, button.clientWidth * 1.4), active: false, overCancel: false };
-        updateThrowAim();
-      }, SEED_HOLD_MS) };
+      throwAim = { pointer, button, actor: touchActor(), x, y, startX: x, startY: y, travel: Math.max(90, button.clientWidth * 1.4), active: false, overCancel: false };
+    } else if (button === seedButton) {
+      // Plant beside a pit; anywhere else take a seed and aim it like a crate (the throw aim's reach is the
+      // interact button's, so both throws feel the same).
+      const { clientX: x, clientY: y, pointerId: pointer } = event, actor = touchActor(), view = ownState();
+      // A seed already in hand beside a pit: a short tap plants it, a drag still aims a throw.
+      if (seedActionFor(view, actor) === 'plant' && view.actors[actor].carrying !== null) throwAim = { pointer, button, actor, x, y, startX: x, startY: y, travel: Math.max(90, interactButton.clientWidth * 1.4), active: false, overCancel: false, plantOnTap: true };
+      else seedPress(actor, () => { throwAim = { pointer, button, actor, x, y, startX: x, startY: y, travel: Math.max(90, interactButton.clientWidth * 1.4), active: false, overCancel: false }; });
     } else touchAction(button.dataset.touch);
     touchPointers.set(button, event.pointerId); button.classList.add('pressed');
   });
@@ -1018,11 +1021,7 @@ for (const button of document.querySelectorAll('[data-touch]')) {
     touchPointers.delete(button); button.classList.remove('pressed');
     if (button.dataset.touch === 'jump') releaseTouchJump();
     if (button === abilityButton) finishSkillAim(event, name === 'pointerup');
-    if (button === interactButton && seedHold?.pointer === event.pointerId) {
-      clearSeedHold();
-      if (name === 'pointerup') touchAction(button.dataset.touch); // a short tap: grab as before
-    }
-    if (button === interactButton) finishThrowAim(event, name === 'pointerup');
+    if (button === interactButton || button === seedButton) finishThrowAim(event, name === 'pointerup');
   });
   // Keyboard / switch-access activation (pointer taps were already handled on pointerdown).
   button.addEventListener('keydown', event => { if (event.repeat && ['Enter', ' '].includes(event.key)) event.preventDefault(); });
@@ -1033,17 +1032,15 @@ for (const button of document.querySelectorAll('[data-touch]')) {
   });
 }
 abilityButton.addEventListener('pointermove', updateSkillAim);
-interactButton.addEventListener('pointermove', event => {
-  if (seedHold?.pointer === event.pointerId) { seedHold.x = event.clientX; seedHold.y = event.clientY; }
-  updateThrowAim(event);
-});
+interactButton.addEventListener('pointermove', updateThrowAim);
+seedButton.addEventListener('pointermove', updateThrowAim);
 const chargeBadge = abilityButton.querySelector('.skill-charges');
 function updateTouchControls(view) {
   if (!document.body.classList.contains('touch-layout') || !view?.actors) return;
   const actor = onlineMode ? network.actor : view.active;
   const charges = skillCharges(view, actor);
   const interaction = interactionFor(view, actor);
-  const available = interaction.available || canTakeSeed(view, actor);
+  const available = interaction.available;
   const rewinds = actor === 1 && !!view.bloomReverses;
   const next = `${actor}:${charges}:${interaction.kind}:${interaction.item ?? ''}:${available}:${rewinds}`;
   if (next === touchKey) return;
@@ -1058,7 +1055,7 @@ function updateTouchControls(view) {
   }
   interactButton.classList.toggle('bloom', actor === 1);
   interactButton.classList.toggle('unavailable', !available);
-  const art = interaction.kind === 'plant' || interaction.item === 'seed' ? 'seed' : 'crate', artKey = `${interaction.kind}:${art}`;
+  const art = interaction.item === 'seed' ? 'seed' : 'crate', artKey = `${interaction.kind}:${art}`;
   if (interactButton.dataset.art !== artKey) {
     interactButton.dataset.kind = interaction.kind; interactButton.dataset.art = artKey;
     interactButton.innerHTML = `${itemArt(art)}<span>${S.interact[interaction.kind]}</span>`;

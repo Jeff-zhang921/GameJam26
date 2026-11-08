@@ -3,7 +3,7 @@ import { setup, validateAction, applyAction } from './logic.js';
 
 const characters = { still: 0, bloom: 1 };
 const lobbyStatuses = new Set(['WAITING', 'READY']);
-const inputTypes = new Set(['move', 'jump', 'jumpRelease', 'grab', 'takeSeed', 'ability']);
+const inputTypes = new Set(['move', 'jump', 'jumpRelease', 'grab', 'plant', 'takeSeed', 'ability']);
 const codePattern = /^[A-Z0-9]{6}$/;
 const clone = value => JSON.parse(JSON.stringify(value));
 

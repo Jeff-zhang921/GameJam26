@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { validateAction, applyAction, meta, setup, objectBox, anchor, interactionFor, canTakeSeed, throwPath } from '../src/logic.js';
+import { validateAction, applyAction, meta, setup, objectBox, anchor, interactionFor, canTakeSeed, seedActionFor, throwPath } from '../src/logic.js';
 import { LEVELS } from '../src/levels/index.js';
 import { vineArena } from './arena.js';
 import { makeEnemy } from '../src/enemies.js';
@@ -204,7 +204,7 @@ describe('throwing a seed into a pit', () => {
   });
   test('a short press beside a wall pit does not plant it by hand', () => {
     const s = vineArena(); Object.assign(s.actors[1], { x: 745, y: 420 }); // right under the pit's face
-    expect(interactionFor(s, 1).kind).not.toBe('plant');
-    expect(validateAction(s, 'local', { type: 'grab', actor: 1 }).valid).toBe(false);
+    expect(seedActionFor(s, 1)).toBe('take');
+    expect(validateAction(s, 'local', { type: 'plant', actor: 1 }).valid).toBe(false);
   });
 });

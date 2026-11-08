@@ -265,22 +265,34 @@ function plantingPit(state, p) {
     .sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0];
 }
 
-// Bloom, hands free, beside an empty pit with a seed to spare: the pit to plant in.
-const plantable = (state, p) => p.id === BLOOM && p.carrying === null && state.seeds > 0 ? plantingPit(state, p) : null;
+// The seed in Bloom's hand, if that is what they carry.
+const heldSeed = (state, p) => { const o = p.carrying !== null && p.carrying !== undefined && find(state, p.carrying); return o?.kind === 'seed' ? o : null; };
+// Bloom beside an empty pit, with a seed in hand or (hands free) one to spare in the count: the pit to plant in.
+const plantable = (state, p) => p.id === BLOOM && (heldSeed(state, p) || (p.carrying === null && state.seeds > 0)) ? plantingPit(state, p) : null;
 
-// Bloom, hands free, with a seed to spare, can take one in hand to throw (long press of grab).
+// Bloom, hands free, with a seed to spare, can take one in hand to throw (the seed button, pressed away from a pit).
 export const canTakeSeed = (state, actor) => {
   const p = state?.actors?.[actor];
   return !!p && state.status === 'playing' && p.id === BLOOM && p.carrying === null && state.seeds > 0;
 };
 
-// What the grab action would do for this actor right now: 'pickup', 'throw' or 'plant'.
+// What the grab action (the interact key: crates only) would do for this actor right now: 'pickup' or 'throw'.
 export function interactionFor(state, actor) {
   const p = state?.actors?.[actor];
   if (!p) return { kind: 'pickup', available: false };
   if (p.carrying !== null && p.carrying !== undefined) return { kind: 'throw', available: true, item: find(state, p.carrying)?.kind ?? 'crate' };
-  if (plantable(state, p)) return { kind: 'plant', available: true };
   return { kind: 'pickup', available: pickable(state, p).length > 0 };
+}
+
+// What Bloom's seed button would do right now: 'plant' in the empty pit alongside (the seed in hand, or one from the
+// count), 'throw' the seed in hand, 'take' a seed in hand to aim and throw, or null (not Bloom, hands full of a crate,
+// or no seeds).
+export function seedActionFor(state, actor) {
+  const p = state?.actors?.[actor];
+  if (!p || p.id !== BLOOM || state.status !== 'playing') return null;
+  if (plantable(state, p)) return 'plant';
+  if (p.carrying !== null && p.carrying !== undefined) return heldSeed(state, p) ? 'throw' : null;
+  return canTakeSeed(state, actor) ? 'take' : null;
 }
 
 export function aimedThrowVelocity(dx, dy, fullPowerDistance) {
@@ -342,8 +354,14 @@ export function validateAction(state, playerId, action) {
       return { valid: true };
     }
     if (p.carrying !== null || pickable(state, p).length) return { valid: true };
-    if (p.id === BLOOM && plantingPit(state, p)) return state.seeds > 0 ? { valid: true } : no('noSeeds');
     return no('grabRange');
+  }
+  if (action.type === 'plant') {
+    const p = state.actors[action.actor];
+    if (action.actor !== BLOOM) return no('role');
+    if (p.carrying !== null && !heldSeed(state, p)) return no('handsFull');
+    if (!plantingPit(state, p)) return no('pitRange');
+    return plantable(state, p) ? { valid: true } : no('noSeeds');
   }
   if (action.type === 'ability') {
     if (action.area !== undefined) {
@@ -790,7 +808,7 @@ export function applyAction(state, playerId, action) {
   if (action.type === 'pause') { if (s.status === 'playing' || s.status === 'paused') s.status = s.status === 'paused' ? 'playing' : 'paused'; for (const p of s.actors) { p.move = 0; p.jumpHeld = false; p.jumpCut = true; p.jumpBuffer = 0; } return s; }
   if (action.type === 'switch') { for (const p of s.actors) { p.move = 0; p.jumpHeld = false; p.jumpCut = true; p.jumpBuffer = 0; } s.active = 1 - s.active; return s; }
   const p = s.actors[action.actor];
-  if (action.type === 'jump' || action.type === 'grab' || action.type === 'takeSeed' || action.type === 'ability' || (action.type === 'move' && action.dir !== 0)) s.started = true;
+  if (action.type === 'jump' || action.type === 'grab' || action.type === 'plant' || action.type === 'takeSeed' || action.type === 'ability' || (action.type === 'move' && action.dir !== 0)) s.started = true;
   if (action.type === 'move') p.move = action.dir;
   if (action.type === 'jump' && !p.jumpHeld) { p.jumpHeld = true; p.jumpBuffer = meta.controls.jumpBuffer; }
   if (action.type === 'jumpRelease') p.jumpHeld = false;
@@ -802,6 +820,13 @@ export function applyAction(state, playerId, action) {
     s.objects.push(o); p.carrying = o.id;
     event(s, 'seedTake', o.x, o.y, { actor: BLOOM, seeds: s.seeds });
   }
+  if (action.type === 'plant') {
+    // Plant the seed in Bloom's hand, or one from the count, in the pit beside them.
+    const pit = plantable(s, p), seed = heldSeed(s, p);
+    if (seed) { s.objects = s.objects.filter(o => o !== seed); p.carrying = null; } else s.seeds--;
+    s.objects.push(makePlant(`plant-${s.nextPlant++}`, pit));
+    event(s, 'plant', pit.x, pit.y - 10);
+  }
   if (action.type === 'grab') {
     if (p.carrying !== null) {
       // Throw the carried crate or seed, aimed or the default way.
@@ -809,12 +834,6 @@ export function applyAction(state, playerId, action) {
       p.carrying = null; o.held = null; p.facing = launch.facing;
       Object.assign(o, { frozen: false, x: launch.x, y: launch.y, vx: launch.vx, vy: launch.vy, ...(o.kind === 'seed' && { thrown: true }) });
       event(s, 'throw', o.x, o.y);
-    } else if (plantable(s, p)) {
-      // Plant one of Bloom's seeds in the pit beside them.
-      const pit = plantable(s, p);
-      s.seeds--;
-      s.objects.push(makePlant(`plant-${s.nextPlant++}`, pit));
-      event(s, 'plant', pit.x, pit.y - 10);
     } else {
       const o = pickable(s, p)[0];
       o.held = action.actor; if (o.kind === 'crate') o.frozen = false; p.carrying = o.id;

@@ -103,14 +103,21 @@ body.touch-layout .modal .toggle[aria-checked=true]:after{left:calc(22 * var(--c
 body.touch-layout .hud-label{display:none}
 body.rewinding .toast{opacity:0!important}
 /* Bloom's seed count: a small seed and a number, bottom right (status bar on desktop, above the interact button on touch). */
-.seed-chip{display:inline-flex;align-items:center;gap:4px;margin-left:auto;padding:1px 8px 1px 4px;border-radius:999px;background:#f8f2d22b;color:#f6efd3;font:600 12px Georgia,serif;white-space:nowrap}
-.seed-chip[hidden]{display:none}
-.seed-chip img{width:16px;height:16px;object-fit:contain}
-.seed-chip.empty{background:#f1a58f33;color:#ffd7cb}
-.seed-chip:not([hidden]) + #stage-count{margin-left:12px}
+.seed-button{margin-left:auto;cursor:pointer;font-family:inherit;letter-spacing:inherit;-webkit-user-select:none;user-select:none}
+.seed-button[hidden]{display:none}
+.seed-button img{width:15px;height:15px;object-fit:contain}
+.seed-button b{font:600 11px Georgia,serif}
+.seed-button.empty{border-color:#f1a58f66;color:#ffd7cb}
+.seed-button.unavailable{opacity:.6}
+.seed-button[data-kind="plant"]{border-color:#efd88df0;box-shadow:0 0 0 1px #efd88d66}
+.seed-button:not([hidden]) + #stage-count{margin-left:12px}
 .touch-seeds{display:none}
-body.touch-layout .status-strip .seed-chip{display:none}
-body.touch-layout .touch-seeds:not([hidden]){display:inline-flex;position:absolute;right:calc(var(--jump-size) + var(--control-gap) + (var(--skill-size) - 52px) / 2);bottom:calc((var(--jump-size) - var(--skill-size)) / 2 + 10px + var(--skill-size) + 10px);width:52px;justify-content:center;margin:0;padding:3px 6px;background:#173c37b8;border:1px solid #f4e7b466;font-size:13px}
+body.touch-layout .status-strip .seed-button{display:none}
+body.touch-layout .touch-controls .touch-seeds:not([hidden]){display:flex;right:calc(var(--jump-size) + var(--control-gap));bottom:calc((var(--jump-size) - var(--skill-size)) / 2 + 10 * var(--control-unit) + var(--skill-size) + var(--control-gap));background:radial-gradient(circle at 50% 36%,#fff4d6ed,#e4cc87ac 68%,#b59c54b8);color:#5e461a;border-color:#fff3bce6}
+.touch-seeds .skill-charges{position:absolute;right:calc(-3 * var(--control-unit));bottom:calc(-3 * var(--control-unit));display:grid;place-items:center;min-width:calc(24 * var(--control-unit));height:calc(24 * var(--control-unit));padding:0 calc(5 * var(--control-unit));border:var(--control-unit) solid #f7f0c8;border-radius:calc(14 * var(--control-unit));background:#463d29;color:#fff3c7;font-variant-numeric:tabular-nums}
+.touch-seeds.empty .skill-art,.touch-seeds.unavailable .skill-art{opacity:.45}
+.touch-seeds.empty .skill-charges{color:#ffd3bd;background:#603d35}
+.touch-controls .touch-seeds[data-kind="plant"]{box-shadow:0 0 0 calc(3 * var(--control-unit)) #efd88dcc,0 calc(8 * var(--control-unit)) calc(22 * var(--control-unit)) #0d2d2952}
 /* Traveller dialogue stays out of the thumb controls and never pauses the world. */
 .character-dialogue{position:absolute;z-index:5;top:22px;left:24px;width:min(340px,calc(100% - 100px));min-height:98px;padding:15px 18px 15px 72px;border:1px solid #e1d3a990;border-radius:4px 18px 18px 18px;background:linear-gradient(125deg,#132f32ef,#284b45e8);box-shadow:0 8px 28px #0b29262e;pointer-events:none;color:#f2edd7}
 .character-dialogue[hidden]{display:none}

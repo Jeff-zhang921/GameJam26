@@ -85,7 +85,7 @@ describe('real WebSocket multiplayer', () => {
     const picked = await p.host.next('snapshot', m => m.game.seeds === 2 && !m.game.objects.some(o => o.id === 'seed-1'));
     expect((await p.guest.next('snapshot', m => m.game.tick === picked.game.tick)).game.seeds).toBe(2);
     p.room.game.actors[1].x = 600;
-    p.host.send({ type: 'input', seq: 1, action: { type: 'grab' } });
+    p.host.send({ type: 'input', seq: 1, action: { type: 'plant' } });
     await p.host.next('snapshot', m => m.game.objects.some(o => o.kind === 'plant') && m.game.seeds === 1);
     p.host.send({ type: 'input', seq: 4, action: { type: 'ability', target: 'plant-0' } });
     const woke = await p.host.next('snapshot', m => m.game.objects.some(o => o.id === 'plant-0' && o.speed === 1));

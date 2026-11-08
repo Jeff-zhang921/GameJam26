@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { setup, applyAction, validateAction, heldPosition, interactionFor, aimedThrowVelocity, throwPath, meta } from '../src/logic.js';
+import { setup, applyAction, validateAction, heldPosition, interactionFor, seedActionFor, aimedThrowVelocity, throwPath, meta } from '../src/logic.js';
 import { classicCourtyard, rootriseArena } from './arena.js';
 import { attachCarried } from '../public/network.js';
 
@@ -85,16 +85,29 @@ describe('contextual interaction label', () => {
     expect(interactionFor(send(state, 'grab'), 0)).toEqual({ kind: 'throw', available: true, item: 'crate' });
   });
 
-  test('Bloom with a seed in the count is offered Plant beside an empty pit, and nothing to plant elsewhere', () => {
-    const state = rootriseArena();
+  test('the interact key never plants; Bloom\'s seed button plants beside an empty pit and takes a seed elsewhere', () => {
+    let state = rootriseArena();
     state.actors[1].x = 450;
     expect(interactionFor(state, 1)).toEqual({ kind: 'pickup', available: false });
+    expect(seedActionFor(state, 1)).toBe('take');
     state.actors[1].x = 600;
-    expect(interactionFor(state, 1)).toEqual({ kind: 'plant', available: true });
+    expect(interactionFor(state, 1)).toEqual({ kind: 'pickup', available: false });
+    expect(seedActionFor(state, 1)).toBe('plant');
     state.seeds = 0;
-    expect(interactionFor(state, 1).kind).toBe('pickup');
+    expect(seedActionFor(state, 1)).toBe(null);
     state.seeds = 1; state.actors[0].x = 600;
-    expect(interactionFor(state, 0).kind).toBe('pickup'); // only Bloom plants
+    expect(seedActionFor(state, 0)).toBe(null); // only Bloom has seeds
+    state.actors[1].x = 450;
+    state = send(state, 'takeSeed', 1);
+    expect(seedActionFor(state, 1)).toBe('throw');
+    // With a seed in hand beside the pit, the button plants that very seed (the count is untouched).
+    state.actors[1].x = 600;
+    expect(seedActionFor(state, 1)).toBe('plant');
+    state = send(state, 'plant', 1);
+    expect(state).toMatchObject({ seeds: 0 });
+    expect(state.actors[1].carrying).toBe(null);
+    expect(state.objects.filter(o => o.kind === 'seed' && o.held === 1)).toHaveLength(0);
+    expect(state.pits[0].plant).toMatch(/^plant-/);
   });
 });
 

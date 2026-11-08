@@ -15,7 +15,7 @@ const apex = (s, actor) => { let top = s.actors[actor].y; for (let i = 0; i < 60
 function planted() {
   let s = rootriseArena();
   s.actors[1].x = 600;
-  s = action(s, { type: 'grab', actor: 1 });
+  s = action(s, { type: 'plant', actor: 1 });
   return s;
 }
 
@@ -34,10 +34,14 @@ describe('seeds and pits', () => {
     expect(s.seeds).toBe(2);
     expect(s.events.some(e => e.kind === 'seedPick')).toBe(true);
     expect(s.actors[1].carrying).toBe(null);
-    s.actors[1].x = 300; // no pit here: nothing to do
+    s.actors[1].x = 300; // no pit here: nothing to plant or pick up
     expect(validateAction(s, 'local', { type: 'grab', actor: 1 }).error).toBe('grabRange');
+    expect(validateAction(s, 'local', { type: 'plant', actor: 1 }).error).toBe('pitRange');
     s.actors[1].x = 610;
-    s = action(s, { type: 'grab', actor: 1 });
+    // The interact key never plants: planting is the seed button's job.
+    expect(validateAction(s, 'local', { type: 'grab', actor: 1 }).error).toBe('grabRange');
+    expect(validateAction(s, 'local', { type: 'plant', actor: 0 }).error).toBe('role');
+    s = action(s, { type: 'plant', actor: 1 });
     const plant = s.objects.find(o => o.kind === 'plant');
     expect(plant).toMatchObject({ age: 0, height: 0, speed: 0, x: 600 });
     expect(s.pits[0].plant).toBe(plant.id);
@@ -48,10 +52,10 @@ describe('seeds and pits', () => {
     let s = planted();
     expect(s.seeds).toBe(0);
     s.seeds = 1;
-    expect(validateAction(s, 'local', { type: 'grab', actor: 1 }).error).toBe('grabRange');
+    expect(validateAction(s, 'local', { type: 'plant', actor: 1 }).error).toBe('pitRange');
     s.pits.push({ id: 'pit-9', x: 300, y: 540, plant: null });
     s.seeds = 0; s.actors[1].x = 300;
-    expect(validateAction(s, 'local', { type: 'grab', actor: 1 }).error).toBe('noSeeds');
+    expect(validateAction(s, 'local', { type: 'plant', actor: 1 }).error).toBe('noSeeds');
   });
 
   test('bloom ignores loose seeds and crates', () => {

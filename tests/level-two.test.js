@@ -155,7 +155,7 @@ describe('courtyard 2 route', () => {
     // Bloom plants the seed; both stand on it and Bloom wakes it at full speed.
     const pit = s.pits[0];
     stand(s, BLOOM, middle, pit.x);
-    s = act(s, { type: 'grab', actor: BLOOM });
+    s = act(s, { type: 'plant', actor: BLOOM });
     stand(s, STILL, middle, pit.x + 10);
     for (let i = 0; i < 3; i++) s = act(s, { type: 'ability', actor: BLOOM, target: 'plant-0' });
     for (let i = 0; i < 600 && s.actors[STILL].y > gate.y - 10; i++) s = tick(s);
