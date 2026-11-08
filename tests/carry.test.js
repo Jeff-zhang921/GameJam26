@@ -109,6 +109,19 @@ describe('contextual interaction label', () => {
     expect(state.objects.filter(o => o.kind === 'seed' && o.held === 1)).toHaveLength(0);
     expect(state.pits[0].plant).toMatch(/^plant-/);
   });
+
+  test('a cancelled seed throw puts the seed in hand back into the count', () => {
+    let state = rootriseArena();
+    state.actors[1].x = 450;
+    expect(validateAction(state, 'local', { type: 'stowSeed', actor: 1 }).valid).toBe(false); // nothing in hand
+    state = send(state, 'takeSeed', 1);
+    expect(state.seeds).toBe(0);
+    expect(validateAction(state, 'local', { type: 'stowSeed', actor: 0 }).error).toBe('role');
+    state = send(state, 'stowSeed', 1);
+    expect(state.seeds).toBe(1);
+    expect(state.actors[1].carrying).toBe(null);
+    expect(state.objects.some(o => o.kind === 'seed' && o.held === 1)).toBe(false);
+  });
 });
 
 describe('online rendering of carried boxes', () => {

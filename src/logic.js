@@ -346,6 +346,10 @@ export function validateAction(state, playerId, action) {
     if (state.seeds <= 0) return no('noSeeds');
     return canTakeSeed(state, action.actor) ? { valid: true } : no('invalid');
   }
+  if (action.type === 'stowSeed') {
+    if (action.actor !== BLOOM) return no('role');
+    return heldSeed(state, state.actors[BLOOM]) ? { valid: true } : no('invalid');
+  }
   if (action.type === 'grab') {
     const p = state.actors[action.actor];
     if (action.aim !== undefined) {
@@ -821,6 +825,12 @@ export function applyAction(state, playerId, action) {
     Object.assign(o, heldPosition(o, p));
     s.objects.push(o); p.carrying = o.id;
     event(s, 'seedTake', o.x, o.y, { actor: BLOOM, seeds: s.seeds });
+  }
+  if (action.type === 'stowSeed') {
+    // A cancelled seed throw: the seed in Bloom's hand goes back into the count.
+    const seed = heldSeed(s, p);
+    s.objects = s.objects.filter(o => o !== seed); p.carrying = null; s.seeds++;
+    event(s, 'seedStow', p.x, p.y - 40, { actor: BLOOM, seeds: s.seeds });
   }
   if (action.type === 'plant') {
     // Plant the seed in Bloom's hand, or one from the count, in the pit beside them.

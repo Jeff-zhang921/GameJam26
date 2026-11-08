@@ -144,6 +144,9 @@ describe('rooms and shared lobby', () => {
     f.send(f.host, { type: 'input', seq: 1, action: { type: 'takeSeed' } }); // the host plays Bloom
     expect(f.room.game.seeds).toBe(0);
     expect(f.room.game.actors[1].carrying).toMatch(/^seed-taken-/);
+    f.send(f.host, { type: 'input', seq: 2, action: { type: 'stowSeed' } }); // a cancelled throw puts it back
+    expect(f.room.game.seeds).toBe(1);
+    expect(f.room.game.actors[1].carrying).toBe(null);
   });
   test('different room codes isolate input and state', () => {
     const f = fixture(); f.start();

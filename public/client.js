@@ -685,7 +685,7 @@ document.addEventListener('keydown', event => {
   if (viewport.blocked) return;
   if (rewind) return;
   if (stageBusy()) { event.preventDefault(); return; }
-  if (code === 'Escape' && (skillAim || throwAim || mouseAim)) { event.preventDefault(); clearSkillAim(); clearThrowAim(); mouseAim = null; return; }
+  if (code === 'Escape' && (skillAim || throwAim || mouseAim)) { event.preventDefault(); stowCancelled(throwAim ?? mouseAim); clearSkillAim(); clearThrowAim(); mouseAim = null; return; }
   if (code === 'Escape') { event.preventDefault(); if (modal && !['intro', 'win', 'ending'].includes(modal)) resume(); else if (!modal) setModal('pause'); return; }
   if (modal) {
     if (code === 'Tab') {
@@ -698,7 +698,7 @@ document.addEventListener('keydown', event => {
   }
   if (event.target.closest('input,textarea,[contenteditable=true]')) return;
   if ((code === 'Tab' && event.shiftKey) || (event.target.closest('button,summary') && ['Space', 'Enter', 'Tab'].includes(code))) return;
-  const controls = ['KeyA', 'KeyD', 'KeyW', 'Space', 'KeyE', 'KeyF', 'Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'Enter', 'KeyL'];
+  const controls = ['KeyA', 'KeyD', 'KeyW', 'Space', 'KeyE', 'KeyR', 'KeyF', 'Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'Enter', 'KeyL'];
   if (!controls.includes(code)) return;
   const actor = onlineMode ? network.actor : state.active;
   const alreadyJumping = keyboardJumpHeld() || touchJumpActor === actor;
@@ -710,7 +710,7 @@ document.addEventListener('keydown', event => {
     if (interactionFor(ownState(), actor).kind === 'throw') startMouseAim('throw', code, actor);
     else dispatch({ type: 'grab', actor });
   }
-  if (code === 'KeyR') seedPress(actor, () => startMouseAim('throw', code, actor));
+  if (code === 'KeyR') seedPress(actor, () => { startMouseAim('throw', code, actor); mouseAim.seed = true; });
   if (['KeyF', 'KeyL'].includes(code)) startMouseAim('skill', code, actor);
 });
 function keyboardJumpHeld() {
@@ -968,12 +968,19 @@ function finishThrowAim(event, released) {
   if (throwAim?.pointer !== event.pointerId) return;
   updateThrowAim(event);
   const { actor, active, overCancel } = throwAim, aim = active ? throwVelocity() : null;
+  if (released && overCancel) stowCancelled(throwAim);
   clearThrowAim();
   if (!released || overCancel || viewport.blocked || modal || stageBusy() || rewind || actor !== touchActor()) return;
   if (!active && plantsHeldSeed(actor)) { dispatch({ type: 'plant', actor }); return; }
   dispatch(aim ? { type: 'grab', actor, aim } : { type: 'grab', actor });
 }
 
+// Cancelling an aim the seed button started puts the seed in Bloom's hand back into the count.
+function stowCancelled(aim) {
+  if (!aim?.seed || aim.kind === 'skill') return;
+  const view = ownState(), p = view?.actors[aim.actor];
+  if (p && view.objects.some(o => o.id === p.carrying && o.kind === 'seed')) dispatch({ type: 'stowSeed', actor: aim.actor }, true);
+}
 // A short press (no drag, or a key let go within SHORT_PRESS_MS) with a seed in hand beside an empty pit plants it.
 const SHORT_PRESS_MS = 250;
 const plantsHeldSeed = actor => { const view = ownState(); return seedActionFor(view, actor) === 'plant' && view.actors[actor].carrying !== null; };
@@ -995,7 +1002,7 @@ function finishMouseAim() {
   dispatch(velocity ? { type: 'grab', actor: aim.actor, aim: velocity } : { type: 'grab', actor: aim.actor });
 }
 
-const cancelAim = event => { event?.preventDefault(); clearSkillAim(); clearThrowAim(); cancelAimButton.setAttribute('aria-label', S.cancelAim); };
+const cancelAim = event => { event?.preventDefault(); stowCancelled(throwAim); clearSkillAim(); clearThrowAim(); cancelAimButton.setAttribute('aria-label', S.cancelAim); };
 cancelAimButton.addEventListener('pointerdown', cancelAim);
 cancelAimButton.addEventListener('click', () => cancelAim());
 // Each circle captures only its own pointer, so presses coexist with held movement and with each other.
@@ -1017,8 +1024,8 @@ for (const button of document.querySelectorAll('[data-touch]')) {
       // interact button's, so both throws feel the same).
       const { clientX: x, clientY: y, pointerId: pointer } = event, actor = touchActor(), view = ownState();
       // A seed already in hand beside a pit: a short tap plants it, a drag still aims a throw.
-      if (seedActionFor(view, actor) === 'plant' && view.actors[actor].carrying !== null) throwAim = { pointer, button, actor, x, y, startX: x, startY: y, travel: Math.max(90, interactButton.clientWidth * 1.4), active: false, overCancel: false };
-      else seedPress(actor, () => { throwAim = { pointer, button, actor, x, y, startX: x, startY: y, travel: Math.max(90, interactButton.clientWidth * 1.4), active: false, overCancel: false }; });
+      if (seedActionFor(view, actor) === 'plant' && view.actors[actor].carrying !== null) throwAim = { pointer, button, actor, x, y, startX: x, startY: y, travel: Math.max(90, interactButton.clientWidth * 1.4), active: false, overCancel: false, seed: true };
+      else seedPress(actor, () => { throwAim = { pointer, button, actor, x, y, startX: x, startY: y, travel: Math.max(90, interactButton.clientWidth * 1.4), active: false, overCancel: false, seed: true }; });
     } else touchAction(button.dataset.touch);
     touchPointers.set(button, event.pointerId); button.classList.add('pressed');
   });
