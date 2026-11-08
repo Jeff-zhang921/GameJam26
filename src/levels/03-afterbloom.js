@@ -29,9 +29,12 @@ export default {
   // ledge, 230 from the step and 280 from the far cliff, out of jumping reach, so the vines are needed: at vine length
   // 160 their tips are 130 and 120 from it, an easy jump. Bloom can wake either vine from the lift's nearer end
   // (within 300).
+  // A crossbow stands on the lift's left end (x 1690-1730) and fires left, back at the near cliff, at 15-25 above the
+  // lift: low on the lift its bolts sweep vine 1 and pop on the high ledge's face, high on it they cross the ledge's
+  // last stretch and pop on the pillar. Still's Freeze over it slows its fire and its bolts.
   // Two movers in opposite phase cross the chasm and meet in the middle (a 30 gap). All three start running.
   movers: [
-    { axis: 'y', x: 1690, w: 140, y1: 250, y2: 330, speed: 1, dir: -1 },
+    { axis: 'y', x: 1690, w: 140, y1: 250, y2: 330, speed: 1, dir: -1, crossbow: { at: 20, dir: [-1, 0], every: 180 } },
     { x1: 2530, x2: 2830, y: 200, w: 120, speed: 1 },
     { x1: 2980, x2: 3280, y: 200, w: 120, speed: 1, dir: -1 },
   ],

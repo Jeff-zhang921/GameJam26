@@ -101,12 +101,16 @@ function makeLevel(index, players, unlocked, totalShards, collected = LEVELS.map
   // A pit marked `plantable: false` only holds the plant the level starts with (it cannot be planted again).
   // A pit with `wall: 1 | -1` sits on a wall face; its vine grows toward +x / −x.
   const pits = level.pits.map((p, i) => ({ id: `pit-${i}`, x: p.x, y: p.y, plant: null, ...(p.plantable === false && { plantable: false }), ...(p.wall && { wall: p.wall }) }));
+  const movers = level.movers.map((p, i) => makeMover(`mover-${i}`, p));
+  // A mover with a `crossbow` ({ at, dir, every }) carries a launcher standing on it, its middle `at` from the
+  // mover's left end; it is numbered after the level's own creatures.
+  const mounted = level.movers.flatMap((p, i) => p.crossbow ? [{ kind: 'launcher', ...p.crossbow, mover: movers[i].id, x: movers[i].x + p.crossbow.at, y: movers[i].y }] : []);
   const objects = [
     ...level.crates.map((p, i) => ({ kind: 'crate', id: `crate-${i}`, x: p.x, y: p.y, vx: 0, vy: 0, frozen: false, held: null, spawnX: p.x, spawnY: p.y })),
     ...level.seeds.map((p, i) => makeSeed(`seed-${i}`, p.x, p.y)),
-    ...level.movers.map((p, i) => makeMover(`mover-${i}`, p)),
+    ...movers,
     ...level.plants.map((p, i) => makePlant(`plant-${i}`, pits[p.pit], p)),
-    ...(level.enemies ?? []).map((e, i) => makeEnemy(e.kind, e, `${e.kind}-${i}`)),
+    ...[...(level.enemies ?? []), ...mounted].map((e, i) => makeEnemy(e.kind, e, `${e.kind}-${i}`)),
   ];
   const state = {
     level: index, levelId: level.id, unlocked, totalShards, collected: clone(collected), tick: 0, status: 'playing', active: 0,
@@ -534,6 +538,10 @@ function respawnX(state, o, half) {
   return o.spawnX;
 }
 
+// How far below a top a traveller's feet may be and still land on it (or step up onto it while walking). The same
+// tolerance decides when moving sideways into something is a wall, so there is no height at which feet neither
+// land on a top nor stop against its side.
+const STEP_UP = 5;
 function moveActors(state) {
   const solid = surfaces(state);
   for (const p of state.actors) {
@@ -552,14 +560,21 @@ function moveActors(state) {
     const oldX = p.x;
     p.x = Math.max(22, Math.min(state.width - 22, p.x + p.vx));
     const body = () => ({ x: p.x - 15, y: p.y - 52, w: 30, h: 51 });
-    const crates = state.objects.filter(o => (o.kind === 'crate' && o.held === null) || isSolidEnemy(o)).map(o => o.kind === 'crate' ? { id: o.id, x: o.x - 27, y: o.y - 27, w: 54, h: 54 } : { id: o.id, ...enemyBox(o) });
+    // Loose crates, solid creatures and moving platforms are solid on every side. Something that has moved into a
+    // traveller (`inside`) only lets them out of it, so a lift coming down on someone never traps them.
+    const crates = state.objects.filter(o => (o.kind === 'crate' && o.held === null) || o.kind === 'mover' || isSolidEnemy(o))
+      .map(o => o.kind === 'crate' ? { id: o.id, x: o.x - 27, y: o.y - 27, w: 54, h: 54 } : o.kind === 'mover' ? { id: o.id, x: o.x, y: o.y, w: o.w, h: 20 } : { id: o.id, ...enemyBox(o) });
     const inside = crates.filter(c => rectOverlap({ x: oldX - 15, y: p.y - 52, w: 30, h: 51 }, c));
     // A mushroom that grows into you only lets you walk out of it.
     const stems = stemBoxes(state);
-    const inStem = stems.filter(s => rectOverlap({ x: oldX - 15, y: p.y - 52, w: 30, h: 51 }, s) && p.y > s.y + 9);
-    for (const f of state.platforms) if (rectOverlap(body(), f) && p.y > f.y + 9) p.x = oldX;
-    for (const c of crates) if (!inside.includes(c) && rectOverlap(body(), c) && p.y > c.y + 9) p.x = oldX;
-    for (const s of stems) if (inStem.includes(s) ? Math.abs(p.x - (s.x + s.w / 2)) < Math.abs(oldX - (s.x + s.w / 2)) : rectOverlap(body(), s) && p.y > s.y + 9) p.x = oldX;
+    const inStem = stems.filter(s => rectOverlap({ x: oldX - 15, y: p.y - 52, w: 30, h: 51 }, s) && p.y > s.y + STEP_UP);
+    // Moving into something is only allowed when the landing below will set you on its top this tick: you are not
+    // rising and your feet are at most STEP_UP below it. Anything else is a wall, so feet that have not reached a
+    // top never slip into its side.
+    const wall = f => rectOverlap(body(), f) && (p.vy < 0 || p.y > f.y + STEP_UP);
+    for (const f of state.platforms) if (wall(f)) p.x = oldX;
+    for (const c of crates) if (!inside.includes(c) && wall(c)) p.x = oldX;
+    for (const s of stems) if (inStem.includes(s) ? Math.abs(p.x - (s.x + s.w / 2)) < Math.abs(oldX - (s.x + s.w / 2)) : wall(s)) p.x = oldX;
     // The traveller's own steps this tick (walls and edges included, being carried not): pace-keeping objects follow it.
     p.stride = p.x - oldX;
     if (p.move && state.tick % 18 === 0) {
@@ -571,10 +586,11 @@ function moveActors(state) {
     const impact = p.vy;
     const airborne = !p.grounded;
     p.y += p.vy;
-    // Crates, platforms marked `ceiling` and vines stop a rising head (a vine is only standable from above).
+    // Every platform's underside, crates, moving platforms and vines stop a rising head (a vine is only standable
+    // from above): nothing can be jumped through from below.
     const ceilings = [
       ...crates.filter(c => !inside.includes(c)),
-      ...state.platforms.filter(f => f.ceiling),
+      ...state.platforms,
       ...state.objects.filter(o => o.kind === 'plant' && o.wall && o.height > 0).map(vineStrip),
     ];
     if (p.vy < 0) for (const c of ceilings) if (p.x + 15 > c.x && p.x - 15 < c.x + c.w && previousY - 52 >= c.y + c.h && p.y - 52 < c.y + c.h) { p.y = c.y + c.h + 52; p.vy = 0; event(state, 'collision', p.x, p.y, { actor: p.id }); }
@@ -583,7 +599,7 @@ function moveActors(state) {
       if (f.id === p.carrying) continue;
       // A surface rising into a ceiling cannot lift you through it.
       if (p.vy >= 0 && f.y < p.y && [...state.platforms, ...crates].some(c => c.id !== f.id && p.x + 15 > c.x && p.x - 15 < c.x + c.w && previousY - 52 >= c.y + c.h - 0.01 && f.y - 52 < c.y + c.h)) continue;
-      if (p.vy >= 0 && previousY <= f.y + 5 && p.y >= f.y && p.x + 15 > f.x && p.x - 15 < f.x + f.w) {
+      if (p.vy >= 0 && previousY <= f.y + STEP_UP && p.y >= f.y && p.x + 15 > f.x && p.x - 15 < f.x + f.w) {
         const o = find(state, f.id);
         // A loose crate that is itself falling is not ground: you fall together (no jumping off it, no
         // being dragged along), and if it resets or is taken away you simply keep falling.
@@ -646,7 +662,7 @@ function carryRiders(state, before, skip) {
     if (dy < 0 && solids.some(f => rectOverlap(body(p.x, p.y + dy), f) && p.y - 52 >= f.y + f.h - 0.01)) { p.grounded = false; p.vy = 0; }
     else p.y += dy;
     const x = Math.max(22, Math.min(state.width - 22, p.x + dx));
-    if (!solids.some(f => rectOverlap(body(x, p.y), f) && p.y > f.y + 9)) p.x = x;
+    if (!solids.some(f => rectOverlap(body(x, p.y), f) && p.y > f.y + STEP_UP)) p.x = x;
   }
 }
 

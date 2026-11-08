@@ -130,7 +130,7 @@ export function createRenderer(canvas, S) {
   // either side of the emblem, right end. Tiles alternate mirrored so every seam meets a matching edge, and the
   // tile next to the emblem is the one cut beside it, so those seams are seamless. Ends that touch the world
   // edge stay open.
-  function groundCap(p, img) {
+  function groundCap(p, img, closed = {}) {
     const GROUND = theme.ground.surface, k = GROUND.scale, h = GROUND.height * k, top = p.y - GROUND.walk * k, sourceY = GROUND.y ?? 0;
     const width = ([from, to]) => (to - from) * k;
     const piece = ([from, to], x, w, mirror = false) => {
@@ -143,7 +143,8 @@ export function createRenderer(canvas, S) {
       const count = Math.max(1, Math.round(span / width(src))), tile = span / count;
       for (let i = 0; i < count; i++) piece(src, x0 + i * tile, tile + .5, (fromRight ? count - 1 - i : i) % 2 === 1);
     };
-    const openLeft = p.x <= 0, openRight = p.x + p.w >= worldWidth;
+    // An end against a taller neighbour's wall is open too: the moss runs on to the wall.
+    const openLeft = p.x <= 0 || closed.left, openRight = p.x + p.w >= worldWidth || closed.right;
     const L = openLeft ? 0 : width(GROUND.left), R = openRight ? 0 : width(GROUND.right);
     const x0 = p.x + L, x1 = p.x + p.w - R, E = GROUND.emblem ? width(GROUND.emblem) : 0;
     if (GROUND.emblem && x1 - x0 >= E + width(GROUND.fillR)) {
@@ -160,6 +161,21 @@ export function createRenderer(canvas, S) {
   const FILL_SHADE = { from: .12, to: .72, depth: 190 };
   // The fill starts just under the moss, behind the strip's lower stones (which fade into it).
   const FILL_TOP = 10;
+  // The fill sits FILL_INSET inside a ledge's ends, which step inward below the moss. An end that rests against a
+  // neighbour at least as tall (the start ground against the high ledge's wall, a step jutting from a cliff) is
+  // closed instead: its fill runs on under the neighbour's inset, so no background shows through the seam.
+  const FILL_INSET = 12;
+  function closedSides(p, all = []) {
+    const against = side => all.some(q => q !== p && q.y <= p.y && q.y + q.h > p.y && Math.abs(side < 0 ? q.x + q.w - p.x : q.x - (p.x + p.w)) < 1);
+    return { left: p.x > 0 && against(-1), right: p.x + p.w < worldWidth && against(1) };
+  }
+  function fillSpan(p, all) {
+    const closed = closedSides(p, all);
+    return [
+      p.x <= 0 ? p.x : closed.left ? p.x - FILL_INSET : p.x + FILL_INSET,
+      p.x + p.w >= worldWidth ? p.x + p.w : closed.right ? p.x + p.w + FILL_INSET : p.x + p.w - FILL_INSET,
+    ];
+  }
   function groundFill(x, y, w, h, top = y) {
     const fill = theme.ground.fill, img = art(fill.src);
     if (w <= 0 || h <= 0 || !img) return;
@@ -198,19 +214,20 @@ export function createRenderer(canvas, S) {
     for (let i = 0; i < courses; i++, y += course) row(l0, l1 - l0, y);
     row(l1, g.y + g.height - l1, y);
   }
-  function platform(p) {
+  // `all` is every platform of the courtyard, to find the ends that rest against a neighbour.
+  function platform(p, all = []) {
     const surface = art(theme.ground.surface.src);
     if (theme.ground.kind === 'bridge') {
       if (surface) bridge(p, surface);
       return;
     }
     if (surface && art(theme.ground.fill.src)) {
-      // The fill sits a little inside the ledge's ends, which step inward below the moss.
-      const x0 = p.x <= 0 ? p.x : p.x + 12, x1 = p.x + p.w >= worldWidth ? p.x + p.w : p.x + p.w - 12;
+      const closed = closedSides(p, all), [x0, x1] = fillSpan(p, all);
       groundFill(x0, p.y + FILL_TOP, x1 - x0, p.h - FILL_TOP);
-      if (p.x > 0) line(ctx, [[x0 + 1, p.y + 40], [x0 + 1, p.y + p.h]], '#15141c80', 2);
-      if (p.x + p.w < worldWidth) line(ctx, [[x1 - 1, p.y + 40], [x1 - 1, p.y + p.h]], '#15141c80', 2);
-      return groundCap(p, surface);
+      // Its open faces get a dark edge; a closed end has none (the neighbour's face carries on there).
+      if (p.x > 0 && !closed.left) line(ctx, [[x0 + 1, p.y + 40], [x0 + 1, p.y + p.h]], '#15141c80', 2);
+      if (p.x + p.w < worldWidth && !closed.right) line(ctx, [[x1 - 1, p.y + 40], [x1 - 1, p.y + p.h]], '#15141c80', 2);
+      return groundCap(p, surface, closed);
     }
     const g = ctx.createLinearGradient(0, p.y, 0, 650); g.addColorStop(0, '#35534c'); g.addColorStop(1, '#123239'); ctx.fillStyle = g; ctx.fillRect(p.x, p.y, p.w, p.h);
     ctx.fillStyle = '#b9c0a4'; ctx.fillRect(p.x, p.y, p.w, 8); ctx.fillStyle = '#647c66'; ctx.fillRect(p.x, p.y + 8, p.w, 13); ctx.fillStyle = '#1b3839'; ctx.fillRect(p.x, p.y + 21, p.w, 6);
@@ -527,17 +544,17 @@ export function createRenderer(canvas, S) {
     if (theme.ground.kind === 'bridge') {
       if (bottom > H) {
         ctx.save(); ctx.beginPath(); ctx.rect(left, H, right - left, bottom - H); ctx.clip();
-        state.platforms.forEach(platform);
+        for (const p of state.platforms) platform(p, state.platforms);
         ctx.restore();
       }
       return;
     }
     for (const p of state.platforms) {
       const x0 = p.x <= 0 && left < 0 ? left : p.x, x1 = p.x + p.w >= W && right > W ? right : p.x + p.w;
-      if (x0 !== p.x || x1 !== p.x + p.w) platform({ ...p, x: x0, w: x1 - x0 });
+      if (x0 !== p.x || x1 !== p.x + p.w) platform({ ...p, x: x0, w: x1 - x0 }, state.platforms);
       if (bottom > H && p.y + p.h >= H - 1) {
         // The fill below the world lines up with the fill above it, inset like it at ends that are not open.
-        const f0 = p.x <= 0 ? x0 : p.x + 12, f1 = p.x + p.w >= W ? x1 : p.x + p.w - 12;
+        const [s0, s1] = fillSpan(p, state.platforms), f0 = p.x <= 0 ? x0 : s0, f1 = p.x + p.w >= W ? x1 : s1;
         if (art(theme.ground.fill.src)) groundFill(f0, H - 2, f1 - f0, bottom - H + 2, p.y + FILL_TOP); // the same gradient, continued
         // While the ground texture loads, the mirrored scene behind it already covers the viewport.
       }
@@ -792,7 +809,7 @@ export function createRenderer(canvas, S) {
     ctx.setTransform(k, 0, 0, k, ox, oy);
     ctx.drawImage(background, 0, 0);
     if (theme.background.draw === 'greenhouse') { ctx.save(); ctx.translate(780, 158); ctx.rotate(t * .00003); line(ctx, [[0, 9], [0, -62]], '#d8c99777', 2); line(ctx, [[-28, 0], [8, 0]], '#d8c99777', 2); circle(ctx, 0, 0, 3, '#cfc7a1'); ctx.restore(); }
-    state.platforms.forEach(platform);
+    for (const p of state.platforms) platform(p, state.platforms);
     for (const a of state.freezeAreas ?? []) freezeArea(a, t);
     const target = options.target;
     // Touch: bracket every object the active character can reach (what a tap would act on).
