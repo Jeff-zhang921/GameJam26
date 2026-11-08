@@ -43,6 +43,7 @@ const settle = (s, limit = 600) => { for (let i = 0; i < limit && s.actors.some(
 test('every charge pickup stays overhead when standing and can be reached with a jump tap', () => {
   for (let level = 0; level < levelCount; level++) {
     for (const pickup of setup({ level }).pickups) {
+      if (pickup.onMaturePlant) continue; // The full-height mushroom pickup has its own route test.
       let s = setup({ level });
       const platform = s.platforms.find(p => pickup.x >= p.x && pickup.x <= p.x + p.w && pickup.y < p.y);
       expect(platform.y - pickup.y).toBe(88);
@@ -96,7 +97,7 @@ describe('starting Freeze charges are enough for every crossing that needs them'
     s = send(s, 'ability', 1, { target: 'plant-0' }); s = tick(s, 2);
     expect(s.flags.withered).toBe(true);
     // Bloom plants the seed in the far pit and wakes it with both standing on it; they ride it up and jump to the gate's ledge.
-    s = walkTo(s, 1, 1530); s = send(s, 'grab', 1);
+    s = walkTo(s, 1, 1530); s = send(s, 'plant', 1);
     expect(s.seeds).toBe(0);
     s = walkTo(s, 0, 1540); s = tick(s, 3);
     s = send(s, 'ability', 1, { target: 'plant-1' });
@@ -146,7 +147,7 @@ describe('starting Freeze charges are enough for every crossing that needs them'
   test('every courtyard but the last starts with one or two charges; crystals add spares', () => {
     const counts = [0, 1, 2, 3, 4].map(level => { const s = setup({ level }); return [s.freezeCharges, s.pickups.filter(c => c.kind === 'frost').length]; });
     // Courtyard 4: one charge and one hourglass (Freeze is optional there).
-    // Courtyard 5 has none: only footsteps move time there.
-    expect(counts).toEqual([[2, 1], [1, 2], [1, 2], [1, 1], [0, 0]]);
+    // Courtyard 5 starts at zero, with an hourglass above the mushroom.
+    expect(counts).toEqual([[2, 1], [1, 2], [1, 2], [1, 1], [0, 1]]);
   });
 });

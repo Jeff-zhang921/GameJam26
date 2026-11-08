@@ -243,8 +243,8 @@ describe('role-specific resources', () => {
     for (let level = 0; level < 5; level++) {
       const s = setup({ level });
       expect(s.actors[BLOOM].carrying).toBe(level === 2 ? 'seed-taken-0' : null);
-      // Courtyard 5 has no abilities at all: only footsteps move time there (see level-five.test.js).
-      if (level === 4) { expect(s.bloomCharges).toBe(0); continue; }
+      // Courtyard 5 has a single charge for the rope (see level-five.test.js).
+      if (level === 4) { expect(s.bloomCharges).toBe(1); continue; }
       expect(s.bloomCharges).toBe(3);
       // Courtyard 4 has neither seeds nor a bolt: every cast there rewinds a plant (see level-four.test.js).
       if (level === 3) continue;

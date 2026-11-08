@@ -87,6 +87,8 @@ const effects = {
   guardStrike: { kind: 'dust', color: '#d8c495', count: 16, speed: 85, life: .4 },
   checkpoint: { kind: 'spark', color: '#f4e2a6', count: 16, speed: 70, life: .9 },
   pop: { kind: 'dust', color: '#e8deb6', count: 8, speed: 40, life: .35 },
+  ropeFray: { kind: 'dust', color: '#e7bf83', count: 6, speed: 58, life: .4 },
+  ropeSnap: { kind: 'dust', color: '#f5d49b', count: 16, speed: 92, life: .55 },
   spawn: { kind: 'dust', color: '#c9b58a', count: 10, speed: 45, life: .5 },
 };
 

@@ -9,6 +9,7 @@ export const meta = {
   plant: { maxHeight: 235, springHeight: 45, growTicks: 960, matureTicks: 480, witherTicks: 480 },
   // A vine grows horizontally out of a wall pit, as long as `maxLength`, on the mushroom's clock.
   vine: { maxLength: 240 },
+  rope: { breakTicks: 120, frayAt: [.3, .67], stretch: 14 },
   // Walking time: a plant that keeps a traveller's pace never vanishes; its age stays between `minAge` (a sprout
   // still showing) and the end of its wilt.
   walk: { minAge: 40 },
@@ -92,6 +93,7 @@ const makeSeed = (id, x, y) => ({ kind: 'seed', id, x, y, vx: 0, vy: 0, frozen: 
 // unless the level gives it a `speed`; `dir: -1` starts it at the far end heading back.
 function makeMover(id, p) {
   const dir = p.dir ?? 1, base = { kind: 'mover', id, w: p.w, dir, speed: p.speed ?? 0, frozen: false, ...(p.walker !== undefined && { ...walking(p), from: dir }) };
+  if (p.waitsFor) base.waitsFor = p.waitsFor;
   return p.axis === 'y' ? { ...base, axis: 'y', x: p.x, y: dir < 0 ? p.y2 : p.y1, y1: p.y1, y2: p.y2 }
     : { ...base, x: dir < 0 ? p.x2 : p.x1, y: p.y, x1: p.x1, x2: p.x2 };
 }
@@ -105,8 +107,20 @@ function makeLevel(index, players, unlocked, totalShards, collected = LEVELS.map
   // A mover with a `crossbow` ({ at, dir, every }) carries a launcher standing on it, its middle `at` from the
   // mover's left end; it is numbered after the level's own creatures.
   const mounted = level.movers.flatMap((p, i) => p.crossbow ? [{ kind: 'launcher', ...p.crossbow, mover: movers[i].id, x: movers[i].x + p.crossbow.at, y: movers[i].y }] : []);
+  const crates = level.crates.map((p, i) => ({
+    kind: 'crate', id: `crate-${i}`, x: p.x, y: p.y, vx: 0, vy: 0, frozen: false, held: null,
+    spawnX: p.x, spawnY: p.respawnY ?? p.y, ...(p.ropeTop !== undefined && { rope: `rope-${i}` }),
+  }));
+  const ropes = level.crates.flatMap((p, i) => {
+    if (p.ropeTop === undefined) return [];
+    const crate = crates[i], bottom = crate.y - 27;
+    return [{
+      kind: 'rope', id: crate.rope, crate: crate.id, x: crate.x, y: (p.ropeTop + bottom) / 2,
+      top: p.ropeTop, bottom, restBottom: bottom, age: 0, speed: 0, frozen: false,
+    }];
+  });
   const objects = [
-    ...level.crates.map((p, i) => ({ kind: 'crate', id: `crate-${i}`, x: p.x, y: p.y, vx: 0, vy: 0, frozen: false, held: null, spawnX: p.x, spawnY: p.y })),
+    ...crates, ...ropes,
     ...level.seeds.map((p, i) => makeSeed(`seed-${i}`, p.x, p.y)),
     ...movers,
     ...level.plants.map((p, i) => makePlant(`plant-${i}`, pits[p.pit], p)),
@@ -160,12 +174,13 @@ function actorAllowed(state, playerId, actor) {
   return index >= 0 && (state.playerIds.length === 1 || actor === index);
 }
 
-// Objects a time ability can ever act on (crates, plants, moving platforms, creatures).
-const timeObject = o => o.kind === 'plant' || o.kind === 'mover' || o.kind === 'crate' || isEnemy(o);
+// Objects a time ability can ever act on.
+const timeObject = o => o.kind === 'plant' || o.kind === 'mover' || o.kind === 'crate' || o.kind === 'rope' || isEnemy(o);
 // Still's area slows anything; Bloom hastens things that have a clock of their own (not crates).
 // In a rewinding courtyard Bloom's backwards time only takes hold of plants.
 // Something keeping a traveller's pace answers only to their steps.
-const canAffect = (state, actor, o) => timeObject(o) && o.walker === undefined && (actor === STILL || (o.kind !== 'crate' && (!state.bloomReverses || o.kind === 'plant')));
+const canAffect = (state, actor, o) => timeObject(o) && o.walker === undefined && (actor === STILL ||
+  (o.kind !== 'crate' && (!state.bloomReverses || o.kind === 'plant') && (!state.walkingTime || o.kind === 'rope')));
 
 // Everything this actor's ability can reach right now.
 export function abilityTargets(state, actor) {
@@ -189,6 +204,7 @@ export function abilityCheck(state, actor, id) {
 // Collision-ish box of an object, used for tapping and for Freeze Area coverage.
 export function objectBox(o) {
   if (o.kind === 'crate') return { x: o.x - 27, y: o.y - 27, w: 54, h: 54 };
+  if (o.kind === 'rope') return { x: o.x - 7, y: o.top, w: 14, h: o.bottom - o.top };
   if (o.kind === 'seed') return { x: o.x - 10, y: o.y - 10, w: 20, h: 20 };
   if (o.kind === 'mover') return { x: o.x, y: o.y - 6, w: o.w, h: 26 };
   if (o.kind === 'plant' && o.wall) { const w = Math.max(44, o.height); return { x: o.wall === 1 ? o.x : o.x - w, y: o.base - 20, w, h: 36 }; }
@@ -265,7 +281,7 @@ export function abilityTarget(state, actor, action = {}) {
 }
 
 function pickable(state, p) {
-  return state.objects.filter(o => o.kind === 'crate' && o.held === null && dist(p, o) < meta.controls.reach)
+  return state.objects.filter(o => o.kind === 'crate' && o.held === null && !o.rope && dist(p, o) < meta.controls.reach)
     .sort((a, b) => dist(p, a) - dist(p, b));
 }
 
@@ -426,6 +442,7 @@ function surfaces(state) {
 // being carried does not count) times its pace. Null for an object with a clock of its own.
 function walkerTime(state, o) {
   if (o.walker === undefined) return null;
+  if (o.waitsFor && find(state, o.waitsFor)) return 0;
   return (state.actors[o.walker]?.stride ?? 0) * o.pace * (o.frozen ? meta.time.frozenRate : 1);
 }
 
@@ -441,6 +458,24 @@ function ageObjects(state) {
   for (const o of [...state.objects]) {
     const slow = o.frozen ? meta.time.frozenRate : 1, walked = walkerTime(state, o);
     if (walked !== null) o.clock += walked;
+    if (o.kind === 'rope' && o.speed > 0) {
+      const { breakTicks, frayAt, stretch } = meta.rope;
+      const previous = o.age;
+      o.age += o.speed * slow;
+      const crate = find(state, o.crate);
+      const wear = Math.min(1, o.age / breakTicks);
+      o.bottom = o.restBottom + stretch * wear * wear;
+      o.y = (o.top + o.bottom) / 2;
+      if (crate) crate.y = o.bottom + 27;
+      const split = o.top + (o.bottom - o.top) * .64;
+      if (o.age >= breakTicks) {
+        if (crate) delete crate.rope;
+        state.objects = state.objects.filter(item => item !== o);
+        event(state, 'ropeSnap', o.x, split);
+      } else if (frayAt.some(fraction => previous < fraction * breakTicks && wear >= fraction)) {
+        event(state, 'ropeFray', o.x, split);
+      }
+    }
     if (o.kind === 'plant' && (walked !== null ? walked !== 0 : o.speed !== 0)) {
       const { growTicks, matureTicks, witherTicks } = meta.plant;
       if (walked !== null) o.age = Math.max(meta.walk.minAge, Math.min(growTicks + matureTicks + witherTicks, o.age + walked));
@@ -534,8 +569,8 @@ function moveItems(state) {
   for (const o of [...state.objects]) {
     if (o.kind !== 'crate' && o.kind !== 'seed') continue;
     const crate = o.kind === 'crate', half = crate ? 27 : 10;
-    // Carried items take no physics step; attachHeld places them after their carrier has moved.
-    if (o.held !== null) continue;
+    // Carried items follow their carrier. A suspended crate stays fixed until its rope breaks.
+    if (o.held !== null || o.rope) continue;
     const { landed } = stepItem(state, o, all);
     // A thrown seed that reaches an empty pit plants it; one that lands anywhere else just lies there.
     if (o.kind === 'seed' && o.thrown) {
@@ -757,7 +792,12 @@ function collectPickups(state) {
     if (c.taken) continue;
     const frost = c.kind === 'frost';
     const player = state.actors[frost ? STILL : BLOOM];
-    if (Math.hypot(player.x - c.x, player.y - 26 - c.y) >= meta.charges.pickupReach) continue;
+    if (c.onMaturePlant) {
+      const plant = find(state, c.onMaturePlant);
+      if (!plant || plant.height < meta.plant.maxHeight) continue;
+      // Riders can stand anywhere on the mature cap. An airborne traveller can touch the 36-unit badge.
+      if (player.on !== plant.id && !circleTouches({ ...c, radius: 18 }, hurtBox(player))) continue;
+    } else if (Math.hypot(player.x - c.x, player.y - 26 - c.y) >= meta.charges.pickupReach) continue;
     c.taken = true;
     state[frost ? 'freezeCharges' : 'bloomCharges']++;
     event(state, c.kind, c.x, c.y);
