@@ -15,6 +15,7 @@ ENV NODE_ENV=production
 ENV HOST=0.0.0.0
 COPY --from=build --chown=bun:bun /app/package.json ./package.json
 COPY --chown=bun:bun server.js ./server.js
+COPY --from=build --chown=bun:bun /app/public/portal.js ./public/portal.js
 COPY --from=build --chown=bun:bun /app/src ./src
 COPY --from=build --chown=bun:bun /app/dist ./dist
 USER bun
