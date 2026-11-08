@@ -101,20 +101,30 @@ describe('courtyard 2 has no shortcuts', () => {
 });
 
 describe('courtyard 2 route', () => {
-  // Steer `who` onto the guard's head with a jump, then jump on up to the middle ledge.
-  function climb(s, who) {
-    s = act(s, { type: 'jump', actor: who });
-    let onGuard = false;
-    for (let i = 0; i < 240; i++) {
+  // Jump together so neither traveller waits within striking distance on the ground.
+  function climbTogether(s) {
+    const jumpedFromGuard = new Set();
+    for (const who of [STILL, BLOOM]) s = act(s, { type: 'jump', actor: who });
+    for (let i = 0; i < 240 && !s.actors.every(a => a.on === 'platform-2'); i++) {
+      for (const who of [STILL, BLOOM]) {
+        const a = s.actors[who], g = guard(s);
+        if (a.on === 'platform-2' || jumpedFromGuard.has(who)) continue;
+        if (a.on === g.id) {
+          jumpedFromGuard.add(who);
+          s = act(s, { type: 'jumpRelease', actor: who });
+          s = act(s, { type: 'move', actor: who, dir: 1 });
+          s = act(s, { type: 'jump', actor: who });
+        } else {
+          const dx = g.x - a.x;
+          s = act(s, { type: 'move', actor: who, dir: Math.abs(dx) < 5 ? 0 : Math.sign(dx) });
+        }
+      }
       s = tick(s);
-      const a = s.actors[who];
-      if (a.on === 'platform-2') return act(s, { type: 'move', actor: who, dir: 0 });
-      if (onGuard) continue;
-      if (a.on === guard(s).id) {
-        onGuard = true;
-        s = act(s, { type: 'jumpRelease', actor: who }); s = act(s, { type: 'move', actor: who, dir: 1 }); s = act(s, { type: 'jump', actor: who });
-      } else { const dx = guard(s).x - a.x; s = act(s, { type: 'move', actor: who, dir: Math.abs(dx) < 5 ? 0 : Math.sign(dx) }); }
+      for (const a of s.actors) {
+        if (a.on === 'platform-2' && a.move) s = act(s, { type: 'move', actor: a.id, dir: 0 });
+      }
     }
+    expect(jumpedFromGuard.size).toBe(2);
     return s;
   }
 
@@ -136,9 +146,9 @@ describe('courtyard 2 route', () => {
     s = act(s, { type: 'ability', actor: STILL, x: guard(s).x, y: guard(s).y - 25 });
     s = tick(s, 5);
     expect(guard(s).frozen).toBe(true);
-    s = climb(s, BLOOM);
+    s = climbTogether(s);
     s = act(s, { type: 'jumpRelease', actor: BLOOM });
-    s = climb(s, STILL);
+    s = act(s, { type: 'jumpRelease', actor: STILL });
     expect(s.actors.map(a => a.on)).toEqual(['platform-2', 'platform-2']);
     expect(s.events.some(e => e.kind === 'hit')).toBe(false);
     expect(s.flags.guardRide).toBe(true);

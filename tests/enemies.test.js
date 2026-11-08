@@ -19,6 +19,25 @@ function arena(enemies, actors = [{ x: 60 }, { x: 1220 }]) {
 }
 
 describe('guards', () => {
+  test('normal chase moves at the same speed as a grounded player', () => {
+    const s = arena([{ kind: 'guard', id: 'g', x: 500, y: 540 }], [{ x: 630, move: 1 }, { x: 60 }]);
+    const next = step(s);
+    expect(next.actors[0].x - s.actors[0].x).toBeCloseTo(meta.controls.speed);
+    expect(get(next, 'g').x - get(s, 'g').x).toBeCloseTo(next.actors[0].x - s.actors[0].x);
+  });
+
+  test('a hit breaks the guard lock even when the player respawns on the same floor', () => {
+    let s = arena([{ kind: 'guard', id: 'g', x: 300, y: 540 }], [{ x: 240, spawnX: 250, spawnY: 540 }, { x: 450 }]);
+    s = step(s);
+    expect(get(s, 'g').target).toBe(0);
+    Object.assign(get(s, 'g'), { attack: ENEMY.guard.attackEvery - 1 });
+    s.actors[0].x = get(s, 'g').x;
+    s = step(s);
+    expect(s.actors[0]).toMatchObject({ x: 250, y: 540, invuln: meta.time.invulnTicks });
+    s = step(s);
+    expect(get(s, 'g').target).toBe(1);
+  });
+
   test('patrol back and forth without leaving their range', () => {
     let s = arena([{ kind: 'guard', id: 'g', x: 500, y: 540, minX: 450, maxX: 550 }]);
     let min = Infinity, max = -Infinity;
@@ -45,7 +64,7 @@ describe('guards', () => {
     s = step(s, 60);
     const moved = Math.abs(get(s, 'g').x - x);
     expect(moved).toBeGreaterThan(0);
-    expect(moved).toBeLessThanOrEqual(60 * ENEMY.guard.chase * meta.time.frozenRate + 1e-9);
+    expect(moved).toBeLessThanOrEqual(60 * meta.controls.speed * meta.time.frozenRate + 1e-9);
     expect(isHazard(get(s, 'g'))).toBe(false);
     Object.assign(s.actors[0], { x: get(s, 'g').x, y: 540 - ENEMY.guard.h - 1, vy: 0, grounded: false, on: null });
     s = step(s, 3);
@@ -221,7 +240,7 @@ describe('nests and mites', () => {
 describe('checkpoints and hits', () => {
   const withCheckpoint = (enemies, actors) => {
     const s = arena(enemies, actors);
-    s.checkpoints = [{ id: 'cp-0', x: 520, y: 540, lit: false }]; s.checkpoint = null;
+    s.checkpoints = [{ id: 'cp-0', x: 520, y: 540, lit: false }];
     return s;
   };
   const hitsOver = (s, n, each = x => x) => {
@@ -230,17 +249,45 @@ describe('checkpoints and hits', () => {
     return { s, hits };
   };
 
-  test('an actor touching a checkpoint lights it for both, and hits and falls return there', () => {
+  test('only the traveller touching a checkpoint saves there; a partner hit keeps both saves separate', () => {
     let s = withCheckpoint([{ kind: 'dart', id: 'd', x: 300, y: 540, dx: 1, dy: 0 }], [{ x: 520 }, { x: 60 }]);
     s = step(s);
-    expect(s.checkpoint).toBe('cp-0');
+    expect(s.actors.map(p => p.checkpoint)).toEqual(['cp-0', null]);
     expect(s.checkpoints[0].lit).toBe(true);
     Object.assign(s.actors[1], { x: get(s, 'd').x, y: 540 });
     s = step(s);
-    expect(s.actors[1]).toMatchObject({ x: 538, y: 540 });
+    expect(s.actors[1]).toMatchObject({ x: s.actors[1].spawnX, y: s.actors[1].spawnY, checkpoint: null });
+    expect(s.actors[0]).toMatchObject({ x: 520, y: 540, checkpoint: 'cp-0' });
     Object.assign(s.actors[0], { x: 680, y: 720 });
     s = step(s);
     expect(s.actors[0]).toMatchObject({ x: 502, y: 540 });
+  });
+
+  test('partners can save at different checkpoints and return independently after falling', () => {
+    let s = withCheckpoint([], [{ x: 520 }, { x: 840 }]);
+    s.checkpoints.push({ id: 'cp-1', x: 840, y: 540, lit: false });
+    s = step(s);
+    expect(s.actors.map(p => p.checkpoint)).toEqual(['cp-0', 'cp-1']);
+    Object.assign(s.actors[0], { x: 700, y: 720 });
+    s = step(s);
+    expect(s.actors[0]).toMatchObject({ x: 502, y: 540 });
+    expect(s.actors[1]).toMatchObject({ x: 840, y: 540, checkpoint: 'cp-1' });
+    Object.assign(s.actors[1], { x: 700, y: 720 });
+    s = step(s);
+    expect(s.actors[0]).toMatchObject({ x: 502, y: 540, checkpoint: 'cp-0' });
+    expect(s.actors[1]).toMatchObject({ x: 858, y: 540, checkpoint: 'cp-1' });
+    expect(s.events.filter(e => e.kind === 'checkpoint').map(e => e.actor)).toEqual([0, 1]);
+  });
+
+  test('each traveller can activate an already lit checkpoint', () => {
+    let s = withCheckpoint([], [{ x: 520 }, { x: 60 }]);
+    s = step(s);
+    s.actors[1].x = 520;
+    s = step(s);
+    expect(s.actors.map(p => p.checkpoint)).toEqual(['cp-0', 'cp-0']);
+    s.actors.forEach(p => { p.y = 720; });
+    s = step(s);
+    expect(s.actors.map(p => p.x)).toEqual([502, 538]);
   });
 
   test('a hit drops what the actor was carrying and grants a moment of invulnerability', () => {
@@ -286,9 +333,9 @@ describe('checkpoints and hits', () => {
   test('restart puts lit checkpoints out', () => {
     let s = withCheckpoint([], [{ x: 520 }, { x: 60 }]);
     s = step(s, 30);
-    expect(s.checkpoint).toBe('cp-0');
+    expect(s.actors[0].checkpoint).toBe('cp-0');
     s = action(s, { type: 'restart' });
-    expect(s.checkpoint).toBe(null);
+    expect(s.actors.every(p => p.checkpoint === null)).toBe(true);
     expect(s.checkpoints.every(c => !c.lit)).toBe(true);
   });
 });

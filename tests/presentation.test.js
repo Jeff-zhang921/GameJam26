@@ -83,6 +83,25 @@ describe('camera', () => {
     expect(camera.update(s, { ...viewport, reduced: true })).toEqual(initial);
     expect(initial).toMatchObject({ scale: 1, x: 640, y: 320, offsetX: 0, offsetY: 0 });
   });
+
+  test('high jumps stay visible above the map and tracking returns to the ground', () => {
+    for (const size of [{ width: 1280, height: 640 }, { width: 1024, height: 768 }, { width: 667, height: 375 }]) {
+      for (const mode of ['solo', 'coop']) for (const reduced of [false, true]) {
+        const s = state(), camera = createCamera(), view = { ...viewport, ...size, mode, reduced };
+        const initial = { ...camera.update(s, view) };
+        for (const y of [400, 180, 50, -120, -220, -120, 50, 180, 400, 520]) {
+          s.actors[0].y = y;
+          const cam = camera.update(s, view);
+          for (const actor of mode === 'coop' ? s.actors : [s.actors[0]]) {
+            expect((actor.y - 52) * cam.scale + cam.offsetY).toBeGreaterThanOrEqual(-1e-6);
+            expect(actor.y * cam.scale + cam.offsetY).toBeLessThanOrEqual(size.height + 1e-6);
+          }
+        }
+        const landed = camera.update(s, { ...view, resetCamera: true });
+        expect(landed).toEqual(initial);
+      }
+    }
+  });
 });
 
 describe('particles', () => {

@@ -82,9 +82,9 @@ function makeLevel(index, players, unlocked, totalShards, collected = LEVELS.map
   const state = {
     level: index, levelId: level.id, unlocked, totalShards, collected: clone(collected), tick: 0, status: 'playing', active: 0,
     playerIds: players, width: level.width ?? 1280, height: 640,
-    actors: level.spawn.map((p, i) => ({ id: i, x: p.x, y: p.y, vx: 0, vy: 0, facing: 1, grounded: true, on: 'ground', coyote: meta.controls.coyote, jumpBuffer: 0, jumpHeld: false, jumpCut: true, move: 0, carrying: null, invuln: 0, spawnX: p.x, spawnY: p.y })),
+    actors: level.spawn.map((p, i) => ({ id: i, x: p.x, y: p.y, vx: 0, vy: 0, facing: 1, grounded: true, on: 'ground', coyote: meta.controls.coyote, jumpBuffer: 0, jumpHeld: false, jumpCut: true, move: 0, carrying: null, invuln: 0, checkpoint: null, respawnTick: null, spawnX: p.x, spawnY: p.y })),
     platforms: clone(level.platforms), objects, pits, nextPlant: level.plants.length, nextEnemy: objects.length,
-    checkpoints: (level.checkpoints ?? []).map((c, i) => ({ id: `cp-${i}`, x: c.x, y: c.y, lit: false })), checkpoint: null,
+    checkpoints: (level.checkpoints ?? []).map((c, i) => ({ id: `cp-${i}`, x: c.x, y: c.y, lit: false })),
     exit: clone(level.exit), shards: level.shards.map((p, i) => ({ ...p, id: i, taken: false })),
     flags: { frozenTouched: false, treeLifted: false, withered: false, sproutJump: false, moverRide: false, dartRide: false, miteGone: false, guardRide: false },
     needs: clone(level.need), needsDone: 0, events: [], eventSeq: 0,
@@ -486,8 +486,8 @@ function moveActors(state) {
     if (p.jumpBuffer > 0) p.jumpBuffer--;
     if (!p.grounded && !wasGrounded && p.coyote > 0) p.coyote--;
     if (p.y > 710) { state.falls++; respawn(state, p, 'return'); }
-    for (const cp of state.checkpoints) if (state.checkpoint !== cp.id && rectOverlap(body(), { x: cp.x - 12, y: cp.y - 40, w: 24, h: 40 })) {
-      cp.lit = true; state.checkpoint = cp.id; event(state, 'checkpoint', cp.x, cp.y - 40);
+    for (const cp of state.checkpoints) if (p.checkpoint !== cp.id && rectOverlap(body(), { x: cp.x - 12, y: cp.y - 40, w: 24, h: 40 })) {
+      cp.lit = true; p.checkpoint = cp.id; event(state, 'checkpoint', cp.x, cp.y - 40, { actor: p.id });
     }
     if (p.invuln > 0) p.invuln--;
     else {
@@ -513,10 +513,11 @@ function respawn(state, p, kind) {
     o.held = null; o.x = p.x; o.y = p.y - (o.kind === 'crate' ? 27 : 10); o.vx = 0; o.vy = 0; p.carrying = null;
   }
   if (kind === 'hit') event(state, 'hit', p.x, p.y - 26, { actor: p.id });
-  const cp = state.checkpoints.find(c => c.id === state.checkpoint);
+  const cp = state.checkpoints.find(c => c.id === p.checkpoint);
   p.x = cp ? cp.x + (p.id ? 18 : -18) : p.spawnX; p.y = cp ? cp.y : p.spawnY;
   p.vx = 0; p.vy = 0; p.grounded = true; p.on = 'ground'; p.jumpHeld = false; p.jumpCut = true; p.jumpBuffer = 0;
   p.invuln = kind === 'hit' ? meta.time.invulnTicks : p.invuln;
+  p.respawnTick = state.tick;
   event(state, 'return', p.x, p.y, { actor: p.id });
 }
 
@@ -554,7 +555,9 @@ function tick(state) {
   applyFreezeAreas(state);
   const before = new Map(state.objects.filter(o => o.kind === 'crate' || o.kind === 'mover' || isEnemy(o)).map(o => [o.id, [o.x, o.y]]));
   ageObjects(state);
-  const strikes = updateEnemies(state, { event, nextId: kind => `${kind}-${state.nextEnemy++}` });
+  const strikes = updateEnemies(state, {
+    event, nextId: kind => `${kind}-${state.nextEnemy++}`, walkSpeed: meta.controls.speed, tickRate: meta.tickRate,
+  });
   carryRiders(state, before, moveItems(state));
   moveActors(state);
   resolveStrikes(state, strikes);

@@ -1,8 +1,11 @@
 import { test, expect } from 'bun:test';
-import { setup } from '../src/logic.js';
+import { meta, setup } from '../src/logic.js';
 import { guardTarget, updateEnemies, ENEMY } from '../src/enemies.js';
 const guard = s => s.objects.find(o => o.kind === 'guard');
-const update = s => updateEnemies(s, { event() {}, nextId: () => 'test' });
+const update = s => {
+  s.tick++;
+  updateEnemies(s, { event() {}, nextId: () => 'test', walkSpeed: meta.controls.speed, tickRate: meta.tickRate });
+};
 const stand = (s, actor, platform, x) => Object.assign(s.actors[actor], { x, y: s.platforms[platform].y, grounded: true, on: `platform-${platform}` });
 
 test('a nearer player on the starting ledge cannot distract the guard from a trench player', () => {
@@ -36,6 +39,35 @@ test('targets the nearest of two eligible players and releases one that leaves t
   expect(guardTarget(s, g)?.id).toBe(0);
   stand(s, 0, 0, 684);
   expect(guardTarget(s, g)).toBeNull();
+});
+
+test('holds its target for two seconds even when another player is closer', () => {
+  const s = setup({ level: 1 }), g = guard(s);
+  stand(s, 0, 3, 1000); stand(s, 1, 3, 1250);
+  update(s);
+  expect(g.target).toBe(0);
+  const acquiredAt = s.tick;
+  for (let i = 1; i < 2 * meta.tickRate; i++) {
+    g.x = 1100;
+    // The locked player is airborne above the same platform, outside acquisition range.
+    Object.assign(s.actors[0], { x: 820, y: 465, grounded: false, on: null });
+    stand(s, 1, 3, 1120);
+    update(s);
+    expect(g.target).toBe(0);
+  }
+  update(s);
+  expect(s.tick - acquiredAt).toBe(2 * meta.tickRate);
+  expect(g.target).toBe(1);
+});
+
+test('releases a locked player as soon as they reach another platform', () => {
+  const s = setup({ level: 1 }), g = guard(s);
+  stand(s, 0, 3, 1000); stand(s, 1, 3, 1250);
+  update(s);
+  expect(g.target).toBe(0);
+  stand(s, 0, 2, 1520);
+  update(s);
+  expect(g.target).toBe(1);
 });
 
 test('luring reaches the platform edge and stops there without overshoot, even when slowed', () => {

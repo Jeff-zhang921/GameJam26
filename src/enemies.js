@@ -5,7 +5,7 @@
 export const FROZEN_RATE = 0.2;
 const STRIKE_CUE_RANGE = 520;
 export const ENEMY = {
-  guard: { w: 52, h: 50, life: 1200, patrol: 1.2, chase: 2.6, see: 260, seeHeight: 80, attackEvery: 30, windup: 15 },
+  guard: { w: 52, h: 50, life: 1200, patrol: 1.2, lockSeconds: 2, see: 260, seeHeight: 80, attackEvery: 30, windup: 15 },
   lantern: { w: 44, h: 44, life: 1200, fly: 1, notice: 320, giveUp: 480, bob: 6, attackEvery: 72, windup: 24 },
   launcher: { w: 40, h: 40, every: 180 },
   dart: { w: 36, h: 10, fly: 5 },
@@ -49,7 +49,7 @@ export function enemyBox(o) {
 
 export function makeEnemy(kind, data, id) {
   const base = { kind, id, x: data.x, y: data.y, speed: 0, age: 0, frozen: false, timer: 0, attack: 0 };
-  if (kind === 'guard') return { ...base, minX: data.minX, maxX: data.maxX, dir: 1, chasing: false, target: null, platformIndex: null };
+  if (kind === 'guard') return { ...base, minX: data.minX, maxX: data.maxX, dir: 1, chasing: false, target: null, targetLockUntil: 0, platformIndex: null };
   if (kind === 'lantern') return { ...base, homeX: data.x, homeY: data.y, chasing: false, bob: 0 };
   if (kind === 'launcher') return { ...base, dx: data.dir[0], dy: data.dir[1], every: data.every ?? ENEMY.launcher.every, shot: data.shot ?? 'dart' };
   if (kind === 'nest') return { ...base, every: data.every ?? ENEMY.nest.every, max: data.max ?? ENEMY.nest.max, spawned: 0 };
@@ -76,19 +76,26 @@ function actorPlatform(state, actor) {
   return state.platforms.filter(f => actor.x >= f.x && actor.x <= f.x + f.w && f.y >= actor.y - 2).sort((a, b) => a.y - b.y)[0] ?? null;
 }
 
-export function guardTarget(state, guard) {
-  const platform = guardPlatform(state, guard), spec = ENEMY.guard;
+export function guardTarget(state, guard, platform = guardPlatform(state, guard)) {
   if (!platform) return null;
+  const spec = ENEMY.guard;
+  const eligible = state.actors.filter(actor =>
+    // Respawns happen after enemy movement, so release the target on the following tick.
+    (actor.respawnTick == null || actor.respawnTick < state.tick - 1) && actorPlatform(state, actor) === platform);
+  if (state.tick < guard.targetLockUntil) {
+    const locked = eligible.find(actor => actor.id === guard.target);
+    if (locked) return locked;
+  }
   let target = null, closest = Infinity;
-  for (const actor of state.actors) {
-    if (actorPlatform(state, actor) !== platform || Math.abs(actor.y - guard.y) > spec.seeHeight || Math.abs(actor.x - guard.x) > spec.see) continue;
+  for (const actor of eligible) {
+    if (Math.abs(actor.y - guard.y) > spec.seeHeight || Math.abs(actor.x - guard.x) > spec.see) continue;
     const distance = Math.hypot(actor.x - guard.x, actor.y - 26 - (guard.y - spec.h / 2));
     if (distance < closest) { closest = distance; target = actor; }
   }
   return target;
 }
 
-export function updateEnemies(state, { event, nextId }) {
+export function updateEnemies(state, { event, nextId, walkSpeed, tickRate }) {
   const strikes = [];
   const remove = o => { state.objects = state.objects.filter(x => x !== o); };
   const spawn = (kind, data) => { const o = makeEnemy(kind, data, nextId(kind)); state.objects.push(o); return o; };
@@ -137,18 +144,22 @@ export function updateEnemies(state, { event, nextId }) {
     } else o.attack = 0;
     if (o.kind === 'guard') {
       const home = guardPlatform(state, o);
-      if (!home) { o.chasing = false; o.target = null; continue; }
+      if (!home) { o.chasing = false; o.target = null; o.targetLockUntil = 0; continue; }
       o.platformIndex = state.platforms.indexOf(home);
       const half = spec.w / 2, left = home.x + half, right = home.x + home.w - half;
       o.x = Math.max(left, Math.min(right, o.x));
-      const p = guardTarget(state, o);
+      const p = guardTarget(state, o, home);
       o.chasing = !!p;
-      o.target = p?.id ?? null;
+      const target = p?.id ?? null;
+      if (target !== o.target) {
+        o.target = target;
+        o.targetLockUntil = p ? state.tick + spec.lockSeconds * tickRate : 0;
+      }
       if (p) {
         const distance = p.x - o.x;
         if (Math.abs(distance) > 2) {
           o.dir = Math.sign(distance);
-          o.x = Math.max(left, Math.min(right, o.x + o.dir * Math.min(Math.abs(distance), spec.chase * k)));
+          o.x = Math.max(left, Math.min(right, o.x + o.dir * Math.min(Math.abs(distance), walkSpeed * k)));
         }
       } else {
         const patrolLeft = Math.max(left, Math.min(right, o.minX ?? left));

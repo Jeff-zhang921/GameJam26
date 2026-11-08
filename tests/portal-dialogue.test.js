@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test';
-import { portalFrame, landingFrame } from '../public/portal.js';
+import { portalFrame, arrivalFrame } from '../public/portal.js';
 import { dialogueFrame, CONVERSATIONS } from '../public/dialogue.js';
 
 test('both travellers brace, push the closed leaves, then enter before the camera follows', () => {
@@ -24,16 +24,26 @@ test('gate leaf and camera movement has no jumps at phase boundaries', () => {
     for (const key of Object.keys(before)) expect(Math.abs(after[key] - before[key])).toBeLessThan(.003);
   }
 });
-test('arrival stops exactly on the ground and never overshoots below it', () => {
-  let previous = Infinity;
-  for (let i = 0; i <= 100; i++) {
-    const frame = landingFrame(i / 100);
-    expect(frame.drop).toBeGreaterThanOrEqual(0);
-    expect(frame.drop).toBeLessThanOrEqual(previous);
-    previous = frame.drop;
+test('travellers walk in from offscreen left without changing height, spacing or simulation state', () => {
+  for (const actors of [[{ id: 0, x: 180, y: 470 }, { id: 1, x: 250, y: 470 }], [{ id: 0, x: 250, y: 520 }, { id: 1, x: 170, y: 520 }]]) {
+    const before = structuredClone(actors);
+    let previous = arrivalFrame(0, actors);
+    expect(previous.every(p => p.x < -52)).toBe(true);
+    for (let i = 1; i <= 100; i++) {
+      const frame = arrivalFrame(i / 100, actors);
+      for (const [j, p] of frame.entries()) {
+        expect(p.x).toBeGreaterThanOrEqual(previous[j].x);
+        expect(p.x).toBeLessThanOrEqual(actors[j].x);
+        expect(p.y).toBe(actors[j].y);
+        expect(p.facing).toBe(1);
+      }
+      expect(frame[1].x - frame[0].x).toBeCloseTo(actors[1].x - actors[0].x);
+      previous = frame;
+    }
+    expect(previous.map(p => [p.x, p.y, p.move])).toEqual(actors.map(p => [p.x, p.y, 0]));
+    expect(arrivalFrame(0, actors, 0, true)).toEqual(previous);
+    expect(actors).toEqual(before);
   }
-  expect(landingFrame(1)).toEqual({ drop: 0, landed: true });
-  expect(landingFrame(0, true).drop).toBe(0);
 });
 test('dialogue types progressively, gives time to read, then moves to the next speaker', () => {
   const lines = CONVERSATIONS[0], first = lines[0][1];

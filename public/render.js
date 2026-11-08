@@ -1,10 +1,9 @@
-import { canopyWidth, meta, atExit, anchor, exitStatus } from '../src/logic.js';
+import { canopyWidth, meta, atExit, anchor, exitStatus, heldPosition } from '../src/logic.js';
 import { GROW, DIE, growFrame, dieFrame } from '../src/mushroom.js';
 import { enemyBox, lifeFraction, miteStage, isEnemy, attackCharge } from '../src/enemies.js';
 import { createCamera, createParticles, worldPoint } from './presentation.js';
 import { themeFor } from './themes.js';
-import { portalFrame, landingFrame, GATE_DURATION } from './portal.js';
-import { createWoodenGate } from './wooden-gate.js';
+import { portalFrame, arrivalFrame, GATE_DURATION, ARRIVAL_DURATION } from './portal.js';
 
 export function createRenderer(canvas, S) {
   const ctx = canvas.getContext('2d');
@@ -30,8 +29,7 @@ export function createRenderer(canvas, S) {
     budget.elapsed = budget.frames = budget.slow = 0;
   }
   const camera = createCamera(), effects = createParticles();
-  let transform, portalView = null;
-  const woodenGate = createWoodenGate();
+  let transform, portalView = null, arrivalView = null;
   const cyan = '#a1e3e5', gold = '#e1c68a', muted = '#8aa89b';
   const sprites = Object.fromEntries(['crate', 'seed', 'mushroom-grow', 'mushroom-die', 'still', 'mage', 'snail', 'pit'].map(name => { const img = new Image(); img.src = `/sprites/${name}.png`; return [name, img]; }));
   const loaded = (...names) => names.every(name => sprites[name].complete && sprites[name].naturalWidth > 0);
@@ -588,15 +586,52 @@ export function createRenderer(canvas, S) {
     ctx.fillText(S.rewinding, cx, cy + r * 1.75);
     ctx.restore();
   }
-  function door(state, opening) {
-    woodenGate.draw(ctx, state.exit, opening ?? undefined);
-    if (state.status !== 'won') {
-      const waiting = exitStatus(state).waiting;
-      ctx.save(); ctx.textAlign = 'center'; ctx.font = '11px Georgia'; ctx.fillStyle = '#f3e6c8';
-      ctx.shadowColor = '#143128'; ctx.shadowBlur = 4;
-      ctx.fillText(waiting !== null ? `Needs ${waiting === 0 ? 'Still' : 'Bloom'} to push together` : 'IT TAKES TWO TO OPEN', state.exit.x, state.exit.y - 264);
+  function door(state, t, opening = 0) {
+    const { x, y } = state.exit, open = state.status === 'won' || state.actors.some(p => atExit(state, p));
+    ctx.save(); ctx.translate(x, y);
+    glow(ctx, 0, -65, 105, open ? '#e8d49838' : '#b8d8d31c');
+    const stone = ctx.createLinearGradient(-50, 0, 50, 0);
+    stone.addColorStop(0, '#294843'); stone.addColorStop(.35, '#698277'); stone.addColorStop(.65, '#526e63'); stone.addColorStop(1, '#243d39');
+    ctx.fillStyle = '#203f38'; ctx.fillRect(-54, -4, 108, 8);
+    arch(ctx, -43, -134, 86, 134, '#223d35', 13);
+    arch(ctx, -43, -134, 86, 134, stone, 9);
+    arch(ctx, -38, -129, 76, 129, '#b19c66', 1.5);
+    arch(ctx, -33, -123, 66, 123, '#e6d5a48c', .8);
+    for (const side of [-1, 1]) {
+      ctx.fillStyle = stone; ctx.fillRect(side * 44 - 6, -85, 12, 84);
+      for (const yy of [-84, -34, -8]) { ctx.fillStyle = '#b3a276'; ctx.fillRect(side * 44 - 8, yy, 16, 3); }
+      line(ctx, [[side * 44, -73], [side * 44, -44]], '#d6c38a66', 1);
+    }
+    ctx.save(); ctx.beginPath(); ctx.moveTo(-31, 0); ctx.lineTo(-31, -90);
+    ctx.arc(0, -90, 31, Math.PI, 0); ctx.lineTo(31, 0); ctx.closePath(); ctx.clip();
+    const night = ctx.createLinearGradient(0, -122, 0, 0);
+    night.addColorStop(0, '#102f37'); night.addColorStop(.55, '#345d5e'); night.addColorStop(1, open ? '#c4cbae' : '#668e82');
+    ctx.fillStyle = night; ctx.fillRect(-32, -124, 64, 125);
+    for (let i = 0; i < 18; i++) {
+      const yy = -((t * .008 + i * 19.7) % 120), xx = Math.sin(i * 7.2) * 28;
+      circle(ctx, xx, yy, i % 4 ? .65 : 1.3, '#e7e3bd99');
+    }
+    glow(ctx, 0, -49, 39, open ? '#f9e9b35c' : '#b0d6cf27');
+    if (opening > 0) {
+      ctx.save(); ctx.globalAlpha *= opening;
+      glow(ctx, 0, -70, 55 + opening * 30, '#fff1b7d9');
       ctx.restore();
     }
+    circle(ctx, 0, -70, 19, null, '#d4c38bc0', .9);
+    circle(ctx, 0, -70, 23, null, '#d4c38b44', .6);
+    ctx.save(); ctx.translate(0, -70); ctx.rotate(t * .00012);
+    for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; line(ctx, [[Math.cos(a) * 25, Math.sin(a) * 25], [Math.cos(a) * 28, Math.sin(a) * 28]], '#e5d4a2', 1); }
+    ctx.restore();
+    star(ctx, 0, -70, 9, '#f1e1ad');
+    line(ctx, [[-30, -1], [30, -1]], '#fff1b7', 2);
+    ctx.restore();
+    star(ctx, 0, -133, 6, '#d8c595');
+    if (state.status !== 'won') {
+      const waiting = exitStatus(state).waiting;
+      ctx.textAlign = 'center'; ctx.font = '9px Georgia'; ctx.fillStyle = '#efe6c6';
+      ctx.fillText(waiting !== null ? S.gateWaiting[waiting] : 'THE MOON GATE', 0, -153);
+    }
+    ctx.restore();
   }
   // An orb flies from the caster's hand to what they targeted (following it if it moves), then bursts on arrival.
   const FLIGHT = 12, BURST = 14;
@@ -633,7 +668,7 @@ export function createRenderer(canvas, S) {
     const dt = lastTime === null ? 0 : Math.min(.05, Math.max(0, (time - lastTime) / 1000));
     lastTime = time;
     if (!options.paused && !options.reduced) visualTime += dt * 1000;
-    const t = options.reduced ? 0 : visualTime + (options.celebration?.progress ?? 0) * GATE_DURATION;
+    const t = options.reduced ? 0 : visualTime + (options.celebration?.progress ?? 0) * GATE_DURATION + (options.arrival?.progress ?? 0) * ARRIVAL_DURATION;
     transform = camera.update(state, { width: frameWidth, height: frameHeight, dt, mode: options.mode, reduced: options.reduced, paused: options.paused, sceneKey: options.sceneKey, resetCamera: lastReset !== options.cameraReset, bottomInset: options.bottomInset || 0 });
     const departure = options.celebration && portalFrame(options.celebration.progress, options.reduced);
     portalView = departure;
@@ -643,13 +678,14 @@ export function createRenderer(canvas, S) {
       const scale = baseScale * (targetScale / baseScale) ** departure.zoom;
       const cx = (frameWidth / 2 - transform.offsetX) / baseScale;
       const cy = (frameHeight / 2 - transform.offsetY) / baseScale;
-      const focusY = state.exit.y - 102;
+      const focusY = state.exit.y - 70;
       transform = { ...transform, scale,
         offsetX: frameWidth / 2 - (cx + (state.exit.x - cx) * departure.focus) * scale,
         offsetY: frameHeight / 2 - (cy + (focusY - cy) * departure.focus) * scale,
       };
     }
-    const landing = options.arrival && landingFrame(options.arrival.progress, options.reduced);
+    arrivalView = options.arrival ? arrivalFrame(options.arrival.progress, state.actors, Math.max(0, -transform.offsetX / transform.scale), options.reduced) : null;
+    if (arrivalView) state = { ...state, actors: arrivalView, objects: state.objects.map(o => o.held != null ? { ...o, ...heldPosition(o, arrivalView[o.held]) } : o) };
     lastReset = options.cameraReset;
     effects.update(state, { dt, reduced: options.reduced, paused: options.paused && state.status !== 'won', sceneKey: options.sceneKey });
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -659,7 +695,7 @@ export function createRenderer(canvas, S) {
     // Clip to the world on whole device pixels: a clip edge through the middle of a pixel row lets the sky show
     // through as a faint line where the world meets what lies beyond it.
     const k = currentDpr * transform.scale, ox = currentDpr * transform.offsetX, oy = currentDpr * transform.offsetY;
-    const [cx0, cy0, cx1, cy1] = [ox, oy, ox + state.width * k, oy + state.height * k].map(Math.round);
+    const [cx0, cy0, cx1, cy1] = [ox, Math.min(0, oy), ox + state.width * k, oy + state.height * k].map(Math.round);
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.beginPath(); ctx.rect(cx0, cy0, cx1 - cx0, cy1 - cy0); ctx.clip();
     ctx.setTransform(k, 0, 0, k, ox, oy);
     ctx.drawImage(background, 0, 0);
@@ -670,14 +706,12 @@ export function createRenderer(canvas, S) {
     // Touch: bracket every object the active character can reach (what a tap would act on).
     const marked = o => options.tappable ? options.tappable.has(o.id) : o.id === target;
     for (const p of state.pits) pit(p);
-    for (const cp of state.checkpoints ?? []) checkpoint(cp, cp.id === state.checkpoint, t);
+    for (const cp of state.checkpoints ?? []) checkpoint(cp, cp.id === state.actors[state.active].checkpoint, t);
     for (const o of state.objects) if (o.kind === 'mover') mover(o, marked(o), t);
     for (const o of state.objects) if (o.kind === 'plant') plant(o, marked(o), t, options.reduced);
-    // A tall lintel can rise above the playable world's top on high ledges.
-    // Paint the door without the collision-world clip, then restore that clip
-    // for items and travellers so it remains behind the pushing characters.
+    // Let the gate's glow extend beyond the world clip while keeping it behind the travellers.
     ctx.restore();
-    door(state, departure);
+    door(state, t, departure?.opening);
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.beginPath(); ctx.rect(cx0, cy0, cx1 - cx0, cy1 - cy0); ctx.clip();
     ctx.setTransform(k, 0, 0, k, ox, oy);
     for (const shard of state.shards) if (!shard.taken) { const yy = shard.y + Math.sin(t * .002 + shard.id) * 5; glow(ctx, shard.x, yy, 40, '#e7d2a51b'); ctx.save(); ctx.translate(shard.x, yy); ctx.rotate(Math.PI / 4); ctx.fillStyle = '#e2d194'; ctx.fillRect(-5, -5, 10, 10); ctx.strokeStyle = '#f4e7b477'; ctx.strokeRect(-10, -10, 20, 20); ctx.restore(); }
@@ -707,9 +741,6 @@ export function createRenderer(canvas, S) {
         ctx.globalAlpha *= 1 - departure.fade;
         const size = 1 - departure.walk * .38;
         ctx.translate(traveller.x, traveller.y); ctx.scale(size, size); ctx.translate(-traveller.x, -traveller.y);
-      } else if (landing) {
-        ellipse(ctx, actorState.x, actorState.y + 2, 19, 4, 0, '#102c3544');
-        traveller = { ...actorState, y: actorState.y - landing.drop, grounded: landing.landed };
       }
       actor(traveller, actorState.id, !departure && actorState.id === state.active, !departure && actorState.animation && !options.reduced ? state.tick * 1000 / 60 : t);
       ctx.restore(); ctx.globalAlpha = 1;
@@ -776,7 +807,7 @@ export function createRenderer(canvas, S) {
       const rect = canvas.getBoundingClientRect();
       return transform ? worldPoint(transform, clientX - rect.left, clientY - rect.top) : null;
     },
-    inspect: () => ({ camera: transform && { ...transform }, portal: portalView && { ...portalView }, particles: effects.count, visualTime, pixelRatio: currentDpr, effectQuality: budget.level === 0 ? 'full' : 'light' }),
+    inspect: () => ({ camera: transform && { ...transform }, portal: portalView && { ...portalView }, arrival: arrivalView?.map(p => ({ id: p.id, x: p.x, y: p.y, move: p.move })) ?? null, particles: effects.count, visualTime, pixelRatio: currentDpr, effectQuality: budget.level === 0 ? 'full' : 'light' }),
     // After a failed frame: drop any clip / transform / save it left behind (resizing a canvas resets its state).
     resetContext: () => { const w = canvas.width; canvas.width = 0; canvas.width = w; },
   };
