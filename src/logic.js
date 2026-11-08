@@ -92,7 +92,7 @@ function makeLevel(index, players, unlocked, totalShards, collected = LEVELS.map
     level: index, levelId: level.id, unlocked, totalShards, collected: clone(collected), tick: 0, status: 'playing', active: 0,
     playerIds: players, width: level.width ?? 1280, height: 640,
     actors: level.spawn.map((p, i) => ({ id: i, x: p.x, y: p.y, vx: 0, vy: 0, facing: 1, grounded: true, on: 'ground', coyote: meta.controls.coyote, jumpBuffer: 0, jumpHeld: false, jumpCut: true, move: 0, carrying: null, invuln: 0, spawnX: p.x, spawnY: p.y })),
-    platforms: clone(level.platforms), objects, pits, nextPlant: level.plants.length, nextEnemy: objects.length,
+    platforms: clone(level.platforms), objects, pits, nextPlant: level.plants.length, nextSeed: 0, nextEnemy: objects.length,
     checkpoints: (level.checkpoints ?? []).map((c, i) => ({ id: `cp-${i}`, x: c.x, y: c.y, lit: false })), checkpoint: null,
     exit: clone(level.exit), shards: level.shards.map((p, i) => ({ ...p, id: i, taken: false })),
     flags: { frozenTouched: false, treeLifted: false, withered: false, sproutJump: false, moverRide: false, dartRide: false, miteGone: false, guardRide: false },
@@ -238,11 +238,17 @@ function plantingPit(state, p) {
 // Bloom, hands free, beside an empty pit with a seed to spare: the pit to plant in.
 const plantable = (state, p) => p.id === BLOOM && p.carrying === null && state.seeds > 0 ? plantingPit(state, p) : null;
 
+// Bloom, hands free, with a seed to spare, can take one in hand to throw (long press of grab).
+export const canTakeSeed = (state, actor) => {
+  const p = state?.actors?.[actor];
+  return !!p && state.status === 'playing' && p.id === BLOOM && p.carrying === null && state.seeds > 0;
+};
+
 // What the grab action would do for this actor right now: 'pickup', 'throw' or 'plant'.
 export function interactionFor(state, actor) {
   const p = state?.actors?.[actor];
   if (!p) return { kind: 'pickup', available: false };
-  if (p.carrying !== null && p.carrying !== undefined) return { kind: 'throw', available: true };
+  if (p.carrying !== null && p.carrying !== undefined) return { kind: 'throw', available: true, item: find(state, p.carrying)?.kind ?? 'crate' };
   if (plantable(state, p)) return { kind: 'plant', available: true };
   return { kind: 'pickup', available: pickable(state, p).length > 0 };
 }
@@ -266,10 +272,11 @@ export function throwLaunch(state, actor, aim) {
 // local time of Freeze Areas it passes through), until it lands, hits a wall or leaves the courtyard.
 export function throwPath(state, actor, aim, maxTicks = 180) {
   const start = throwLaunch(state, actor, aim), carried = state.actors[actor].carrying;
-  const o = { kind: 'crate', id: carried, x: start.x, y: start.y, vx: start.vx, vy: start.vy, frozen: false, held: null };
+  const kind = find(state, carried)?.kind === 'seed' ? 'seed' : 'crate', half = kind === 'seed' ? 10 : 27;
+  const o = { kind, id: carried, x: start.x, y: start.y, vx: start.vx, vy: start.vy, frozen: false, held: null };
   const all = surfaces(state).filter(f => f.id !== carried), points = [{ x: o.x, y: o.y }];
   for (let i = 0; i < maxTicks; i++) {
-    o.frozen = state.freezeAreas.some(a => circleTouches(a, { x: o.x - 27, y: o.y - 27, w: 54, h: 54 }));
+    o.frozen = state.freezeAreas.some(a => circleTouches(a, { x: o.x - half, y: o.y - half, w: half * 2, h: half * 2 }));
     const { landed, wall } = stepItem(state, o, all);
     points.push({ x: o.x, y: o.y });
     if (landed || wall || o.y > 720 || o.x < 20 || o.x > state.width - 20) break;
@@ -291,6 +298,11 @@ export function validateAction(state, playerId, action) {
   if (!Number.isInteger(action.actor) || action.actor < 0 || action.actor > 1 || !actorAllowed(state, playerId, action.actor)) return no('role');
   if (action.type === 'move') return [-1, 0, 1].includes(action.dir) ? { valid: true } : no('invalid');
   if (action.type === 'jump' || action.type === 'jumpRelease') return { valid: true };
+  if (action.type === 'takeSeed') {
+    if (action.actor !== BLOOM) return no('role');
+    if (state.actors[BLOOM].carrying !== null) return no('handsFull');
+    return state.seeds > 0 ? { valid: true } : no('noSeeds');
+  }
   if (action.type === 'grab') {
     const p = state.actors[action.actor];
     if (action.aim !== undefined) {
@@ -511,7 +523,7 @@ function moveActors(state) {
         respawn(state, p, 'hit');
       }
     }
-    if (p.id === BLOOM) for (const seed of state.objects.filter(o => o.kind === 'seed' && dist({ x: p.x, y: p.y - 20 }, o) < meta.seeds.reach)) {
+    if (p.id === BLOOM) for (const seed of state.objects.filter(o => o.kind === 'seed' && free(o) && dist({ x: p.x, y: p.y - 20 }, o) < meta.seeds.reach)) {
       state.objects = state.objects.filter(o => o !== seed); state.seeds++;
       event(state, 'seedPick', seed.x, seed.y, { actor: p.id, seeds: state.seeds });
     }
@@ -658,16 +670,24 @@ export function applyAction(state, playerId, action) {
   if (action.type === 'pause') { if (s.status === 'playing' || s.status === 'paused') s.status = s.status === 'paused' ? 'playing' : 'paused'; for (const p of s.actors) { p.move = 0; p.jumpHeld = false; p.jumpCut = true; p.jumpBuffer = 0; } return s; }
   if (action.type === 'switch') { for (const p of s.actors) { p.move = 0; p.jumpHeld = false; p.jumpCut = true; p.jumpBuffer = 0; } s.active = 1 - s.active; return s; }
   const p = s.actors[action.actor];
-  if (action.type === 'jump' || action.type === 'grab' || action.type === 'ability' || (action.type === 'move' && action.dir !== 0)) s.started = true;
+  if (action.type === 'jump' || action.type === 'grab' || action.type === 'takeSeed' || action.type === 'ability' || (action.type === 'move' && action.dir !== 0)) s.started = true;
   if (action.type === 'move') p.move = action.dir;
   if (action.type === 'jump' && !p.jumpHeld) { p.jumpHeld = true; p.jumpBuffer = meta.controls.jumpBuffer; }
   if (action.type === 'jumpRelease') p.jumpHeld = false;
+  if (action.type === 'takeSeed') {
+    // One seed from the count goes into Bloom's hand. If it is ever lost it returns to where it was taken.
+    s.seeds--;
+    const o = { ...makeSeed(`seed-taken-${s.nextSeed++}`, p.x, p.y - 10), held: BLOOM };
+    Object.assign(o, heldPosition(o, p));
+    s.objects.push(o); p.carrying = o.id;
+    event(s, 'seedTake', o.x, o.y, { actor: BLOOM, seeds: s.seeds });
+  }
   if (action.type === 'grab') {
     if (p.carrying !== null) {
       // Throw the carried crate, aimed or the default way.
       const o = find(s, p.carrying), launch = throwLaunch(s, action.actor, action.aim);
       p.carrying = null; o.held = null; p.facing = launch.facing;
-      Object.assign(o, { frozen: false, x: launch.x, y: launch.y, vx: launch.vx, vy: launch.vy });
+      Object.assign(o, { frozen: false, x: launch.x, y: launch.y, vx: launch.vx, vy: launch.vy, ...(o.kind === 'seed' && { thrown: true }) });
       event(s, 'throw', o.x, o.y);
     } else if (plantable(s, p)) {
       // Plant one of Bloom's seeds in the pit beside them.

@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { validateAction, applyAction, meta, setup, objectBox, anchor } from '../src/logic.js';
+import { validateAction, applyAction, meta, setup, objectBox, anchor, interactionFor, canTakeSeed, throwPath } from '../src/logic.js';
 import { LEVELS } from '../src/levels/index.js';
 import { vineArena } from './arena.js';
 
@@ -79,5 +79,38 @@ describe('vine body', () => {
     const v = withVine(200).objects.find(o => o.id === 'plant-0');
     expect(objectBox(v)).toEqual({ x: 560, y: 400, w: 200, h: 36 });
     expect(anchor(v)).toEqual({ x: 660, y: 418 });
+  });
+});
+
+describe('taking a seed', () => {
+  test('Bloom takes a seed from the count into their hand; it is a throw now', () => {
+    let s = vineArena(); s.actors[1].x = 600;
+    expect(canTakeSeed(s, 1)).toBe(true);
+    s = action(s, { type: 'takeSeed', actor: 1 });
+    expect(s.seeds).toBe(0);
+    const held = s.objects.find(o => o.id === s.actors[1].carrying);
+    expect(held).toMatchObject({ kind: 'seed', held: 1, spawnX: 600, spawnY: 530 });
+    expect(interactionFor(s, 1)).toMatchObject({ kind: 'throw', item: 'seed' });
+    s = step(s, 5);
+    expect(s.actors[1].carrying).toBe(held.id); // a held seed is not collected back by touch
+    expect(s.seeds).toBe(0);
+  });
+  test('refused for Still, with no seeds, or with hands full', () => {
+    const s = vineArena();
+    expect(validateAction(s, 'local', { type: 'takeSeed', actor: 0 }).error).toBe('role');
+    expect(validateAction({ ...s, seeds: 0 }, 'local', { type: 'takeSeed', actor: 1 }).error).toBe('noSeeds');
+    const full = action(s, { type: 'takeSeed', actor: 1 });
+    expect(validateAction({ ...full, seeds: 1 }, 'local', { type: 'takeSeed', actor: 1 }).error).toBe('handsFull');
+  });
+  test('the held seed is thrown by grab and its preview flies like a seed', () => {
+    let s = vineArena(); s.actors[1].x = 300;
+    s = action(s, { type: 'takeSeed', actor: 1 });
+    const path = throwPath(s, 1, null);
+    s = action(s, { type: 'grab', actor: 1 });
+    const seed = s.objects.find(o => o.kind === 'seed' && o.thrown);
+    expect(seed).toMatchObject({ held: null, x: path[0].x, y: path[0].y });
+    s = step(s, 1);
+    expect(seed.id).toBe(s.objects.find(o => o.thrown).id);
+    expect(s.objects.find(o => o.id === seed.id).x).toBeCloseTo(path[1].x, 6);
   });
 });

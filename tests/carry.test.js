@@ -82,7 +82,7 @@ describe('contextual interaction label', () => {
     expect(interactionFor(state, 0)).toEqual({ kind: 'pickup', available: false });
     state.actors[0].x = 300;
     expect(interactionFor(state, 0)).toEqual({ kind: 'pickup', available: true });
-    expect(interactionFor(send(state, 'grab'), 0)).toEqual({ kind: 'throw', available: true });
+    expect(interactionFor(send(state, 'grab'), 0)).toEqual({ kind: 'throw', available: true, item: 'crate' });
   });
 
   test('Bloom with a seed in the count is offered Plant beside an empty pit, and nothing to plant elsewhere', () => {
