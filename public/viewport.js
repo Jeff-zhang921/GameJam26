@@ -1,3 +1,17 @@
+// Expand fractional viewport edges outwards so the compositor cannot expose a
+// one-device-pixel strip. Standalone windows keep their full backdrop behind
+// safe areas, while text entry still follows the smaller keyboard viewport.
+export function viewportBounds(visual, layout, { standalone = false, editing = false } = {}) {
+  const left = Math.floor(visual.offsetLeft || 0), top = Math.floor(visual.offsetTop || 0);
+  const right = Math.ceil((visual.offsetLeft || 0) + visual.width);
+  const bottom = Math.ceil((visual.offsetTop || 0) + visual.height);
+  return {
+    left, top,
+    width: Math.max(1, right - left, standalone && !editing ? layout.width - left : 0),
+    height: Math.max(1, bottom - top, standalone && !editing ? layout.height - top : 0),
+  };
+}
+
 export function createViewport({ isMobile, onBlocked, onResize }) {
   const root = document.documentElement;
   const gate = document.createElement('section');
@@ -19,6 +33,7 @@ export function createViewport({ isMobile, onBlocked, onResize }) {
   const status = gate.querySelector('.orientation-status');
   const orientation = screen.orientation;
   const canLock = typeof orientation?.lock === 'function';
+  const appWindow = window.matchMedia('(display-mode: standalone), (display-mode: fullscreen)');
   let blocked = false, scheduled = false, previousFocus = null;
   let locking = false, locked = false, fullscreenAttempted = false, gestureAttempted = false;
   let geometry = '';
@@ -34,9 +49,13 @@ export function createViewport({ isMobile, onBlocked, onResize }) {
     const visual = window.visualViewport;
     // Keep the layout steady while the browser magnifies the page.
     if (!visual || Math.abs(visual.scale - 1) < .01) {
-      const width = visual?.width || window.innerWidth;
-      const height = visual?.height || window.innerHeight;
-      const left = visual?.offsetLeft || 0, top = visual?.offsetTop || 0;
+      const { width, height, left, top } = viewportBounds({
+        width: visual?.width || window.innerWidth, height: visual?.height || window.innerHeight,
+        offsetLeft: visual?.offsetLeft || 0, offsetTop: visual?.offsetTop || 0,
+      }, { width: window.innerWidth, height: window.innerHeight }, {
+        standalone: appWindow.matches || navigator.standalone === true,
+        editing: !!document.activeElement?.closest('input,textarea,[contenteditable]:not([contenteditable="false"])'),
+      });
       const next = `${width}:${height}:${left}:${top}`;
       if (next !== geometry) {
         geometry = next;
