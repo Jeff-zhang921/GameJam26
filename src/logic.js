@@ -70,7 +70,8 @@ const makeSeed = (id, x, y) => ({ kind: 'seed', id, x, y, vx: 0, vy: 0, frozen: 
 
 function makeLevel(index, players, unlocked, totalShards, collected = LEVELS.map(() => false)) {
   const level = LEVELS[index];
-  const pits = level.pits.map((p, i) => ({ id: `pit-${i}`, x: p.x, y: p.y, plant: null }));
+  // A pit marked `plantable: false` only holds the plant the level starts with (it cannot be planted again).
+  const pits = level.pits.map((p, i) => ({ id: `pit-${i}`, x: p.x, y: p.y, plant: null, ...(p.plantable === false && { plantable: false }) }));
   const objects = [
     ...level.crates.map((p, i) => ({ kind: 'crate', id: `crate-${i}`, x: p.x, y: p.y, vx: 0, vy: 0, frozen: false, held: null, spawnX: p.x, spawnY: p.y })),
     ...level.seeds.map((p, i) => makeSeed(`seed-${i}`, p.x, p.y)),
@@ -80,7 +81,7 @@ function makeLevel(index, players, unlocked, totalShards, collected = LEVELS.map
   ];
   const state = {
     level: index, levelId: level.id, unlocked, totalShards, collected: clone(collected), tick: 0, status: 'playing', active: 0,
-    playerIds: players, width: 1280, height: 640,
+    playerIds: players, width: level.width ?? 1280, height: 640,
     actors: level.spawn.map((p, i) => ({ id: i, x: p.x, y: p.y, vx: 0, vy: 0, facing: 1, grounded: true, on: 'ground', coyote: meta.controls.coyote, jumpBuffer: 0, jumpHeld: false, jumpCut: true, move: 0, carrying: null, invuln: 0, spawnX: p.x, spawnY: p.y })),
     platforms: clone(level.platforms), objects, pits, nextPlant: level.plants.length, nextEnemy: objects.length,
     checkpoints: (level.checkpoints ?? []).map((c, i) => ({ id: `cp-${i}`, x: c.x, y: c.y, lit: false })), checkpoint: null,
@@ -90,6 +91,8 @@ function makeLevel(index, players, unlocked, totalShards, collected = LEVELS.map
     started: false, elapsed: 0, lastProgressTick: 0, falls: 0,
     freezeAreas: [], nextArea: 0, freezeCharges: level.freezeCharges ?? 1, bloomCharges: meta.charges.bloomStart,
     seeds: level.startSeeds ?? meta.seeds.start,
+    // Whether a crate lost out of the courtyard returns to its spawn (false: it is gone for good).
+    crateRespawn: level.crateRespawn ?? true,
     pickups: [
       ...(level.freezePickups ?? []).map((p, i) => ({ ...p, id: `frost-${i}`, kind: 'frost', taken: false })),
       ...level.bloomPickups.map((p, i) => ({ ...p, id: `bolt-${i}`, kind: 'bolt', taken: false })),
@@ -218,7 +221,7 @@ function pickable(state, p) {
 }
 
 function plantingPit(state, p) {
-  return state.pits.filter(t => t.plant === null && Math.abs(t.x - p.x) <= meta.controls.pitReach && Math.abs(t.y - p.y) <= 30)
+  return state.pits.filter(t => t.plant === null && t.plantable !== false && Math.abs(t.x - p.x) <= meta.controls.pitReach && Math.abs(t.y - p.y) <= 30)
     .sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0];
 }
 
@@ -259,7 +262,7 @@ export function throwPath(state, actor, aim, maxTicks = 180) {
     o.frozen = state.freezeAreas.some(a => circleTouches(a, { x: o.x - 27, y: o.y - 27, w: 54, h: 54 }));
     const { landed, wall } = stepItem(state, o, all);
     points.push({ x: o.x, y: o.y });
-    if (landed || wall || o.y > 720 || o.x < 20 || o.x > 1260) break;
+    if (landed || wall || o.y > 720 || o.x < 20 || o.x > state.width - 20) break;
   }
   return points;
 }
@@ -364,6 +367,8 @@ function ageObjects(state) {
 const stemBoxes = state => state.objects.filter(o => o.kind === 'plant' && !o.withered && o.height > 0)
   .map(o => { const w = Math.min(84, Math.max(30, canopyWidth(o))); return { x: o.x - w / 2, y: o.base - o.height, w, h: o.height }; });
 
+// How fast (px per tick of local time) an item whose centre is past an edge slides off it.
+const ITEM_SLIDE = 1.5;
 // One physics tick for a loose crate or seed. Returns whether it landed (and how hard) and whether it hit a wall.
 function stepItem(state, o, all) {
   const half = o.kind === 'crate' ? 27 : 10, k = o.frozen ? meta.time.frozenRate : 1, previous = o.y + half;
@@ -374,15 +379,22 @@ function stepItem(state, o, all) {
     o.x = o.x < f.x + f.w / 2 ? f.x - half : f.x + f.w + half; o.vx = 0; wall = true;
   }
   o.y += o.vy * k;
+  let left = Infinity, right = -Infinity;
   for (const f of all) if (f.id !== o.id) if (o.vy >= 0 && previous <= f.y + 3 && o.y + half >= f.y && o.x + half > f.x && o.x - half < f.x + f.w) {
     landed = { y: f.y, speed: o.vy };
     o.y = f.y - half; o.vy = 0; o.vx *= 0.88 ** k;
+    left = Math.min(left, f.x); right = Math.max(right, f.x + f.w);
   }
+  // An item whose centre is past the edge of what holds it tips over: it slides outward until it drops off
+  // (clear of the ledge's side, so it falls straight down beside it instead of hanging over the gap).
+  if (landed && (o.x < left || o.x > right)) o.vx = o.x > right ? Math.max(o.vx, ITEM_SLIDE) : Math.min(o.vx, -ITEM_SLIDE);
   return { landed, wall };
 }
 
+// Moves loose items. Returns the ids of items that were reset to their spawn or lost, so riders are not carried
+// along with them.
 function moveItems(state) {
-  const all = surfaces(state), reset = new Set();
+  const all = surfaces(state), reset = new Set(), lost = new Set();
   for (const o of state.objects) {
     if (o.kind !== 'crate' && o.kind !== 'seed') continue;
     const crate = o.kind === 'crate', half = crate ? 27 : 10;
@@ -390,8 +402,14 @@ function moveItems(state) {
     if (o.held !== null) continue;
     const { landed } = stepItem(state, o, all);
     if (landed && landed.speed > 1) event(state, crate ? 'crateLand' : 'seedLand', o.x, landed.y);
-    if (o.y > 720 || o.x < 20 || o.x > 1260) { o.x = respawnX(state, o, half); o.y = o.spawnY; o.vx = 0; o.vy = 0; reset.add(o.id); event(state, 'return', o.x, o.y); }
+    if (o.y > 720 || o.x < 20 || o.x > state.width - 20) {
+      reset.add(o.id);
+      // Where crates do not respawn, a lost crate is gone for good. Seeds always return.
+      if (crate && state.crateRespawn === false) { lost.add(o.id); event(state, 'crateLost', o.x, Math.min(o.y, state.height)); continue; }
+      o.x = respawnX(state, o, half); o.y = o.spawnY; o.vx = 0; o.vy = 0; event(state, 'return', o.x, o.y);
+    }
   }
+  if (lost.size) state.objects = state.objects.filter(o => !lost.has(o.id));
   return reset;
 }
 
@@ -404,7 +422,7 @@ function respawnX(state, o, half) {
   const supported = x => state.platforms.some(f => Math.abs(f.y - bottom) <= 2 && x - half >= f.x && x + half <= f.x + f.w);
   for (const step of [0, 1, -1, 2, -2, 3, -3]) {
     const x = o.spawnX + step * 40;
-    if (x > 40 && x < 1240 && clear(x) && (step === 0 || supported(x))) return x;
+    if (x > 40 && x < state.width - 40 && clear(x) && (step === 0 || supported(x))) return x;
   }
   return o.spawnX;
 }
@@ -425,7 +443,7 @@ function moveActors(state) {
     p.vx = p.move * (p.grounded ? meta.controls.speed : meta.controls.airSpeed);
     if (p.move) p.facing = p.move;
     const oldX = p.x;
-    p.x = Math.max(22, Math.min(1258, p.x + p.vx));
+    p.x = Math.max(22, Math.min(state.width - 22, p.x + p.vx));
     const body = () => ({ x: p.x - 15, y: p.y - 52, w: 30, h: 51 });
     const crates = state.objects.filter(o => (o.kind === 'crate' && o.held === null) || isSolidEnemy(o)).map(o => o.kind === 'crate' ? { id: o.id, x: o.x - 27, y: o.y - 27, w: 54, h: 54 } : { id: o.id, ...enemyBox(o) });
     const inside = crates.filter(c => rectOverlap({ x: oldX - 15, y: p.y - 52, w: 30, h: 51 }, c));
@@ -510,7 +528,7 @@ function carryRiders(state, before, skip) {
     const body = (x, y) => ({ x: x - 15, y: y - 52, w: 30, h: 51 });
     if (dy < 0 && solids.some(f => rectOverlap(body(p.x, p.y + dy), f) && p.y - 52 >= f.y + f.h - 0.01)) { p.grounded = false; p.vy = 0; }
     else p.y += dy;
-    const x = Math.max(22, Math.min(1258, p.x + dx));
+    const x = Math.max(22, Math.min(state.width - 22, p.x + dx));
     if (!solids.some(f => rectOverlap(body(x, p.y), f) && p.y > f.y + 9)) p.x = x;
   }
 }
@@ -576,18 +594,23 @@ export function exitStatus(state) {
   return { open, at, waiting: open && at.some(Boolean) && !at.every(Boolean) ? at.indexOf(false) : null };
 }
 
+// Whether a point (a traveller's feet, or a pickup) is on ledge `f` or above it, standing on something resting there.
+const onLedge = (f, p) => p.x >= f.x - 10 && p.x <= f.x + f.w + 10 && p.y <= f.y + 2;
+
 // Who is still on the low side of a gate that sits on a raised ledge (by position, not by what they stand on).
 function belowExit(state) {
   const ledge = state.platforms.find(f => state.exit.x >= f.x && state.exit.x <= f.x + f.w && Math.abs(f.y - state.exit.y) <= 2);
-  return state.actors.filter(p => !atExit(state, p) && !(ledge && p.x >= ledge.x - 10 && p.x <= ledge.x + ledge.w + 10 && p.y <= ledge.y + 2));
+  return state.actors.filter(p => !atExit(state, p) && !(ledge && onLedge(ledge, p)));
 }
 
 // Conservative dead-end check. Winning only needs both travellers at the moon gate (the checklist is a
 // suggestion), so a courtyard is only judged lost when someone provably can no longer reach the gate's ledge,
 // using each level's own rule (`exitNeedsPlant`, `crossingNeedsFreeze`) rather than guessing from time or
-// position. Crates and dropped seeds always return, so the only resources that run out are seeds (a planted
-// seed becomes a mushroom that wilts away) and Freeze charges. Every rule counts everything that could still
-// help: any seed anywhere, any mushroom at all, any charge, any uncollected crystal, any Freeze Area still up.
+// position. Dropped seeds always return, and so do crates unless the level sets `crateRespawn: false`, so the
+// resources that run out are seeds (a planted seed becomes a mushroom that wilts away), Freeze charges and, in
+// such a level, crates. Every rule counts everything that could still help: any seed anywhere, any mushroom at
+// all, any crate anywhere, any charge, any crystal that can still be collected, any Freeze Area still up.
+// With `crossingFrom` (a platform index) the frozen crossing is only needed by travellers still on that ledge.
 // While anyone is airborne the answer is "unknown" (they might be landing on the ledge right now).
 export function assessFailure(state) {
   if (state.status !== 'playing') return { known: true, reason: null };
@@ -595,7 +618,15 @@ export function assessFailure(state) {
   const level = LEVELS[state.level], stuck = belowExit(state);
   if (!level || !stuck.length) return { known: true, reason: null };
   if (level.exitNeedsPlant && state.seeds <= 0 && !state.objects.some(o => o.kind === 'seed' || o.kind === 'plant')) return { known: true, reason: 'stranded' };
-  if (level.crossingNeedsFreeze && state.freezeCharges <= 0 && !state.freezeAreas.length && !state.pickups.some(c => c.kind === 'frost' && !c.taken)) return { known: true, reason: 'freeze' };
+  if (!level.crossingNeedsFreeze) return { known: true, reason: null };
+  const start = level.crossingFrom === undefined ? null : state.platforms[level.crossingFrom];
+  const ahead = start ? stuck.filter(p => onLedge(start, p)) : stuck;
+  if (!ahead.length) return { known: true, reason: null };
+  if (state.crateRespawn === false && !state.objects.some(o => o.kind === 'crate')) return { known: true, reason: 'crates' };
+  // A crystal beyond the crossing cannot help a Still who has not crossed yet.
+  const stillAhead = start && ahead.some(p => p.id === STILL);
+  const crystal = state.pickups.some(c => c.kind === 'frost' && !c.taken && (!stillAhead || onLedge(start, c)));
+  if (state.freezeCharges <= 0 && !state.freezeAreas.length && !crystal) return { known: true, reason: 'freeze' };
   return { known: true, reason: null };
 }
 export function failureReason(state) { return assessFailure(state).reason; }

@@ -35,6 +35,7 @@ export const S = {
   warningReasons: {
     stranded: 'Every seed and mushroom is gone, so no one else can reach the high ledge.',
     freeze: 'No Freeze charges, hourglasses or Freeze Areas are left, and the crossing needs one.',
+    crates: 'Both crates are gone, so no one else can cross the gap.',
   },
   warningRestart: 'Restart · Rewind Time', keepTrying: 'Keep Trying', warningHostOnly: 'Only the host can restart the shared courtyard.',
   rewinding: 'Rewinding time…',
@@ -55,8 +56,8 @@ export const S = {
   shard: 'Optional time shard',
   saved: 'Your journey has been saved', focus: 'The courtyard is waiting for you.', connected: 'Local Adventure',
   levels: [
-    { name: 'A Moment Held', en: 'THE STILL MOMENT', goal: 'Use a slowed crate to cross the broken bridge.', lesson: 'Turn a fall into a stair.',
-      hints: ['Throw the crate toward the gap and cast a Freeze Area around it in the air.', 'Stand near the edge, hold E and point across the gap, then let go to throw. As Still, click or tap where the crate is flying (or hold F and point there). Inside the ring it drifts at a crawl — jump onto it, then leap across before the area fades.'] },
+    { name: 'A Moment Held', en: 'THE STILL MOMENT', goal: 'Cross the gap on slowed crates, age the ancient mushroom out of your way, then grow a new one up to the moon gate.', lesson: 'Turn a fall into a stair.',
+      hints: ['Two crates, two travellers: each crossing takes a crate caught in a Freeze Area. A crate that falls into the gap is gone. On the long ledge, an ancient mushroom blocks the way to the last pit.', 'Stand near the edge, hold E and point across the gap, then let go to throw. As Still, click or tap where the crate is flying (or hold F and point there); jump onto it while it drifts, then on to the long ledge. Still picks up the hourglass (one more Freeze) and Bloom the seed. Bloom wakes the ancient mushroom so it wilts and lets you pass, then plants the seed in the far pit and wakes it. Stand on it, ride it up and jump to the high ledge; a Freeze Area over it gives you more time.'] },
     { name: 'Rising Rings', en: 'WHERE ROOTS RISE', goal: 'Let a mushroom lift you to the high ledge.', lesson: 'Some paths must be grown.',
       hints: ['Seeds only grow in pits. Bloom collects seeds by walking into them, then plants one beside the pit.', 'Plant a seed in the pit and stand on it. Wake it with Bloom and it will lift you as it grows. Once it is tall enough, have Still cast a Freeze Area over it so it ages slowly and you have time to jump off before it withers.'] },
     { name: 'Past the Prime', en: 'AFTER THE BLOOM', goal: 'Age the ancient mushroom out of your way, then spring up the cliff.', lesson: 'An ending is also a beginning.',

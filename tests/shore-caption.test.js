@@ -4,7 +4,8 @@ import { setup, applyAction, validateAction } from '../src/logic.js';
 
 function onBank() {
   const state = setup({ level: 0 });
-  for (const actor of state.actors) Object.assign(actor, { x: 850, y: 430, grounded: true, on: 'platform-1' });
+  const bank = state.platforms[2];
+  for (const actor of state.actors) Object.assign(actor, { x: bank.x + 20, y: bank.y, grounded: true, on: 'platform-2' });
   return state;
 }
 const tick = state => applyAction(state, 'local', { type: 'tick' });
@@ -12,9 +13,10 @@ const tick = state => applyAction(state, 'local', { type: 'tick' });
 describe('first crossing subtitle', () => {
   test('waits for both players to stand on the far bank', () => {
     const caption = createShoreCaption(), state = onBank();
-    state.actors[1].x = 400;
+    const bankX = state.actors[1].x;
+    state.actors[1].x = state.actors[1].spawnX;
     expect(caption.update(state)).toBeNull();
-    state.actors[1].x = 850; state.actors[1].grounded = false;
+    state.actors[1].x = bankX; state.actors[1].grounded = false;
     expect(caption.update(state)).toBeNull();
     state.actors[1].grounded = true;
     expect(caption.update(state)).toEqual({ progress: 0 });
@@ -39,7 +41,7 @@ describe('first crossing subtitle', () => {
     const jump = { type: 'jump', actor: 0 };
     expect(validateAction(state, 'local', jump).valid).toBe(true);
     state = tick(applyAction(state, 'local', jump));
-    expect(state.actors[0].y).toBeLessThan(430);
+    expect(state.actors[0].y).toBeLessThan(before.actors[0].y);
   });
 
   test('expires once, survives pauses and resets with a new attempt', () => {
@@ -59,7 +61,7 @@ describe('first crossing subtitle', () => {
     const caption = createShoreCaption();
     let state = onBank();
     caption.update(state);
-    for (const actor of state.actors) actor.x = state.exit.x;
+    for (const actor of state.actors) Object.assign(actor, { x: state.exit.x, y: state.exit.y });
     state = tick(state);
     expect(state.status).toBe('won');
     expect(caption.update(state)).toBeNull();

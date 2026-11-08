@@ -8,16 +8,16 @@ const send = (s, type, actor, extra = {}) => {
   return act(s, action);
 };
 const tick = (s, n = 1) => { for (let i = 0; i < n; i++) s = act(s, { type: 'tick' }); return s; };
-const crate = s => s.objects.find(o => o.id === 'crate-0');
+const crate = (s, id = 'crate-0') => s.objects.find(o => o.id === id);
 
-// Run right, jump, and jump again the moment you land on the crate, until you stand on `goal`.
-function hop(s, who, goal, limit = 260) {
-  s = send(s, 'move', who, { dir: 1 }); s = send(s, 'jump', who);
+// Run right, jump, and jump again the moment you land on a crate, until you stand on `goal`.
+function hop(s, who, goal, runup = 0) {
+  s = send(s, 'move', who, { dir: 1 }); s = tick(s, runup); s = send(s, 'jump', who);
   let stepped = false;
-  for (let i = 0; i < limit; i++) {
+  for (let i = 0; i < 260; i++) {
     s = tick(s);
     const p = s.actors[who];
-    if (!stepped && p.on === 'crate-0') { stepped = true; s = act(s, { type: 'jumpRelease', actor: who }); s = act(s, { type: 'jump', actor: who }); }
+    if (!stepped && String(p.on).startsWith('crate')) { stepped = true; s = act(s, { type: 'jumpRelease', actor: who }); s = act(s, { type: 'jump', actor: who }); }
     if (p.on === goal || s.status === 'won') break;
   }
   if (s.status === 'won') return s; // reaching the gate beside your partner ends the courtyard
@@ -25,29 +25,65 @@ function hop(s, who, goal, limit = 260) {
   expect(s.actors[who].on).toBe(goal);
   return s;
 }
-const walkTo = (s, who, x) => { for (let i = 0; i < 600 && Math.abs(s.actors[who].x - x) > 3; i++) { s = act(s, { type: 'move', actor: who, dir: Math.sign(x - s.actors[who].x) }); s = tick(s); } return act(s, { type: 'move', actor: who, dir: 0 }); };
+// Walk to `x`, hopping over anything (a resting crate) that stops you, and stand there.
+function walkTo(s, who, x) {
+  for (let i = 0, stuck = 0; i < 600 && (Math.abs(s.actors[who].x - x) > 3 || !s.actors[who].grounded); i++) {
+    const from = s.actors[who].x;
+    s = act(s, { type: 'move', actor: who, dir: Math.sign(x - from) });
+    // A full jump: hold it while airborne, release once back on the ground.
+    if (s.actors[who].grounded) s = act(s, stuck > 1 ? { type: 'jump', actor: who } : { type: 'jumpRelease', actor: who });
+    s = tick(s);
+    stuck = s.actors[who].x === from ? stuck + 1 : 0;
+  }
+  return act(act(s, { type: 'move', actor: who, dir: 0 }), { type: 'jumpRelease', actor: who });
+}
+const settle = (s, limit = 600) => { for (let i = 0; i < limit && s.actors.some(p => !p.grounded); i++) s = tick(s); return s; };
 
 describe('starting Freeze charges are enough for every crossing that needs them', () => {
-  test('courtyard 1: both travellers cross the broken bridge with the two starting charges', () => {
+  test('courtyard 1: a crate and a cast per traveller cross the gap, the ancient mushroom is aged away, a new one lifts both to the gate', () => {
     let s = setup({ level: 0 });
-    expect(s.freezeCharges).toBe(2);
-    // Still throws, casts on the crate, and Bloom (ready at the edge) crosses on it.
+    expect(s).toMatchObject({ freezeCharges: 2, seeds: 0 });
+    // Still throws the first crate and casts on it; Bloom (ready at the edge) crosses on it to the long ledge.
     s.actors[0].x = 300; s = send(s, 'grab', 0);
-    s.actors[0].x = 418; s.actors[1].x = 400;
+    expect(s.actors[0].carrying).toBe('crate-0');
+    s.actors[0].x = 375; s.actors[1].x = 385;
     s = send(s, 'grab', 0); s = tick(s, 6);
     s = send(s, 'ability', 0, { x: crate(s).x, y: crate(s).y });
-    s = hop(s, 1, 'platform-1');
-    // The crate falls away and returns to the start; Still fetches it, throws, casts, and crosses alone.
-    for (let i = 0; i < 800 && !(crate(s).held === null && crate(s).vy === 0 && crate(s).y < 500); i++) s = tick(s);
-    s = walkTo(s, 0, crate(s).x - 40); s = send(s, 'grab', 0);
-    s = walkTo(s, 0, 418); s = send(s, 'grab', 0); s = tick(s, 14);
-    s = send(s, 'ability', 0, { x: crate(s).x + 100, y: crate(s).y - 30 });
-    s = hop(s, 0, 'platform-1');
+    // Take a few steps before jumping so the first leap catches the moving crate past the edge.
+    s = hop(s, 1, 'platform-2', 4);
+    // Once the first area has faded, Still fetches the second crate, throws it, casts and crosses alone.
+    for (let i = 0; i < 700 && s.freezeAreas.length; i++) s = tick(s);
+    s = walkTo(s, 0, 130); s = send(s, 'grab', 0);
+    expect(s.actors[0].carrying).toBe('crate-1');
+    s = walkTo(s, 0, 375); s = send(s, 'grab', 0); s = tick(s, 6);
+    s = send(s, 'ability', 0, { x: crate(s, 'crate-1').x, y: crate(s, 'crate-1').y });
+    s = hop(s, 0, 'platform-2', 6);
     expect(s.freezeCharges).toBe(0);
-    // Both walk to the moon gate together.
+    s = settle(tick(s, 300));
+    // On the long ledge, Still collects the hourglass and Bloom the seed.
+    s = walkTo(s, 0, 900);
+    expect(s.freezeCharges).toBe(1);
+    s = walkTo(s, 1, 1000);
+    expect(s.seeds).toBe(1);
+    // The ancient mushroom blocks the way until Bloom ages it: it wilts at once and lets them pass.
+    s = send(s, 'ability', 1, { target: 'plant-0' }); s = tick(s, 2);
+    expect(s.flags.withered).toBe(true);
+    // Bloom plants the seed in the far pit and wakes it with both standing on it; they ride it up and jump to the gate's ledge.
+    s = walkTo(s, 1, 1530); s = send(s, 'grab', 1);
+    expect(s.seeds).toBe(0);
+    s = walkTo(s, 0, 1540); s = tick(s, 3);
+    s = send(s, 'ability', 1, { target: 'plant-1' });
+    for (let i = 0; i < 2000 && s.objects.find(o => o.id === 'plant-1').height < 130; i++) s = tick(s);
+    expect(s.actors.map(p => p.on)).toEqual(['plant-1', 'plant-1']);
+    expect(s.flags.treeLifted).toBe(true);
+    for (const who of [0, 1]) { s = send(s, 'move', who, { dir: 1 }); s = send(s, 'jump', who); }
+    s = settle(tick(s, 2));
+    expect(s.actors.map(p => p.on)).toEqual(['platform-1', 'platform-1']);
     for (let i = 0; i < 300 && s.status === 'playing'; i++) {
-      for (const who of [0, 1]) if (!atExit(s, s.actors[who])) s = act(s, { type: 'move', actor: who, dir: Math.sign(s.exit.x - s.actors[who].x) || 1 });
-      else s = act(s, { type: 'move', actor: who, dir: 0 });
+      for (const who of [0, 1]) {
+        s = act(s, { type: 'jumpRelease', actor: who });
+        s = act(s, { type: 'move', actor: who, dir: atExit(s, s.actors[who]) ? 0 : Math.sign(s.exit.x - s.actors[who].x) || 1 });
+      }
       s = tick(s);
     }
     expect(s.status).toBe('won');

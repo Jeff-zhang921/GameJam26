@@ -8,7 +8,9 @@ export function createShoreCaption() {
       if (!enabled || state.status !== 'playing') return null;
       if (startedAt === null) {
         if (seen) return null;
-        const bank = state.platforms.find(p => p.x > state.width / 2);
+        const start = state.platforms[0];
+        const bank = start && state.platforms.reduce((nearest, p) =>
+          p.x >= start.x + start.w && (!nearest || p.x < nearest.x) ? p : nearest, null);
         if (!bank || !state.actors.every(a => a.grounded && a.x >= bank.x + 16 && a.x <= bank.x + bank.w - 16 && Math.abs(a.y - bank.y) <= 2)) return null;
         seen = true; startedAt = state.tick;
       }
