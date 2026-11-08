@@ -117,9 +117,10 @@ describe('starting Freeze charges are enough for every crossing that needs them'
     expect(s.status === 'won' || s.actors[1].on === 'platform-1').toBe(true);
   });
 
-  test('every courtyard starts with one or two charges; crystals add spares', () => {
+  test('every courtyard but the last starts with one or two charges; crystals add spares', () => {
     const counts = [0, 1, 2, 3, 4].map(level => { const s = setup({ level }); return [s.freezeCharges, s.pickups.filter(c => c.kind === 'frost').length]; });
     // Courtyard 4: one charge and one hourglass (Freeze is optional there).
-    expect(counts).toEqual([[2, 1], [1, 2], [1, 2], [1, 1], [2, 2]]);
+    // Courtyard 5 has none: only footsteps move time there.
+    expect(counts).toEqual([[2, 1], [1, 2], [1, 2], [1, 1], [0, 0]]);
   });
 });

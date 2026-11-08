@@ -234,8 +234,8 @@ describe('role-specific resources', () => {
     const again = send(s, 'restart');
     expect(again).toMatchObject({ freezeCharges: 2, bloomCharges: 3 });
     expect(again.pickups.every(c => !c.taken)).toBe(true);
-    const other = send(s, 'level', 0, { level: 4 });
-    expect(other).toMatchObject({ freezeCharges: 2, bloomCharges: 3 });
+    const other = send(s, 'level', 0, { level: 1 });
+    expect(other).toMatchObject({ freezeCharges: 1, bloomCharges: 3 });
     expect(other.pickups.filter(c => c.kind === 'frost')).toHaveLength(2);
   });
 
@@ -243,6 +243,8 @@ describe('role-specific resources', () => {
     for (let level = 0; level < 5; level++) {
       const s = setup({ level });
       expect(s.actors[BLOOM].carrying).toBe(null);
+      // Courtyard 5 has no abilities at all: only footsteps move time there (see level-five.test.js).
+      if (level === 4) { expect(s.bloomCharges).toBe(0); continue; }
       expect(s.bloomCharges).toBe(3);
       // Courtyard 4 has neither seeds nor a bolt: every cast there rewinds a plant (see level-four.test.js).
       if (level === 3) continue;

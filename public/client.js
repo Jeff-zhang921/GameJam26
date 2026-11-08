@@ -284,7 +284,7 @@ function persist() {
   saved = data;
   try { localStorage.setItem('moonclock-v1', JSON.stringify(data)); } catch { }
 }
-function toast(text) { const el = document.querySelector('#toast'); el.textContent = text; el.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 3400); }
+function toast(text, ms = 3400) { const el = document.querySelector('#toast'); el.textContent = text; el.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), ms); }
 function initAudio() {
   if (!sound) return;
   try { if (navigator.audioSession && navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback'; } catch { }
@@ -400,11 +400,12 @@ function measureControls() {
   controlsReserve = frameEl && controls.length && document.body.classList.contains('touch-layout')
     ? Math.max(0, frameEl.getBoundingClientRect().bottom - Math.min(...controls.map(node => node.getBoundingClientRect().top))) : 0;
 }
-// In a courtyard where Bloom runs time backwards, say so once per visit, as soon as play begins.
+// In a courtyard where Bloom runs time backwards, or where time keeps the travellers' pace, say so once per visit,
+// as soon as play begins.
 function noticeRewind() {
-  if (!state.bloomReverses || modal || state.status !== 'playing' || rewindNoticeScene === sceneKey) return;
+  if (!(state.bloomReverses || state.walkingTime) || modal || state.status !== 'playing' || rewindNoticeScene === sceneKey) return;
   rewindNoticeScene = sceneKey;
-  toast(S.rewindNotice);
+  if (state.walkingTime) toast(S.walkingNotice, 7000); else toast(S.rewindNotice);
 }
 // One timekeeper reached the open moon gate: tell the players who is still on the way (once per arrival).
 function noticeWaiting() {

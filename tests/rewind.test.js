@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import { setup, applyAction } from '../src/logic.js';
-import { rootriseArena } from './arena.js';
+import { rootriseArena, trialsArena } from './arena.js';
 import { createHistory, compactFrame, rewindFrame, easeRewind, REWIND } from '../public/rewind.js';
 
 const act = (s, a) => applyAction(s, 'local', a);
@@ -8,8 +8,8 @@ const tick = (s, n = 1) => { for (let i = 0; i < n; i++) s = act(s, { type: 'tic
 
 describe('rewind history', () => {
   test('a long session stays within a fixed number of frames and memory, yet always spans start to now', () => {
-    // Courtyard 5 has the most moving parts (creatures, darts, orbs, mites). Play ~8 minutes.
-    let s = setup({ level: 4 });
+    // The creature trials have the most moving parts (creatures, darts, orbs, mites). Play ~8 minutes.
+    let s = trialsArena();
     const history = createHistory();
     history.reset(s);
     s = act(s, { type: 'move', actor: 0, dir: 1 });

@@ -46,7 +46,7 @@ describe('courtyard 1 layout', () => {
     expect(s.width).toBe(1920);
     expect(gate.x + gate.w).toBe(1920);
     expect(middle.x + middle.w).toBe(gate.x);
-    expect(setup({ level: 4 }).width).toBe(1280); // courtyard 5 keeps the classic size
+    expect(setup({ level: 4 }).width).toBe(2560); // courtyard 5 is wider still
   });
 
   test('two crates on the start ledge; on the middle, in order: hourglass, seed, ancient mushroom, pit', () => {

@@ -9,6 +9,9 @@ export const meta = {
   plant: { maxHeight: 235, springHeight: 45, growTicks: 960, matureTicks: 480, witherTicks: 480 },
   // A vine grows horizontally out of a wall pit, as long as `maxLength`, on the mushroom's clock.
   vine: { maxLength: 240 },
+  // Walking time: a plant that keeps a traveller's pace never vanishes; its age stays between `minAge` (a sprout
+  // still showing) and the end of its wilt.
+  walk: { minAge: 40 },
   // Still's Freeze Area: a circle cast at a chosen point. `range` is how far from Still the centre may be,
   // `duration` is in ticks (60 per second), `rate` is local time inside it.
   freeze: { rate: FROZEN_RATE, radius: 130, range: 380, duration: 600 },
@@ -73,10 +76,13 @@ export const canopyWidth = plant => plant.height * (plant.withered ? dieFrame(wi
 
 // A level plant may start at a `grown` fraction of grow + mature, or at an exact `age` in ticks (which wins).
 // Past maturity it starts withered.
-function makePlant(id, pit, { grown = 0, age, barrier = false } = {}) {
+// A plant or mover with a `walker` (0 Still, 1 Bloom) keeps that traveller's pace instead of a clock of its own: its
+// time runs on while they walk right, back while they walk left, and stops while they stand (see `walkerTime`).
+const walking = p => p.walker === 0 || p.walker === 1 ? { walker: p.walker, pace: p.pace ?? 1, clock: 0 } : {};
+function makePlant(id, pit, { grown = 0, age, barrier = false, ...rest } = {}) {
   pit.plant = id;
   const start = age ?? grown * (meta.plant.growTicks + meta.plant.matureTicks);
-  return { kind: 'plant', id, pit: pit.id, x: pit.x, base: pit.y, age: start, height: sizeAt(pit.wall, start), withered: start > meta.plant.growTicks + meta.plant.matureTicks, speed: 0, frozen: false, barrier, ...(pit.wall && { wall: pit.wall }) };
+  return { kind: 'plant', id, pit: pit.id, x: pit.x, base: pit.y, age: start, height: sizeAt(pit.wall, start), withered: start > meta.plant.growTicks + meta.plant.matureTicks, speed: 0, frozen: false, barrier, ...(pit.wall && { wall: pit.wall }), ...walking(rest) };
 }
 
 // A seed lying in the courtyard; Bloom collects it by touch.
@@ -85,7 +91,7 @@ const makeSeed = (id, x, y) => ({ kind: 'seed', id, x, y, vx: 0, vy: 0, frozen: 
 // A moving platform runs between x1 and x2 (with `axis: 'y'`, between y1 and y2). It sleeps until Bloom wakes it
 // unless the level gives it a `speed`; `dir: -1` starts it at the far end heading back.
 function makeMover(id, p) {
-  const dir = p.dir ?? 1, base = { kind: 'mover', id, w: p.w, dir, speed: p.speed ?? 0, frozen: false };
+  const dir = p.dir ?? 1, base = { kind: 'mover', id, w: p.w, dir, speed: p.speed ?? 0, frozen: false, ...(p.walker !== undefined && { ...walking(p), from: dir }) };
   return p.axis === 'y' ? { ...base, axis: 'y', x: p.x, y: dir < 0 ? p.y2 : p.y1, y1: p.y1, y2: p.y2 }
     : { ...base, x: dir < 0 ? p.x2 : p.x1, y: p.y, x1: p.x1, x2: p.x2 };
 }
@@ -105,19 +111,21 @@ function makeLevel(index, players, unlocked, totalShards, collected = LEVELS.map
   const state = {
     level: index, levelId: level.id, unlocked, totalShards, collected: clone(collected), tick: 0, status: 'playing', active: 0,
     playerIds: players, width: level.width ?? 1280, height: 640,
-    actors: level.spawn.map((p, i) => ({ id: i, x: p.x, y: p.y, vx: 0, vy: 0, facing: 1, grounded: true, on: 'ground', coyote: meta.controls.coyote, jumpBuffer: 0, jumpHeld: false, jumpCut: true, move: 0, carrying: null, invuln: 0, checkpoint: null, respawnTick: null, spawnX: p.x, spawnY: p.y })),
+    actors: level.spawn.map((p, i) => ({ id: i, x: p.x, y: p.y, vx: 0, vy: 0, facing: 1, grounded: true, on: 'ground', coyote: meta.controls.coyote, jumpBuffer: 0, jumpHeld: false, jumpCut: true, move: 0, stride: 0, carrying: null, invuln: 0, checkpoint: null, respawnTick: null, spawnX: p.x, spawnY: p.y })),
     platforms: clone(level.platforms), objects, pits, nextPlant: level.plants.length, nextSeed: 0, nextEnemy: objects.length,
     checkpoints: (level.checkpoints ?? []).map((c, i) => ({ id: `cp-${i}`, x: c.x, y: c.y, lit: false })),
     exit: clone(level.exit), shards: level.shards.map((p, i) => ({ ...p, id: i, taken: false })),
     flags: { frozenTouched: false, treeLifted: false, treeRewound: false, vineRewound: false, withered: false, sproutJump: false, moverRide: false, dartRide: false, miteGone: false, guardRide: false },
     needs: clone(level.need), needsDone: 0, events: [], eventSeq: 0,
     started: false, elapsed: 0, lastProgressTick: 0, falls: 0,
-    freezeAreas: [], nextArea: 0, freezeCharges: level.freezeCharges ?? 1, bloomCharges: meta.charges.bloomStart,
+    freezeAreas: [], nextArea: 0, freezeCharges: level.freezeCharges ?? 1, bloomCharges: level.bloomCharges ?? meta.charges.bloomStart,
     seeds: level.startSeeds ?? meta.seeds.start,
     // Whether a crate lost out of the courtyard returns to its spawn (false: it is gone for good).
     crateRespawn: level.crateRespawn ?? true,
     // In a courtyard with `bloomReverses`, Bloom runs plant time backwards instead of forwards.
     bloomReverses: level.bloomReverses ?? false,
+    // In a courtyard with `walkingTime`, plants and movers carry a `walker` and keep that traveller's pace.
+    walkingTime: level.walkingTime ?? false,
     pickups: [
       ...(level.freezePickups ?? []).map((p, i) => ({ ...p, id: `frost-${i}`, kind: 'frost', taken: false })),
       ...level.bloomPickups.map((p, i) => ({ ...p, id: `bolt-${i}`, kind: 'bolt', taken: false })),
@@ -143,7 +151,8 @@ function actorAllowed(state, playerId, actor) {
 const timeObject = o => o.kind === 'plant' || o.kind === 'mover' || o.kind === 'crate' || isEnemy(o);
 // Still's area slows anything; Bloom hastens things that have a clock of their own (not crates).
 // In a rewinding courtyard Bloom's backwards time only takes hold of plants.
-const canAffect = (state, actor, o) => timeObject(o) && (actor === STILL || (o.kind !== 'crate' && (!state.bloomReverses || o.kind === 'plant')));
+// Something keeping a traveller's pace answers only to their steps.
+const canAffect = (state, actor, o) => timeObject(o) && o.walker === undefined && (actor === STILL || (o.kind !== 'crate' && (!state.bloomReverses || o.kind === 'plant')));
 
 // Everything this actor's ability can reach right now.
 export function abilityTargets(state, actor) {
@@ -378,13 +387,30 @@ function surfaces(state) {
   return result;
 }
 
+// How far a pace-keeping object's time moves this tick: the walker's own steps (px walked last tick, right positive;
+// being carried does not count) times its pace. Null for an object with a clock of its own.
+function walkerTime(state, o) {
+  if (o.walker === undefined) return null;
+  return (state.actors[o.walker]?.stride ?? 0) * o.pace * (o.frozen ? meta.time.frozenRate : 1);
+}
+
+// A back-and-forth platform at time `t` of its run: where it is and which way it is heading as time runs on.
+function moverAt(o, t) {
+  const [lo, hi] = o.axis === 'y' ? [o.y1, o.y2] : [o.x1, o.x2], L = hi - lo;
+  if (L <= 0) return { at: lo, dir: o.from };
+  const u = ((t % (2 * L)) + 2 * L) % (2 * L), off = u <= L ? u : 2 * L - u;
+  return { at: o.from < 0 ? hi - off : lo + off, dir: (u < L ? 1 : -1) * o.from };
+}
+
 function ageObjects(state) {
   for (const o of [...state.objects]) {
-    const slow = o.frozen ? meta.time.frozenRate : 1;
-    if (o.kind === 'plant' && o.speed !== 0) {
+    const slow = o.frozen ? meta.time.frozenRate : 1, walked = walkerTime(state, o);
+    if (walked !== null) o.clock += walked;
+    if (o.kind === 'plant' && (walked !== null ? walked !== 0 : o.speed !== 0)) {
       const { growTicks, matureTicks, witherTicks } = meta.plant;
-      o.age += o.speed * slow;
-      if (o.age >= growTicks + matureTicks + witherTicks || o.age <= 0) {
+      if (walked !== null) o.age = Math.max(meta.walk.minAge, Math.min(growTicks + matureTicks + witherTicks, o.age + walked));
+      else o.age += o.speed * slow;
+      if (walked === null && (o.age >= growTicks + matureTicks + witherTicks || o.age <= 0)) {
         state.objects = state.objects.filter(x => x !== o);
         state.pits.find(p => p.id === o.pit).plant = null;
         event(state, 'vanish', o.x, o.base - o.height, { plant: true, base: o.base, ...(o.age <= 0 && { rewound: true }) });
@@ -404,10 +430,13 @@ function ageObjects(state) {
       if (rise && !o.wall) for (const p of state.actors) if (p.on === o.id && p.grounded) {
         p.y -= rise;
         if (rise > 0 && o.height > meta.plant.springHeight) state.flags.treeLifted = true;
-        if (o.speed < 0) state.flags.treeRewound = true;
+        if ((walked ?? o.speed) < 0) state.flags.treeRewound = true;
       }
     }
-    if (o.kind === 'mover' && o.speed > 0) {
+    if (o.kind === 'mover' && walked !== null) {
+      const k = o.axis === 'y' ? 'y' : 'x', { at, dir } = moverAt(o, o.clock);
+      o[k] = at; o.dir = dir;
+    } else if (o.kind === 'mover' && o.speed > 0) {
       const [k, lo, hi] = o.axis === 'y' ? ['y', o.y1, o.y2] : ['x', o.x1, o.x2];
       o[k] += o.dir * o.speed * meta.time.moverSpeed * slow;
       if (o[k] >= hi) { o[k] = hi; o.dir = -1; } else if (o[k] <= lo) { o[k] = lo; o.dir = 1; }
@@ -531,6 +560,8 @@ function moveActors(state) {
     for (const f of state.platforms) if (rectOverlap(body(), f) && p.y > f.y + 9) p.x = oldX;
     for (const c of crates) if (!inside.includes(c) && rectOverlap(body(), c) && p.y > c.y + 9) p.x = oldX;
     for (const s of stems) if (inStem.includes(s) ? Math.abs(p.x - (s.x + s.w / 2)) < Math.abs(oldX - (s.x + s.w / 2)) : rectOverlap(body(), s) && p.y > s.y + 9) p.x = oldX;
+    // The traveller's own steps this tick (walls and edges included, being carried not): pace-keeping objects follow it.
+    p.stride = p.x - oldX;
     if (p.move && state.tick % 18 === 0) {
       if (p.x === oldX) event(state, 'collision', p.x, p.y, { actor: p.id });
       else if (p.grounded) event(state, 'step', p.x, p.y, { actor: p.id });

@@ -3,7 +3,7 @@ export const CONVERSATIONS = [
   [[1, 'Our seed rolled into the trench. I can lure that snail to the right edge.'], [0, 'It cannot leave its platform. I will slow it so we can climb on its shell.']],
   [[0, 'Arrows from the wall, and a canyon with no floor beyond.'], [1, 'Then I will grow us a way: a mushroom between the darts, vines from both cliffs.'], [0, 'And past the canyon, two platforms that meet halfway. We cross together.']],
   [[1, 'Something is wrong with my hands. Here, time runs backwards when I touch it.'], [0, 'Then let that dead tree be young again, just long enough to climb.']],
-  [[0, 'The garden is restless. Watch for the glow before they strike.'], [1, 'And the moon lamps?'], [0, 'A place to begin again. Stay close.']],
+  [[1, 'Every step I take, the gold things take with me. Back a step, and they go back.'], [0, 'And the teal ones keep mine. Then neither of us can carry ourselves.'], [1, 'So you walk for me, and I walk for you.']],
 ];
 export function dialogueFrame(lines, elapsed) {
   let time = Math.max(0, elapsed);
