@@ -268,7 +268,7 @@ export function throwLaunch(state, actor, aim) {
   return { x: p.x + side * offset.x, y: p.y + offset.y, ...v, facing: side };
 }
 
-// The flight of a crate thrown with `aim`, tick by tick, using the same physics as a real throw (including the
+// The flight of a crate or seed thrown with `aim`, tick by tick, using the same physics as a real throw (including the
 // local time of Freeze Areas it passes through), until it lands, hits a wall or leaves the courtyard.
 export function throwPath(state, actor, aim, maxTicks = 180) {
   const start = throwLaunch(state, actor, aim), carried = state.actors[actor].carrying;
@@ -301,7 +301,8 @@ export function validateAction(state, playerId, action) {
   if (action.type === 'takeSeed') {
     if (action.actor !== BLOOM) return no('role');
     if (state.actors[BLOOM].carrying !== null) return no('handsFull');
-    return state.seeds > 0 ? { valid: true } : no('noSeeds');
+    if (state.seeds <= 0) return no('noSeeds');
+    return canTakeSeed(state, action.actor) ? { valid: true } : no('invalid');
   }
   if (action.type === 'grab') {
     const p = state.actors[action.actor];
@@ -449,6 +450,12 @@ function moveItems(state) {
     }
     if (landed && landed.speed > 1) event(state, crate ? 'crateLand' : 'seedLand', o.x, landed.y);
     if (o.y > 720 || o.x < 20 || o.x > state.width - 20) {
+      if (o.fromHand) {
+        const bloom = state.actors[BLOOM];
+        lost.add(o.id); state.seeds++;
+        event(state, 'seedPick', bloom.x, bloom.y - 20, { actor: BLOOM, seeds: state.seeds });
+        continue;
+      }
       reset.add(o.id);
       // Where crates do not respawn, a lost crate is gone for good. Seeds always return.
       if (crate && state.crateRespawn === false) { lost.add(o.id); event(state, 'crateLost', o.x, Math.min(o.y, state.height)); continue; }
@@ -541,7 +548,7 @@ function moveActors(state) {
         respawn(state, p, 'hit');
       }
     }
-    if (p.id === BLOOM) for (const seed of state.objects.filter(o => o.kind === 'seed' && free(o) && dist({ x: p.x, y: p.y - 20 }, o) < meta.seeds.reach)) {
+    if (p.id === BLOOM) for (const seed of state.objects.filter(o => o.kind === 'seed' && free(o) && !o.thrown && dist({ x: p.x, y: p.y - 20 }, o) < meta.seeds.reach)) {
       state.objects = state.objects.filter(o => o !== seed); state.seeds++;
       event(state, 'seedPick', seed.x, seed.y, { actor: p.id, seeds: state.seeds });
     }
@@ -693,16 +700,16 @@ export function applyAction(state, playerId, action) {
   if (action.type === 'jump' && !p.jumpHeld) { p.jumpHeld = true; p.jumpBuffer = meta.controls.jumpBuffer; }
   if (action.type === 'jumpRelease') p.jumpHeld = false;
   if (action.type === 'takeSeed') {
-    // One seed from the count goes into Bloom's hand. If it is ever lost it returns to where it was taken.
+    // One seed from the count goes into Bloom's hand. If it is ever lost it goes back to the count.
     s.seeds--;
-    const o = { ...makeSeed(`seed-taken-${s.nextSeed++}`, p.x, p.y - 10), held: BLOOM };
+    const o = { ...makeSeed(`seed-taken-${s.nextSeed++}`, p.x, p.y - 10), held: BLOOM, fromHand: true };
     Object.assign(o, heldPosition(o, p));
     s.objects.push(o); p.carrying = o.id;
     event(s, 'seedTake', o.x, o.y, { actor: BLOOM, seeds: s.seeds });
   }
   if (action.type === 'grab') {
     if (p.carrying !== null) {
-      // Throw the carried crate, aimed or the default way.
+      // Throw the carried crate or seed, aimed or the default way.
       const o = find(s, p.carrying), launch = throwLaunch(s, action.actor, action.aim);
       p.carrying = null; o.held = null; p.facing = launch.facing;
       Object.assign(o, { frozen: false, x: launch.x, y: launch.y, vx: launch.vx, vy: launch.vy, ...(o.kind === 'seed' && { thrown: true }) });

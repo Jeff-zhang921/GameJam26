@@ -14,7 +14,8 @@ export function taskHints(state) {
   const gate = state.platforms.find(p => state.exit.x >= p.x && state.exit.x <= p.x + p.w && p.y === state.exit.y);
   const plants = state.objects.filter(o => o.kind === 'plant');
   const plant = plants.find(o => !o.barrier && !o.withered);
-  const looseSeed = state.objects.some(o => o.kind === 'seed');
+  const looseSeed = state.objects.some(o => o.kind === 'seed' && o.held == null);
+  const carriesCrate = p => state.objects.find(o => o.id === p.carrying)?.kind === 'crate';
   const pit = state.pits.find(p => p.plantable !== false && p.plant === null);
   const ancient = plants.find(o => o.barrier && !o.withered);
   const needsSeed = state.seeds <= 0 && !plant;
@@ -49,17 +50,17 @@ export function taskHints(state) {
       if (p.on === slowed?.id) hints[actor] = 'Jump from the crate to the next ledge.';
       else if (slowed) hints[actor] = 'Jump onto the slowed crate.';
       else if (actor === 0 && flying) hints[actor] = 'Cast Freeze around the flying crate.';
-      else if (p.carrying) hints[actor] = 'Throw the crate across the gap.';
+      else if (carriesCrate(p)) hints[actor] = 'Throw the crate across the gap.';
       else hints[actor] = actor === 0 ? 'Pick up a crate. Throw, then Freeze it.' : 'Pick up a crate; Still will slow it.';
     });
   } else if (needsSeed && looseSeed) {
-    hints[1] = bloom.carrying ? 'Throw the crate, then collect the seed.' : 'Walk over the seed to collect it.';
+    hints[1] = carriesCrate(bloom) ? 'Throw the crate, then collect the seed.' : 'Walk over the seed to collect it.';
     hints[0] = 'Let Bloom collect the seed.';
   } else if (ancient) {
     hints[1] = ancient.speed >= meta.time.maxSpeed ? 'Let the ancient mushroom wither.' : 'Use Speed on the ancient mushroom.';
     hints[0] = 'Let Bloom clear the ancient mushroom.';
   } else if (!plant && pit && state.seeds > 0) {
-    hints[1] = bloom.carrying ? 'Throw the crate, then plant the seed.' : Math.abs(bloom.x - pit.x) > meta.controls.pitReach ? 'Bring the seed to the empty pit.' : 'Plant the seed in this pit.';
+    hints[1] = carriesCrate(bloom) ? 'Throw the crate, then plant the seed.' : Math.abs(bloom.x - pit.x) > meta.controls.pitReach ? 'Bring the seed to the empty pit.' : 'Plant the seed in this pit.';
     hints[0] = 'Meet Bloom beside the empty pit.';
   } else if (plant) {
     const highEnough = gate && plant.base - plant.height - gate.y < 120;
