@@ -13,7 +13,7 @@ import { createPWA } from './pwa.js';
 import { createViewport } from './viewport.js';
 import { createDialogue } from './dialogue.js';
 import { createTaskHints } from './task-hints.js';
-import { GATE_DURATION } from './portal.js';
+import { GATE_DURATION, ARRIVAL_DURATION } from './portal.js';
 
 // One music player: menus play MENU_MUSIC, a courtyard plays the track its theme names (themes.js).
 const music = createMusic();
@@ -161,7 +161,7 @@ const network = createNetwork({
     if (!rewind) history.record(game);
     if (game.status === 'paused' && previous.status !== 'paused') resetTouchState();
     if (networkEpoch !== info.epoch) {
-      const from = live && !rewind && previous.status === 'won' && game.status === 'playing' && previous.level !== game.level
+      const from = live && !rewind && game.status === 'playing' && network.room.status !== 'STARTING' && !entrance.active
         ? { state: previous, sceneKey, cameraReset } : null;
       networkEpoch = info.epoch; sceneKey++; cameraReset++; seenEvent = state.eventSeq;
       shownHint = 0; uiChapter = ''; resetTouchState(); history.reset(game);
@@ -221,7 +221,7 @@ const entrance = createEntrance({
     lobby.setEntering(true); syncStage();
   },
   onFinish() {
-    lobby.setEntering(false); syncStage(); resetTouchState();
+    lobby.setEntering(false); startArrival(); resetTouchState();
     revealCourtyard(); canvas.focus({ preventScroll: true });
   },
   onCancel() { lobby.setEntering(false); syncStage(); },
@@ -415,6 +415,11 @@ function revealCourtyard() {
   modal = null; accumulator = 0; previousTick = null;
   updateUI(); renderModal();
 }
+function startArrival(time = performance.now()) {
+  arrival = { start: time, duration: reduced ? 180 : ARRIVAL_DURATION };
+  accumulator = 0; previousTick = null;
+  syncStage();
+}
 function startCelebration() {
   resetTouchState(); freezePreview = tapEffect = null;
   document.querySelector('#toast').classList.remove('show');
@@ -452,7 +457,7 @@ function advanceStage(time) {
     if (progress < 1) return;
     const arrive = fade.arrive;
     clearStage(); resetTouchState(); accumulator = 0;
-    if (arrive) { arrival = { start: time, duration: reduced ? 180 : 900 }; syncStage(); }
+    if (arrive) startArrival(time);
     if (!modal) canvas.focus({ preventScroll: true });
   }
 }
@@ -555,7 +560,7 @@ document.addEventListener('click', event => {
   initAudio();
   if (button.dataset.level !== undefined) {
     const level = Number(button.dataset.level);
-    if ((!modal || modal === 'pause') && !onlineMode) { clearInputs(); dispatch({ type: 'level', level }); modal = null; renderModal(); persist(); canvas.focus({ preventScroll: true }); }
+    if ((!modal || modal === 'pause') && !onlineMode) { clearInputs(); startFade(() => { dispatch({ type: 'level', level }); persist(); revealCourtyard(); }, { arrive: true }); }
     else if (modal === 'pause' && onlineMode && network.host) { pendingLevel = level; modal = 'confirm-level'; renderModal(); }
     return;
   }
@@ -563,7 +568,7 @@ document.addEventListener('click', event => {
   if (action === 'start') {
     if (modal !== 'intro') return;
     clearInputs();
-    startFade(() => { persist(); revealCourtyard(); });
+    startFade(() => { persist(); revealCourtyard(); }, { arrive: true });
     return;
   }
   if (action === 'sound') { sound = !sound; if (!sound) audioContext?.suspend(); initAudio(); updateUI(); persist(); if (['settings', 'intro', 'pause'].includes(modal)) renderModal(); else if (!modal) canvas.focus({ preventScroll: true }); return; }

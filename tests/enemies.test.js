@@ -240,7 +240,7 @@ describe('nests and mites', () => {
 describe('checkpoints and hits', () => {
   const withCheckpoint = (enemies, actors) => {
     const s = arena(enemies, actors);
-    s.checkpoints = [{ id: 'cp-0', x: 520, y: 540, lit: false }]; s.checkpoint = null;
+    s.checkpoints = [{ id: 'cp-0', x: 520, y: 540, lit: false }];
     return s;
   };
   const hitsOver = (s, n, each = x => x) => {
@@ -249,17 +249,45 @@ describe('checkpoints and hits', () => {
     return { s, hits };
   };
 
-  test('an actor touching a checkpoint lights it for both, and hits and falls return there', () => {
+  test('only the traveller touching a checkpoint saves there; a partner hit keeps both saves separate', () => {
     let s = withCheckpoint([{ kind: 'dart', id: 'd', x: 300, y: 540, dx: 1, dy: 0 }], [{ x: 520 }, { x: 60 }]);
     s = step(s);
-    expect(s.checkpoint).toBe('cp-0');
+    expect(s.actors.map(p => p.checkpoint)).toEqual(['cp-0', null]);
     expect(s.checkpoints[0].lit).toBe(true);
     Object.assign(s.actors[1], { x: get(s, 'd').x, y: 540 });
     s = step(s);
-    expect(s.actors[1]).toMatchObject({ x: 538, y: 540 });
+    expect(s.actors[1]).toMatchObject({ x: s.actors[1].spawnX, y: s.actors[1].spawnY, checkpoint: null });
+    expect(s.actors[0]).toMatchObject({ x: 520, y: 540, checkpoint: 'cp-0' });
     Object.assign(s.actors[0], { x: 680, y: 720 });
     s = step(s);
     expect(s.actors[0]).toMatchObject({ x: 502, y: 540 });
+  });
+
+  test('partners can save at different checkpoints and return independently after falling', () => {
+    let s = withCheckpoint([], [{ x: 520 }, { x: 840 }]);
+    s.checkpoints.push({ id: 'cp-1', x: 840, y: 540, lit: false });
+    s = step(s);
+    expect(s.actors.map(p => p.checkpoint)).toEqual(['cp-0', 'cp-1']);
+    Object.assign(s.actors[0], { x: 700, y: 720 });
+    s = step(s);
+    expect(s.actors[0]).toMatchObject({ x: 502, y: 540 });
+    expect(s.actors[1]).toMatchObject({ x: 840, y: 540, checkpoint: 'cp-1' });
+    Object.assign(s.actors[1], { x: 700, y: 720 });
+    s = step(s);
+    expect(s.actors[0]).toMatchObject({ x: 502, y: 540, checkpoint: 'cp-0' });
+    expect(s.actors[1]).toMatchObject({ x: 858, y: 540, checkpoint: 'cp-1' });
+    expect(s.events.filter(e => e.kind === 'checkpoint').map(e => e.actor)).toEqual([0, 1]);
+  });
+
+  test('each traveller can activate an already lit checkpoint', () => {
+    let s = withCheckpoint([], [{ x: 520 }, { x: 60 }]);
+    s = step(s);
+    s.actors[1].x = 520;
+    s = step(s);
+    expect(s.actors.map(p => p.checkpoint)).toEqual(['cp-0', 'cp-0']);
+    s.actors.forEach(p => { p.y = 720; });
+    s = step(s);
+    expect(s.actors.map(p => p.x)).toEqual([502, 538]);
   });
 
   test('a hit drops what the actor was carrying and grants a moment of invulnerability', () => {
@@ -305,9 +333,9 @@ describe('checkpoints and hits', () => {
   test('restart puts lit checkpoints out', () => {
     let s = withCheckpoint([], [{ x: 520 }, { x: 60 }]);
     s = step(s, 30);
-    expect(s.checkpoint).toBe('cp-0');
+    expect(s.actors[0].checkpoint).toBe('cp-0');
     s = action(s, { type: 'restart' });
-    expect(s.checkpoint).toBe(null);
+    expect(s.actors.every(p => p.checkpoint === null)).toBe(true);
     expect(s.checkpoints.every(c => !c.lit)).toBe(true);
   });
 });

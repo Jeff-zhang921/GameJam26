@@ -11,10 +11,12 @@ export function createCamera() {
       const worldWidth = state.width ?? 1280, worldHeight = state.height ?? 640;
       // Zoom is based on a standard 1280 x 640 view, so wider courtyards scroll instead of shrinking to fit
       // (which would also leave bands above and below the world). Reduced motion holds a still view of it all.
-      const fit = Math.min(width / Math.min(1280, worldWidth), height / worldHeight), whole = Math.min(width / worldWidth, height / worldHeight);
-      // Never zoom out past the world's edges: screens taller than 2:1 (16:10, iPad) would otherwise show bands above and below.
-      const cover = Math.max(width / worldWidth, height / worldHeight);
+      const fit = Math.min(width / Math.min(1280, worldWidth), height / worldHeight);
       const actor = state.actors[state.active];
+      const tracked = mode === 'coop' ? state.actors : [actor];
+      // High mushroom jumps can rise above y=0. Include that airspace in the camera bounds.
+      const worldTop = Math.min(0, ...tracked.map(p => p.y - 52 - 80));
+      const verticalCenter = center => worldTop + boundedCenter(center - worldTop, height / camera.scale, worldHeight - worldTop);
       let targetX = actor.x + actor.facing * 60, targetY = actor.y - 100, targetZoom = 1.2;
       const reset = !initialized || sceneKey !== previousScene || resetCamera;
       if (mode === 'coop') {
@@ -24,10 +26,10 @@ export function createCamera() {
           top = Math.min(top, player.y - 52 - 120); bottom = Math.max(bottom, player.y + 120);
         }
         targetX = (left + right) / 2; targetY = (top + bottom) / 2;
-        targetZoom = clamp(Math.min(width / (right - left), height / (bottom - top)) / fit, 1, 1.2);
+        targetZoom = Math.min(1.2, Math.min(width / (right - left), height / (bottom - top)) / fit);
       }
       if (reduced) {
-        camera.x = worldWidth / 2; camera.y = worldHeight / 2; zoom = 1;
+        camera.x = worldWidth / 2; camera.y = (worldTop + worldHeight) / 2; zoom = 1;
       } else if (reset) {
         camera.x = targetX; camera.y = targetY; zoom = targetZoom;
       } else if (!paused) {
@@ -36,17 +38,19 @@ export function createCamera() {
         camera.x = blend(camera.x, mode === 'coop' ? targetX : deadzoneTarget(camera.x, targetX, 100), dt, .18);
         camera.y = blend(camera.y, mode === 'coop' ? targetY : deadzoneTarget(camera.y, targetY, 60), dt, .28);
       }
-      camera.scale = reduced ? whole : Math.max(fit * zoom, cover);
+      const cover = Math.max(width / worldWidth, height / (worldHeight - worldTop));
+      camera.scale = reduced ? Math.min(width / worldWidth, height / (worldHeight - worldTop))
+        : mode === 'coop' && worldTop < 0 ? fit * zoom : Math.max(fit * zoom, cover);
       camera.x = boundedCenter(camera.x, width / camera.scale, worldWidth);
-      camera.y = boundedCenter(camera.y, height / camera.scale, worldHeight);
-      if (mode === 'coop' && !paused && !reduced) {
+      camera.y = verticalCenter(camera.y);
+      if (!paused && !reduced) {
         const halfWidth = width / camera.scale / 2, halfHeight = height / camera.scale / 2;
-        for (const player of state.actors) {
-          camera.x = clamp(camera.x, player.x - halfWidth + 30, player.x + halfWidth - 30);
-          camera.y = clamp(camera.y, player.y - halfHeight + 20, player.y - 52 + halfHeight - 20);
+        for (const player of tracked) {
+          if (mode === 'coop') camera.x = clamp(camera.x, player.x - halfWidth + 30, player.x + halfWidth - 30);
+          camera.y = clamp(camera.y, player.y - halfHeight + 20, player.y - 52 + halfHeight - 80);
         }
         camera.x = boundedCenter(camera.x, width / camera.scale, worldWidth);
-        camera.y = boundedCenter(camera.y, height / camera.scale, worldHeight);
+        camera.y = verticalCenter(camera.y);
       }
       camera.offsetX = width / 2 - camera.x * camera.scale;
       camera.offsetY = height / 2 - camera.y * camera.scale;
@@ -54,7 +58,7 @@ export function createCamera() {
       // the bottom, sit the world as low as the controls allow (ground stays above the joystick) and give
       // the rest to the top, where the HUD lives, instead of leaving an empty band under the world.
       const slack = height - worldHeight * camera.scale;
-      if (bottomInset > 0 && slack > 0.5) {
+      if (bottomInset > 0 && slack > 0.5 && worldTop === 0) {
         const grounds = (state.platforms ?? []).filter(p => p.y + p.h >= worldHeight - 1).map(p => p.y);
         const depth = worldHeight - (grounds.length ? Math.max(...grounds) : worldHeight);
         const band = clamp(bottomInset + 8 - depth * camera.scale, 0, slack);

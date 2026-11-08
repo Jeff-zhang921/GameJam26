@@ -1,9 +1,9 @@
-import { canopyWidth, meta, atExit, anchor, exitStatus } from '../src/logic.js';
+import { canopyWidth, meta, atExit, anchor, exitStatus, heldPosition } from '../src/logic.js';
 import { GROW, DIE, growFrame, dieFrame } from '../src/mushroom.js';
 import { enemyBox, lifeFraction, miteStage, isEnemy, attackCharge } from '../src/enemies.js';
 import { createCamera, createParticles, worldPoint } from './presentation.js';
 import { themeFor } from './themes.js';
-import { portalFrame, landingFrame, GATE_DURATION } from './portal.js';
+import { portalFrame, arrivalFrame, GATE_DURATION, ARRIVAL_DURATION } from './portal.js';
 
 export function createRenderer(canvas, S) {
   const ctx = canvas.getContext('2d');
@@ -29,7 +29,7 @@ export function createRenderer(canvas, S) {
     budget.elapsed = budget.frames = budget.slow = 0;
   }
   const camera = createCamera(), effects = createParticles();
-  let transform, portalView = null;
+  let transform, portalView = null, arrivalView = null;
   const cyan = '#a1e3e5', gold = '#e1c68a', muted = '#8aa89b';
   const sprites = Object.fromEntries(['crate', 'seed', 'mushroom-grow', 'mushroom-die', 'still', 'mage', 'snail', 'pit'].map(name => { const img = new Image(); img.src = `/sprites/${name}.png`; return [name, img]; }));
   const loaded = (...names) => names.every(name => sprites[name].complete && sprites[name].naturalWidth > 0);
@@ -668,7 +668,7 @@ export function createRenderer(canvas, S) {
     const dt = lastTime === null ? 0 : Math.min(.05, Math.max(0, (time - lastTime) / 1000));
     lastTime = time;
     if (!options.paused && !options.reduced) visualTime += dt * 1000;
-    const t = options.reduced ? 0 : visualTime + (options.celebration?.progress ?? 0) * GATE_DURATION;
+    const t = options.reduced ? 0 : visualTime + (options.celebration?.progress ?? 0) * GATE_DURATION + (options.arrival?.progress ?? 0) * ARRIVAL_DURATION;
     transform = camera.update(state, { width: frameWidth, height: frameHeight, dt, mode: options.mode, reduced: options.reduced, paused: options.paused, sceneKey: options.sceneKey, resetCamera: lastReset !== options.cameraReset, bottomInset: options.bottomInset || 0 });
     const departure = options.celebration && portalFrame(options.celebration.progress, options.reduced);
     portalView = departure;
@@ -684,7 +684,8 @@ export function createRenderer(canvas, S) {
         offsetY: frameHeight / 2 - (cy + (focusY - cy) * departure.focus) * scale,
       };
     }
-    const landing = options.arrival && landingFrame(options.arrival.progress, options.reduced);
+    arrivalView = options.arrival ? arrivalFrame(options.arrival.progress, state.actors, Math.max(0, -transform.offsetX / transform.scale), options.reduced) : null;
+    if (arrivalView) state = { ...state, actors: arrivalView, objects: state.objects.map(o => o.held != null ? { ...o, ...heldPosition(o, arrivalView[o.held]) } : o) };
     lastReset = options.cameraReset;
     effects.update(state, { dt, reduced: options.reduced, paused: options.paused && state.status !== 'won', sceneKey: options.sceneKey });
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -694,7 +695,7 @@ export function createRenderer(canvas, S) {
     // Clip to the world on whole device pixels: a clip edge through the middle of a pixel row lets the sky show
     // through as a faint line where the world meets what lies beyond it.
     const k = currentDpr * transform.scale, ox = currentDpr * transform.offsetX, oy = currentDpr * transform.offsetY;
-    const [cx0, cy0, cx1, cy1] = [ox, oy, ox + state.width * k, oy + state.height * k].map(Math.round);
+    const [cx0, cy0, cx1, cy1] = [ox, Math.min(0, oy), ox + state.width * k, oy + state.height * k].map(Math.round);
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.beginPath(); ctx.rect(cx0, cy0, cx1 - cx0, cy1 - cy0); ctx.clip();
     ctx.setTransform(k, 0, 0, k, ox, oy);
     ctx.drawImage(background, 0, 0);
@@ -705,7 +706,7 @@ export function createRenderer(canvas, S) {
     // Touch: bracket every object the active character can reach (what a tap would act on).
     const marked = o => options.tappable ? options.tappable.has(o.id) : o.id === target;
     for (const p of state.pits) pit(p);
-    for (const cp of state.checkpoints ?? []) checkpoint(cp, cp.id === state.checkpoint, t);
+    for (const cp of state.checkpoints ?? []) checkpoint(cp, cp.id === state.actors[state.active].checkpoint, t);
     for (const o of state.objects) if (o.kind === 'mover') mover(o, marked(o), t);
     for (const o of state.objects) if (o.kind === 'plant') plant(o, marked(o), t, options.reduced);
     // Let the gate's glow extend beyond the world clip while keeping it behind the travellers.
@@ -740,9 +741,6 @@ export function createRenderer(canvas, S) {
         ctx.globalAlpha *= 1 - departure.fade;
         const size = 1 - departure.walk * .38;
         ctx.translate(traveller.x, traveller.y); ctx.scale(size, size); ctx.translate(-traveller.x, -traveller.y);
-      } else if (landing) {
-        ellipse(ctx, actorState.x, actorState.y + 2, 19, 4, 0, '#102c3544');
-        traveller = { ...actorState, y: actorState.y - landing.drop, grounded: landing.landed };
       }
       actor(traveller, actorState.id, !departure && actorState.id === state.active, !departure && actorState.animation && !options.reduced ? state.tick * 1000 / 60 : t);
       ctx.restore(); ctx.globalAlpha = 1;
@@ -809,7 +807,7 @@ export function createRenderer(canvas, S) {
       const rect = canvas.getBoundingClientRect();
       return transform ? worldPoint(transform, clientX - rect.left, clientY - rect.top) : null;
     },
-    inspect: () => ({ camera: transform && { ...transform }, portal: portalView && { ...portalView }, particles: effects.count, visualTime, pixelRatio: currentDpr, effectQuality: budget.level === 0 ? 'full' : 'light' }),
+    inspect: () => ({ camera: transform && { ...transform }, portal: portalView && { ...portalView }, arrival: arrivalView?.map(p => ({ id: p.id, x: p.x, y: p.y, move: p.move })) ?? null, particles: effects.count, visualTime, pixelRatio: currentDpr, effectQuality: budget.level === 0 ? 'full' : 'light' }),
     // After a failed frame: drop any clip / transform / save it left behind (resizing a canvas resets its state).
     resetContext: () => { const w = canvas.width; canvas.width = 0; canvas.width = w; },
   };

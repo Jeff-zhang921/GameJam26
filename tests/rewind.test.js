@@ -43,6 +43,18 @@ describe('rewind history', () => {
 });
 
 describe('rewind playback', () => {
+  test('rewind keeps each traveller\'s saved checkpoint and restores the unsaved start', () => {
+    const s = setup({ level: 4 }), start = compactFrame(s);
+    s.tick = 10;
+    s.actors[0].checkpoint = 'cp-0'; s.actors[1].checkpoint = 'cp-1';
+    s.checkpoints.forEach(cp => { cp.lit = true; });
+    const frames = [start, compactFrame(s)];
+    expect(rewindFrame(frames, 0).actors.map(p => p.checkpoint)).toEqual(['cp-0', 'cp-1']);
+    expect(rewindFrame(frames, 1).actors.map(p => p.checkpoint)).toEqual([null, null]);
+    expect(rewindFrame(frames, 1).checkpoints.every(cp => !cp.lit)).toBe(true);
+    expect(s.actors.map(p => p.checkpoint)).toEqual(['cp-0', 'cp-1']);
+  });
+
   const recorded = () => {
     // Courtyard 2 has long flat ground: Still walks right for two seconds (no falls, no respawns).
     let s = rootriseArena();
