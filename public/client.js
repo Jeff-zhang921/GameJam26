@@ -373,7 +373,9 @@ function updateUI() {
     freezeCount.textContent = S.freezeCount(charges); freezeCount.classList.toggle('empty', charges <= 0);
     uiValues.charges = charges;
   }
-  const seeds = state.seeds ?? 0;
+  // The counter shows every seed Bloom has, the one in hand included: it only drops once a seed is planted or thrown,
+  // so a seed in hand never shows beside an empty count.
+  const seeds = (state.seeds ?? 0) + (state.objects ?? []).filter(o => o.kind === 'seed' && o.held === 1).length;
   const showSeeds = (onlineMode ? network.actor : state.active) === 1 && !!state.pits?.length;
   // Bloom's seed button (R): plant beside an empty pit, otherwise take a seed in hand and aim the throw.
   const seedAction = showSeeds ? seedActionFor(state, onlineMode ? network.actor : state.active) : null;
@@ -965,15 +967,18 @@ function throwPreview(view) {
 function finishThrowAim(event, released) {
   if (throwAim?.pointer !== event.pointerId) return;
   updateThrowAim(event);
-  const { actor, active, overCancel, plantOnTap } = throwAim, aim = active ? throwVelocity() : null;
+  const { actor, active, overCancel } = throwAim, aim = active ? throwVelocity() : null;
   clearThrowAim();
   if (!released || overCancel || viewport.blocked || modal || stageBusy() || rewind || actor !== touchActor()) return;
-  if (plantOnTap && !active) { dispatch({ type: 'plant', actor }); return; }
+  if (!active && plantsHeldSeed(actor)) { dispatch({ type: 'plant', actor }); return; }
   dispatch(aim ? { type: 'grab', actor, aim } : { type: 'grab', actor });
 }
 
+// A short press (no drag, or a key let go within SHORT_PRESS_MS) with a seed in hand beside an empty pit plants it.
+const SHORT_PRESS_MS = 250;
+const plantsHeldSeed = actor => { const view = ownState(); return seedActionFor(view, actor) === 'plant' && view.actors[actor].carrying !== null; };
 function startMouseAim(kind, key, actor) {
-  mouseAim = { kind, key, actor }; freezePreview = null;
+  mouseAim = { kind, key, actor, started: performance.now() }; freezePreview = null;
 }
 function finishMouseAim() {
   const aim = mouseAim, view = lastView; mouseAim = null;
@@ -985,6 +990,7 @@ function finishMouseAim() {
     castSkill(preview); return;
   }
   if (ownState()?.actors[aim.actor]?.carrying === null) return;
+  if (performance.now() - aim.started < SHORT_PRESS_MS && plantsHeldSeed(aim.actor)) { dispatch({ type: 'plant', actor: aim.actor }); return; }
   const point = mouseWorld(), velocity = point && throwToward(view, aim.actor, point);
   dispatch(velocity ? { type: 'grab', actor: aim.actor, aim: velocity } : { type: 'grab', actor: aim.actor });
 }
@@ -1011,7 +1017,7 @@ for (const button of document.querySelectorAll('[data-touch]')) {
       // interact button's, so both throws feel the same).
       const { clientX: x, clientY: y, pointerId: pointer } = event, actor = touchActor(), view = ownState();
       // A seed already in hand beside a pit: a short tap plants it, a drag still aims a throw.
-      if (seedActionFor(view, actor) === 'plant' && view.actors[actor].carrying !== null) throwAim = { pointer, button, actor, x, y, startX: x, startY: y, travel: Math.max(90, interactButton.clientWidth * 1.4), active: false, overCancel: false, plantOnTap: true };
+      if (seedActionFor(view, actor) === 'plant' && view.actors[actor].carrying !== null) throwAim = { pointer, button, actor, x, y, startX: x, startY: y, travel: Math.max(90, interactButton.clientWidth * 1.4), active: false, overCancel: false };
       else seedPress(actor, () => { throwAim = { pointer, button, actor, x, y, startX: x, startY: y, travel: Math.max(90, interactButton.clientWidth * 1.4), active: false, overCancel: false }; });
     } else touchAction(button.dataset.touch);
     touchPointers.set(button, event.pointerId); button.classList.add('pressed');
