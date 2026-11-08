@@ -33,7 +33,7 @@ export function createRenderer(canvas, S) {
   const camera = createCamera(), effects = createParticles();
   let transform, portalView = null, arrivalView = null;
   const cyan = '#a1e3e5', gold = '#e1c68a', muted = '#8aa89b';
-  const sprites = Object.fromEntries(['crate', 'seed', 'mushroom-grow', 'mushroom-die', 'still', 'mage', 'snail', 'pit', 'vine'].map(name => { const img = new Image(); img.src = `/sprites/${name}.png`; return [name, img]; }));
+  const sprites = Object.fromEntries(['crate', 'seed', 'mushroom-grow', 'mushroom-die', 'still', 'mage', 'snail', 'pit', 'vine', 'crossbow'].map(name => { const img = new Image(); img.src = `/sprites/${name}.png`; return [name, img]; }));
   const loaded = (...names) => names.every(name => sprites[name].complete && sprites[name].naturalWidth > 0);
   // Theme art (ground, background images) is loaded on first use, by path. `theme` is the current courtyard's.
   const artCache = new Map();
@@ -389,6 +389,23 @@ export function createRenderer(canvas, S) {
   // each cell) is scaled to the collision box's height, so its shell top is where travellers stand, with the shell
   // (centred at x=128 of the cell) over the box and the head reaching out ahead. It steps through its frames as it
   // travels. The head retracts behind the shell to wind up; the shell springs back on its local strike clock.
+  // A launcher is a crossbow from a 4x2 sheet of 443.5px frames, facing right. Three frames are used: loaded
+  // (frame 0), just fired with the string forward (4) and cocked again without a bolt (7). Each is cropped
+  // [left, top, width, height] in its cell from the stock's end to the bow, leaving out the loose bolts the sheet
+  // draws in flight (the real dart is drawn on its own), and drawn with the stock's end at the same spot so the
+  // stock stays still between frames. Every crop's top is the bow's tip; the bolt rail is `rail` below it.
+  const CROSSBOW = { cell: 443.5, stock: 301, rail: 84, length: 76, frames: {
+    loaded: [0, 29, 141, 337, 200], fired: [4, 28, 129, 237, 203], cocked: [7, 0, 130, 246, 202] } };
+  function crossbow(o, cx, cy) {
+    const [i, left, top, w, h] = CROSSBOW.frames[o.timer < 12 ? 'fired' : o.timer < 30 ? 'cocked' : 'loaded'];
+    const k = CROSSBOW.length / CROSSBOW.stock;
+    ctx.save(); ctx.translate(cx, cy);
+    // Mirrored when it fires left (so it is never drawn upside down), turned for up or down.
+    if (Math.abs(o.dx) >= Math.abs(o.dy)) ctx.scale(o.dx < 0 ? -1 : 1, 1); else ctx.rotate(o.dy > 0 ? Math.PI / 2 : -Math.PI / 2);
+    ctx.drawImage(sprites.crossbow, i % 4 * CROSSBOW.cell + left, Math.floor(i / 4) * CROSSBOW.cell + top, w, h,
+      -CROSSBOW.length / 2, -CROSSBOW.rail * k, w * k, h * k);
+    ctx.restore();
+  }
   const SNAIL = { cell: 300, top: 76, bottom: 244, shellX: 128 };
   let snailTint;
   function snail(o, b, pose) {
@@ -442,7 +459,8 @@ export function createRenderer(canvas, S) {
       ellipse(ctx, cx, cy, b.w / 2, b.h / 2, 0, o.frozen ? '#c9d9c8' : '#e6b25a'); for (const dx of [-8, 8]) line(ctx, [[cx + dx, b.y + 4], [cx + dx * 1.3, cy], [cx + dx, b.y + b.h - 4]], '#b5853f88', 1);
       circle(ctx, cx - 7, cy - 2, 3, '#3b2a1c'); circle(ctx, cx + 7, cy - 2, 3, '#3b2a1c'); ellipse(ctx, cx, cy + 9, 5, o.chasing ? 4 : 2, 0, '#3b2a1c');
     }
-    if (o.kind === 'launcher') {
+    if (o.kind === 'launcher' && loaded('crossbow')) crossbow(o, cx, cy);
+    else if (o.kind === 'launcher') {
       ctx.fillStyle = '#56656a'; ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, 6); ctx.fill(); circle(ctx, cx, cy, 13, null, '#b8ac7188', 1.5);
       circle(ctx, cx + o.dx * 12, cy + o.dy * 12, 6, '#1c2b2c'); circle(ctx, cx, cy, 3, o.speed ? gold : '#8aa89b');
     }

@@ -42,8 +42,8 @@ export default {
   // through it, so that lane fires only every 420: wake the mushroom some 20-130 ticks after a lower dart flies past
   // the riders and the next one comes after they have cleared the lane.
   enemies: [
-    { kind: 'launcher', x: 20, y: 370, dir: [1, 0], every: 420 },
-    { kind: 'launcher', x: 20, y: 245, dir: [1, 0], every: 180 },
+    { kind: 'launcher', x: 40, y: 370, dir: [1, 0], every: 420 },
+    { kind: 'launcher', x: 40, y: 245, dir: [1, 0], every: 180 },
   ],
   checkpoints: [{ x: 820, y: 300 }, { x: 2170, y: 200 }],
   // Freeze stretches the safe band, the vines' window and the movers' meeting; hourglasses on the high ledge and the
