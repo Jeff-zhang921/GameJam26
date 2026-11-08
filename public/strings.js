@@ -39,7 +39,7 @@ export const S = {
   },
   warningRestart: 'Restart · Rewind Time', keepTrying: 'Keep Trying', warningHostOnly: 'Only the host can restart the shared courtyard.',
   rewinding: 'Rewinding time…',
-  waitingFor: ['The moon gate is open — waiting for the Stillkeeper to arrive.', 'The moon gate is open — waiting for the Bloomkeeper to arrive.'],
+  waitingFor: ['The wooden doors need both of us. Wait for Still to push together.', 'The wooden doors need both of us. Wait for Bloom to push together.'],
   gateWaiting: ['Waiting for Still', 'Waiting for Bloom'],
   restartBothTitle: 'Restart for both players?', restartBothBody: 'The courtyard resets on both screens at once.', restartBoth: 'Restart for Both',
   onlinePauseNote: 'This menu only covers your screen. The shared courtyard keeps moving.',

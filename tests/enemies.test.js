@@ -27,11 +27,12 @@ describe('guards', () => {
     expect(max - min).toBeGreaterThan(80);
   });
 
-  test('chase a spotted actor faster, but never walk off a ledge', () => {
+  test('ignores an actor across a gap on a separate ledge of the same height', () => {
     let s = arena([{ kind: 'guard', id: 'g', x: 600, y: 290, minX: 0, maxX: 1280 }], [{ x: 860, y: 290, on: 'platform-1' }, { x: 60 }]);
     s.platforms.push({ x: 560, y: 290, w: 120, h: 20 }, { x: 760, y: 290, w: 520, h: 20 });
     s = step(s, 20);
-    expect(get(s, 'g').chasing).toBe(true);
+    expect(get(s, 'g').chasing).toBe(false);
+    expect(get(s, 'g').target).toBeNull();
     expect(get(s, 'g').x).toBeLessThanOrEqual(680 - ENEMY.guard.w / 2);
     s = step(s, 60);
     expect(get(s, 'g').x).toBeLessThanOrEqual(680 - ENEMY.guard.w / 2);
@@ -162,11 +163,11 @@ describe('launchers and projectiles', () => {
 });
 
 describe('sight', () => {
-  test('a guard chases the nearest actor it can see, not a nearer one behind it', () => {
+  test('a guard chooses the nearest actor on its platform, even behind it', () => {
     let s = arena([{ kind: 'guard', id: 'g', x: 500, y: 540, minX: 0, maxX: 1280 }], [{ x: 460 }, { x: 650 }]);
     s = step(s);
-    expect(get(s, 'g')).toMatchObject({ chasing: true, dir: 1 });
-    expect(get(s, 'g').x).toBeGreaterThan(500);
+    expect(get(s, 'g')).toMatchObject({ chasing: true, dir: -1, target: 0 });
+    expect(get(s, 'g').x).toBeLessThan(500);
   });
 });
 
