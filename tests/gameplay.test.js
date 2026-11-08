@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import { setup, applyAction, validateAction, meta, exitStatus, failureReason, assessFailure, freezeAreaAt, freezePoint } from '../src/logic.js';
-import { classicCourtyard, rootriseArena, withtimeArena } from './arena.js';
+import { classicCourtyard, rootriseArena, withtimeArena, afterbloomArena } from './arena.js';
 import { createCamera } from '../public/presentation.js';
 
 const act = (state, action) => applyAction(state, 'local', action);
@@ -239,15 +239,16 @@ describe('role-specific resources', () => {
     expect(other.pickups.filter(c => c.kind === 'frost')).toHaveLength(2);
   });
 
-  test('each courtyard starts with one seed in Bloom\'s count (hands free) and three Hasten charges', () => {
+  test('each courtyard starts with its seeds in Bloom\'s count (hands free) and three Hasten charges', () => {
     for (let level = 0; level < 5; level++) {
       const s = setup({ level });
       expect(s.actors[BLOOM].carrying).toBe(null);
       expect(s.bloomCharges).toBe(3);
       // Courtyard 4 has neither seeds nor a bolt: every cast there rewinds a plant (see level-four.test.js).
       if (level === 3) continue;
-      // Courtyards 1 and 2 are the exception: their only seed lies out in the courtyard.
-      expect(s.seeds).toBe(level <= 1 ? 0 : 1);
+      // Courtyards 1 and 2 are the exception: their only seed lies out in the courtyard. Courtyard 3 needs three
+      // (a mushroom and two vines).
+      expect(s.seeds).toBe(level <= 1 ? 0 : level === 2 ? 3 : 1);
       if (level <= 1) expect(s.objects.filter(o => o.kind === 'seed')).toHaveLength(1);
       expect(s.pickups.some(c => c.kind === 'bolt')).toBe(true);
     }
@@ -324,8 +325,22 @@ describe('possible dead ends raise a warning; the game goes on', () => {
     }
   });
 
+  test('with `plantFrom`, only a traveller still on that ledge is stranded without seeds (courtyard 3)', () => {
+    const lost = () => {
+      const s = setup({ level: 2 });
+      s.objects = s.objects.filter(o => o.kind !== 'seed' && o.kind !== 'plant'); s.seeds = 0;
+      const far = s.platforms[3];
+      Object.assign(s.actors[STILL], { x: far.x + 100, y: far.y, on: 'platform-3' });
+      Object.assign(s.actors[BLOOM], { x: far.x + 150, y: far.y, on: 'platform-3' });
+      return s;
+    };
+    expect(failureReason(lost())).toBe(null); // across the canyon the movers carry them on
+    const behind = lost(); Object.assign(behind.actors[STILL], { x: 300, y: 520, on: 'platform-0' });
+    expect(failureReason(behind)).toBe('stranded');
+  });
+
   test('a wilting ancient mushroom still counts as hope until it is gone', () => {
-    const s = setup({ level: 2 });
+    const s = afterbloomArena();
     s.objects = s.objects.filter(o => o.kind !== 'seed'); s.seeds = 0;
     Object.assign(s.actors[STILL], { x: s.exit.x, y: s.exit.y, on: 'platform-1' });
     expect(failureReason(s)).toBe(null);

@@ -110,7 +110,7 @@ async function checkHighJumpPixels(page) {
     surface.dataset.testid = 'high-jump-canvas';
     Object.assign(surface.style, { position: 'fixed', left: '0', top: '0', width: '1280px', height: '640px', zIndex: '1000' });
     document.body.append(surface);
-    const state = setup({ level: 2 });
+    const state = setup({ level: 3 });
     state.tick = 4;
     Object.assign(state.actors[0], { x: 600, y: -180, grounded: false });
     const renderer = createRenderer(surface, S);

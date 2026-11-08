@@ -284,7 +284,7 @@ export function createRenderer(canvas, S) {
     if (!p.plant && p.plantable === false) return;
     if (p.wall) {
       // A wall pit is the same bed turned on its side, its soil facing the way the vine grows.
-      ctx.save(); ctx.translate(p.x, p.y + 8); ctx.rotate(-p.wall * Math.PI / 2);
+      ctx.save(); ctx.translate(p.x - p.wall * 8, p.y + 8); ctx.rotate(-p.wall * Math.PI / 2);
       if (loaded('pit')) { const img = sprites.pit, w = 60, h = w * img.naturalHeight / img.naturalWidth; ctx.drawImage(img, -w / 2, -h * PIT.soil, w, h); }
       else { ellipse(ctx, 0, 0, 20, 6, 0, '#2a3d33'); ellipse(ctx, 0, -2, 15, 3, 0, p.plant ? '#4d5a41' : '#1b2a25'); }
       ctx.restore();
@@ -372,7 +372,8 @@ export function createRenderer(canvas, S) {
   }
   function mover(o, targeted, t) {
     timeRing(o.x + o.w / 2, o.y + 10, o.w / 2 + 10, o, t);
-    line(ctx, [[o.x1 + 6, o.y + 26], [o.x2 + o.w - 6, o.y + 26]], '#b6bea133', 1);
+    if (o.axis === 'y') line(ctx, [[o.x + o.w / 2, o.y1 + 10], [o.x + o.w / 2, o.y2 + 30]], '#b6bea133', 1);
+    else line(ctx, [[o.x1 + 6, o.y + 26], [o.x2 + o.w - 6, o.y + 26]], '#b6bea133', 1);
     const g = ctx.createLinearGradient(0, o.y, 0, o.y + 20); g.addColorStop(0, '#b9c0a4'); g.addColorStop(.4, '#647c66'); g.addColorStop(1, '#1b3839');
     ctx.fillStyle = g; ctx.beginPath(); ctx.roundRect(o.x, o.y, o.w, 20, 4); ctx.fill();
     line(ctx, [[o.x, o.y - 1], [o.x + o.w, o.y - 1]], '#e5ddba', 1.5); circle(ctx, o.x + o.w / 2, o.y + 10, 5, '#183e42', o.speed ? gold : '#8aa89b', 1.5);

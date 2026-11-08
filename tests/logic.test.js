@@ -2,7 +2,7 @@ import { describe, test, expect } from 'bun:test';
 import { LEVELS } from '../src/levels/index.js';
 import { ENEMY } from '../src/enemies.js';
 import { setup, validateAction, applyAction, isGameOver, viewFor, hintLevel, meta, abilityTarget, levelCount } from '../src/logic.js';
-import { classicCourtyard, rootriseArena, withtimeArena } from './arena.js';
+import { classicCourtyard, rootriseArena, withtimeArena, afterbloomArena } from './arena.js';
 
 function step(state, n = 1) { for (let i = 0; i < n; i++) state = applyAction(state, 'local', { type: 'tick' }); return state; }
 function action(state, value) { expect(validateAction(state, 'local', value).valid).toBe(true); return applyAction(state, 'local', value); }
@@ -181,7 +181,7 @@ describe('time flow', () => {
   });
 
   test('an ancient barrier tree blocks the path until it withers', () => {
-    let s = setup({ level: 2 });
+    let s = afterbloomArena();
     const tree = plantOf(s);
     Object.assign(s.actors[0], { x: tree.x - 80 });
     s = action(s, { type: 'move', actor: 0, dir: 1 });

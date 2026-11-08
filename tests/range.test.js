@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import { setup, applyAction, validateAction, meta, abilityCheck, abilityTargets, timeObjectAt, bloomTargetAt, bloomSupport, anchor } from '../src/logic.js';
-import { classicCourtyard, rootriseArena, withtimeArena } from './arena.js';
+import { classicCourtyard, rootriseArena, withtimeArena, afterbloomArena } from './arena.js';
 
 const send = (state, type, actor = 0, extra = {}) => {
   const action = { type, actor, ...extra };
@@ -33,8 +33,8 @@ describe('ability reach of 300 keeps every courtyard route open', () => {
     expect(abilityCheck(state, STILL, 'plant-0')).toBe('ok');
   });
 
-  test('courtyard 3: Bloom can wake the ancient mushroom from the closest spot the barrier allows', () => {
-    const state = setup({ level: 2 });
+  test('the ancient-mushroom arena: Bloom can wake it from the closest spot the barrier allows', () => {
+    const state = afterbloomArena();
     state.actors[BLOOM].x = 540;
     expect(abilityCheck(state, BLOOM, 'plant-0')).toBe('ok');
   });

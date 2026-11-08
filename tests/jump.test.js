@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import { setup, applyAction, validateAction, meta, atExit } from '../src/logic.js';
-import { classicCourtyard, rootriseArena, withtimeArena } from './arena.js';
+import { classicCourtyard, rootriseArena, withtimeArena, afterbloomArena } from './arena.js';
 
 const send = (state, type, actor = 0, extra = {}) => applyAction(state, 'local', { type, actor, ...extra });
 const step = (state, count = 1) => { for (let i = 0; i < count; i++) state = send(state, 'tick'); return state; };
@@ -189,8 +189,8 @@ describe('courtyard jump routes', () => {
     expect(state.actors[0].y).toBe(180);
   });
 
-  test('a young sprout still launches onto the third courtyard cliff', () => {
-    let state = treeCheckpoint(2, 880, 30);
+  test('a young sprout still launches onto the old third courtyard\'s cliff', () => {
+    let state = treeCheckpoint(afterbloomArena, 880, 30);
     state = send(send(state, 'move', 0, { dir: 1 }), 'jump');
     state = until(state, s => s.actors[0].on === 'platform-1');
     expect(state.flags.sproutJump).toBe(true);

@@ -27,6 +27,8 @@ export const levelCount = LEVELS.length;
 const clone = value => JSON.parse(JSON.stringify(value));
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const rectOverlap = (a, b) => a.x + a.w > b.x && a.x < b.x + b.w && a.y + a.h > b.y && a.y < b.y + b.h;
+// Where a traveller can be hurt: the collision body (52 tall) plus the hat the sprite draws above it.
+const hurtBox = p => ({ x: p.x - 15, y: p.y - 66, w: 30, h: 65 });
 const find = (state, id) => state.objects.find(o => o.id === id);
 const free = o => o.held === undefined || o.held === null;
 
@@ -80,6 +82,14 @@ function makePlant(id, pit, { grown = 0, age, barrier = false } = {}) {
 // A seed lying in the courtyard; Bloom collects it by touch.
 const makeSeed = (id, x, y) => ({ kind: 'seed', id, x, y, vx: 0, vy: 0, frozen: false, held: null, spawnX: x, spawnY: y });
 
+// A moving platform runs between x1 and x2 (with `axis: 'y'`, between y1 and y2). It sleeps until Bloom wakes it
+// unless the level gives it a `speed`; `dir: -1` starts it at the far end heading back.
+function makeMover(id, p) {
+  const dir = p.dir ?? 1, base = { kind: 'mover', id, w: p.w, dir, speed: p.speed ?? 0, frozen: false };
+  return p.axis === 'y' ? { ...base, axis: 'y', x: p.x, y: dir < 0 ? p.y2 : p.y1, y1: p.y1, y2: p.y2 }
+    : { ...base, x: dir < 0 ? p.x2 : p.x1, y: p.y, x1: p.x1, x2: p.x2 };
+}
+
 function makeLevel(index, players, unlocked, totalShards, collected = LEVELS.map(() => false)) {
   const level = LEVELS[index];
   // A pit marked `plantable: false` only holds the plant the level starts with (it cannot be planted again).
@@ -88,7 +98,7 @@ function makeLevel(index, players, unlocked, totalShards, collected = LEVELS.map
   const objects = [
     ...level.crates.map((p, i) => ({ kind: 'crate', id: `crate-${i}`, x: p.x, y: p.y, vx: 0, vy: 0, frozen: false, held: null, spawnX: p.x, spawnY: p.y })),
     ...level.seeds.map((p, i) => makeSeed(`seed-${i}`, p.x, p.y)),
-    ...level.movers.map((p, i) => ({ kind: 'mover', id: `mover-${i}`, x: p.x1, y: p.y, w: p.w, x1: p.x1, x2: p.x2, dir: 1, speed: 0, frozen: false })),
+    ...level.movers.map((p, i) => makeMover(`mover-${i}`, p)),
     ...level.plants.map((p, i) => makePlant(`plant-${i}`, pits[p.pit], p)),
     ...(level.enemies ?? []).map((e, i) => makeEnemy(e.kind, e, `${e.kind}-${i}`)),
   ];
@@ -398,8 +408,9 @@ function ageObjects(state) {
       }
     }
     if (o.kind === 'mover' && o.speed > 0) {
-      o.x += o.dir * o.speed * meta.time.moverSpeed * slow;
-      if (o.x >= o.x2) { o.x = o.x2; o.dir = -1; } else if (o.x <= o.x1) { o.x = o.x1; o.dir = 1; }
+      const [k, lo, hi] = o.axis === 'y' ? ['y', o.y1, o.y2] : ['x', o.x1, o.x2];
+      o[k] += o.dir * o.speed * meta.time.moverSpeed * slow;
+      if (o[k] >= hi) { o[k] = hi; o.dir = -1; } else if (o[k] <= lo) { o[k] = lo; o.dir = 1; }
     }
   }
 }
@@ -562,7 +573,7 @@ function moveActors(state) {
     }
     if (p.invuln > 0) p.invuln--;
     else {
-      const hazard = state.objects.find(o => isHazard(o) && rectOverlap(body(), enemyBox(o)));
+      const hazard = state.objects.find(o => isHazard(o) && rectOverlap(hurtBox(p), enemyBox(o)));
       if (hazard) {
         if (hazard.kind === 'dart' || hazard.kind === 'orb') state.objects = state.objects.filter(o => o !== hazard);
         respawn(state, p, 'hit', hazard);
@@ -612,7 +623,7 @@ function resolveStrikes(state, strikes) {
   for (const id of strikes) {
     const o = find(state, id); if (!o) continue;
     const b = enemyBox(o), reach = { x: b.x - 2, y: b.y - 2, w: b.w + 4, h: b.h + 4 };
-    for (const p of state.actors) if (p.invuln <= 0 && rectOverlap({ x: p.x - 15, y: p.y - 52, w: 30, h: 51 }, reach)) respawn(state, p, 'hit', o);
+    for (const p of state.actors) if (p.invuln <= 0 && rectOverlap(hurtBox(p), reach)) respawn(state, p, 'hit', o);
   }
 }
 
@@ -687,14 +698,18 @@ function belowExit(state) {
 // resources that run out are seeds (a planted seed becomes a mushroom that wilts away), Freeze charges and, in
 // such a level, crates. Every rule counts everything that could still help: any seed anywhere, any mushroom at
 // all, any crate anywhere, any charge, any crystal that can still be collected, any Freeze Area still up.
-// With `crossingFrom` (a platform index) the frozen crossing is only needed by travellers still on that ledge.
+// With `crossingFrom` (a platform index) the frozen crossing is only needed by travellers still on that ledge;
+// likewise `plantFrom` limits `exitNeedsPlant` to travellers still on that ledge.
 // While anyone is airborne the answer is "unknown" (they might be landing on the ledge right now).
 export function assessFailure(state) {
   if (state.status !== 'playing') return { known: true, reason: null };
   if (state.actors.some(p => !p.grounded)) return { known: false, reason: null };
   const level = LEVELS[state.level], stuck = belowExit(state);
   if (!level || !stuck.length) return { known: true, reason: null };
-  if (level.exitNeedsPlant && state.seeds <= 0 && !state.objects.some(o => o.kind === 'seed' || o.kind === 'plant')) return { known: true, reason: 'stranded' };
+  // With `plantFrom` (a platform index) only travellers still on that ledge need a plant; beyond it other things
+  // (movers, vines already grown) carry them on.
+  const needPlant = level.plantFrom === undefined ? stuck : stuck.filter(p => onLedge(state.platforms[level.plantFrom], p));
+  if (level.exitNeedsPlant && needPlant.length && state.seeds <= 0 && !state.objects.some(o => o.kind === 'seed' || o.kind === 'plant')) return { known: true, reason: 'stranded' };
   // A courtyard whose way on is a plant to rewind (`rewindNeeds`): lost when someone still waits on platform `from`
   // (not standing on something higher) and the plant can no longer be rewound — gone (unless its going opens the
   // way), or asleep with no Bloom charge and no lightning left.
