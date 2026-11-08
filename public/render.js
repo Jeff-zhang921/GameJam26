@@ -781,7 +781,7 @@ export function createRenderer(canvas, S) {
     lastTime = time;
     if (!options.paused && !options.reduced) visualTime += dt * 1000;
     const t = options.reduced ? 0 : visualTime + (options.celebration?.progress ?? 0) * GATE_DURATION + (options.arrival?.progress ?? 0) * ARRIVAL_DURATION;
-    transform = camera.update(state, { width: frameWidth, height: frameHeight, dt, reduced: options.reduced, paused: options.paused, sceneKey: options.sceneKey, resetCamera: lastReset !== options.cameraReset, bottomInset: options.bottomInset || 0 });
+    transform = camera.update(state, { width: frameWidth, height: frameHeight, dt, reduced: options.reduced, paused: options.paused, sceneKey: options.sceneKey, resetCamera: lastReset !== options.cameraReset, bottomInset: options.bottomInset || 0, followActor: options.followActor });
     const departure = options.celebration && portalFrame(options.celebration.progress, options.reduced);
     portalView = departure;
     if (departure) {
@@ -796,7 +796,7 @@ export function createRenderer(canvas, S) {
         offsetY: frameHeight / 2 - (cy + (focusY - cy) * departure.focus) * scale,
       };
     }
-    arrivalView = options.arrival ? arrivalFrame(options.arrival.progress, state.actors, Math.max(0, -transform.offsetX / transform.scale), options.reduced) : null;
+    arrivalView = options.arrival ? arrivalFrame(options.arrival.progress, state.actors, Math.max(0, -transform.offsetX / transform.scale), options.reduced && !options.arrival.waiting) : null;
     if (arrivalView) state = { ...state, actors: arrivalView, objects: state.objects.map(o => o.held != null ? { ...o, ...heldPosition(o, arrivalView[o.held]) } : o) };
     lastReset = options.cameraReset;
     effects.update(state, { dt, reduced: options.reduced, paused: options.paused && state.status !== 'won', sceneKey: options.sceneKey });
@@ -922,7 +922,7 @@ export function createRenderer(canvas, S) {
       const rect = canvas.getBoundingClientRect();
       return transform ? worldPoint(transform, clientX - rect.left, clientY - rect.top) : null;
     },
-    inspect: () => ({ camera: transform && { ...transform }, portal: portalView && { ...portalView }, arrival: arrivalView?.map(p => ({ id: p.id, x: p.x, y: p.y, move: p.move })) ?? null, particles: effects.count, visualTime, pixelRatio: currentDpr, effectQuality: budget.level === 0 ? 'full' : 'light' }),
+    inspect: () => ({ sceneKey: budget.scene, camera: transform && { ...transform }, portal: portalView && { ...portalView }, arrival: arrivalView?.map(p => ({ id: p.id, x: p.x, y: p.y, move: p.move })) ?? null, particles: effects.count, visualTime, pixelRatio: currentDpr, effectQuality: budget.level === 0 ? 'full' : 'light' }),
     // After a failed frame: drop any clip / transform / save it left behind (resizing a canvas resets its state).
     resetContext: () => { const w = canvas.width; canvas.width = 0; canvas.width = w; },
   };

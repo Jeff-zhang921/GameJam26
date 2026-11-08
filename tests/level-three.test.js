@@ -19,7 +19,7 @@ const struckAt = (feet, y) => feet - 66 < y + 5 && feet - 1 > y - 5;
 const hit = (h, y) => struckAt(start.y - h, y); // standing on a cap of height h
 const [groundPit, nearPit, farPit] = level.pits;
 const [lift, moverA, moverB] = level.movers;
-const VINE = 160; // the vine length from which the canyon is meant to be crossed
+const NEAR_VINE = 240, VINE = 160; // the wider step keeps the near vine necessary; the far vine retains its window
 const stand = (s, who, f, x) => Object.assign(s.actors[who], { x, y: f.y, vx: 0, vy: 0, grounded: true, on: `platform-${level.platforms.indexOf(f)}` });
 const get = (s, id) => s.objects.find(o => o.id === id);
 const pitPlant = (s, pit) => s.pits.find(p => p.x === pit.x && p.y === pit.y).plant;
@@ -53,7 +53,7 @@ const until = (s, done, control = s => s, limit = 600) => {
 describe('courtyard 3 layout', () => {
   test('wide; the high ledge is out of reach from the start; the pillar and far cliff are hops', () => {
     const s = setup({ level: 2 });
-    expect(s.width).toBe(3840);
+    expect(s.width).toBe(3920);
     expect(start.y - high.y).toBeGreaterThan(JUMP);
     expect(high.y - pillar.y).toBeLessThan(JUMP - 10);
     expect(on(high, pillar.x) && pillar.y + pillar.h === high.y).toBe(true);
@@ -90,11 +90,13 @@ describe('courtyard 3 layout', () => {
     expect(maxUp).toBeGreaterThan(high.x); expect(maxUp).toBeLessThan(pillar.x + 20);
   });
 
-  test('canyon: wall pits on both cliff faces; vine / lift / vine gaps are easy jumps at vine length 160', () => {
+  test('canyon: wall pits on both cliff faces; near / far vines bridge the lift gaps at lengths 240 / 160', () => {
     expect(nearPit).toMatchObject({ x: high.x + high.w, wall: 1 }); expect(nearPit.y).toBeGreaterThan(high.y);
     expect(farPit).toMatchObject({ x: far.x, wall: -1 }); expect(farPit.y).toBeGreaterThan(far.y);
     expect(lift).toMatchObject({ axis: 'y', y1: farPit.y, y2: nearPit.y });
-    expect(lift.x - (nearPit.x + VINE)).toBeLessThanOrEqual(150);
+    expect(step).toMatchObject({ x: 1400, y: 440, w: 140, h: 30 });
+    expect(lift.x - (step.x + step.w)).toBe(230);
+    expect(lift.x - (nearPit.x + NEAR_VINE)).toBeLessThanOrEqual(150);
     expect((farPit.x - VINE) - (lift.x + lift.w)).toBeLessThanOrEqual(150);
     expect(farPit.y - far.y).toBeLessThan(JUMP - 60);
     // Nothing to land on in the canyon but the small step under the near pit.
@@ -154,20 +156,19 @@ describe('courtyard 3 layout', () => {
     expect(abilityCheck(s, BLOOM, pitPlant(s, farPit))).toBe('ok');
   });
 
-  test('rescue: Bloom across the canyon plants the far vine, then from the lift the near one for Still', () => {
+  test('rescue: Bloom plants the far vine, jumps back to the widened step and plants the near vine for Still', () => {
     let s = setup({ level: 2 });
     // Facing left, about 38 back from the far cliff's edge: a seed straight down into the far wall pit.
     stand(s, BLOOM, far, far.x + 38); s.actors[BLOOM].facing = -1;
     s = throwInto(s, farPit);
     expect(abilityCheck(s, BLOOM, pitPlant(s, farPit))).toBe('ok');
-    // Ridden down on the lift, from its near end, a seed into the near wall pit, and the vine is within reach.
-    const onLiftStart = s => { const m = get(s, 'mover-0'); Object.assign(s.actors[BLOOM], { x: m.x + 5, y: m.y, vx: 0, vy: 0, grounded: true, on: 'mover-0', facing: -1 }); };
-    Object.assign(get(s, 'mover-0'), { y: lift.y2 });
-    onLiftStart(s);
+    // The moved lift is deliberately out of reach of the near pit. Jump down-left onto the wider step instead.
+    const m = get(s, 'mover-0'); m.y = lift.y2;
+    Object.assign(s.actors[BLOOM], { x: m.x + 5, y: m.y, vx: 0, vy: 0, grounded: true, on: 'mover-0', facing: -1 });
+    s = act(act(s, { type: 'move', actor: BLOOM, dir: -1 }), { type: 'jump', actor: BLOOM });
+    s = until(s, s => s.actors[BLOOM].grounded && s.actors[BLOOM].on === 'platform-5', s => s, 120);
+    s = act(s, { type: 'move', actor: BLOOM, dir: 0 });
     s = throwInto(s, nearPit);
-    // Back at the lift's bottom stop (wait for it), the new vine is within Bloom's reach.
-    Object.assign(get(s, 'mover-0'), { y: lift.y2 });
-    onLiftStart(s);
     expect(abilityCheck(s, BLOOM, pitPlant(s, nearPit))).toBe('ok');
   });
 
@@ -216,17 +217,18 @@ describe('courtyard 3 in the engine', () => {
 
   test('canyon: Still jumps from vine 1 to the lift, rides it up, jumps to vine 2 and on to the far cliff', () => {
     let s = setup({ level: 2 });
-    // Plant both vines with real throws, then grow them to length 160 and leave them growing (as if woken).
+    // Real throws; the near vine needs its full 240, while the far vine retains the original 160 window.
     stand(s, BLOOM, high, nearPit.x - 38);
     s = throwInto(s, nearPit);
     stand(s, BLOOM, far, far.x + 38); s.actors[BLOOM].facing = -1;
     s = throwInto(s, farPit);
     const age = VINE / meta.vine.maxLength * meta.plant.growTicks;
     const [vine1, vine2] = [pitPlant(s, nearPit), pitPlant(s, farPit)];
-    for (const id of [vine1, vine2]) Object.assign(get(s, id), { age, height: VINE, speed: 1 });
+    Object.assign(get(s, vine1), { age: meta.plant.growTicks, height: NEAR_VINE, speed: 1 });
+    Object.assign(get(s, vine2), { age, height: VINE, speed: 1 });
     stand(s, BLOOM, far, far.x + 200);
     // Still near vine 1's tip, standing on it.
-    Object.assign(s.actors[STILL], { x: nearPit.x + VINE - 25, y: nearPit.y, vx: 0, vy: 0, grounded: true, on: vine1 });
+    Object.assign(s.actors[STILL], { x: nearPit.x + NEAR_VINE - 25, y: nearPit.y, vx: 0, vy: 0, grounded: true, on: vine1 });
     s = tick(s);
     expect(s.actors[STILL].on).toBe(vine1);
     // Run toward `edge` and jump when there; never while already in the air.
@@ -252,6 +254,18 @@ describe('courtyard 3 in the engine', () => {
     s = until(s, landed('platform-3'), run(() => farPit.x - 30), 200);
     expect(s.actors[STILL].respawnTick).toBeNull();
     expect(s.actors[STILL].x).toBeGreaterThan(far.x);
+  });
+  test('the wider step offers three safe throwing positions with a route back to the high ledge', () => {
+    for (const offset of [60, 95, 125]) {
+      let s = setup({ level: 2 });
+      stand(s, BLOOM, step, step.x + offset); s.actors[BLOOM].facing = -1;
+      s = throwInto(s, nearPit);
+      expect(s.actors[BLOOM].on).toBe('platform-5');
+      expect(s.actors[BLOOM].respawnTick).toBeNull();
+      s = act(act(s, { type: 'move', actor: BLOOM, dir: -1 }), { type: 'jump', actor: BLOOM });
+      s = until(s, s => s.actors[BLOOM].grounded && s.actors[BLOOM].on === 'platform-1', s => s, 120);
+      expect(abilityCheck(s, BLOOM, pitPlant(s, nearPit))).toBe('ok');
+    }
   });
   test('the step: Bloom on it throws up-left into the near pit, climbs back to the high ledge, wakes the vine from there', () => {
     let s = setup({ level: 2 });

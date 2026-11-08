@@ -50,6 +50,7 @@ try {
       await page.getByTestId('start').click(); await ready(page);
       for (let level = 0; level < 5; level++) {
         if (level) await page.evaluate(level => window.__moonclock.dispatch({ type: 'level', level }), level);
+        await ready(page);
         await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
         await page.waitForLoadState('networkidle');
         await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));

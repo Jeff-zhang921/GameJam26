@@ -1,3 +1,5 @@
+import { meta } from '../src/logic.js';
+
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const blend = (from, to, dt, tau) => from + (to - from) * (1 - Math.exp(-dt / tau));
 const boundedCenter = (center, view, world) => view >= world ? world / 2 : clamp(center, view / 2, world - view / 2);
@@ -5,36 +7,60 @@ const deadzoneTarget = (center, target, radius) => center + Math.sign(target - c
 
 export function createCamera() {
   const camera = { scale: 1, offsetX: 0, offsetY: 0, x: 640, y: 320 };
-  let initialized = false, previousScene, previousSize;
+  let initialized = false, previousScene, previousSize, previousActor;
+  let groundY = 520, airY = 320, followingAir = false, inset = 0;
   return {
-    update(state, { width, height, dt = 0, reduced = false, paused = false, sceneKey, resetCamera = false, bottomInset = 0 }) {
+    update(state, { width, height, dt = 0, reduced = false, paused = false, sceneKey, resetCamera = false, bottomInset = 0, followActor }) {
       const worldWidth = state.width ?? 1280, worldHeight = state.height ?? 640;
-      const actor = state.actors[state.active];
-      // A fixed scale for this viewport and courtyard. Only this client's active traveller can move the view.
-      const fit = Math.min(width / Math.min(1280, worldWidth), height / worldHeight);
-      camera.scale = Math.max(fit * 1.2, width / worldWidth, height / worldHeight);
+      // Drawing interpolates landings; use the actual simulation position for a stable landing-height anchor.
+      const actor = followActor ?? state.actors[state.active];
       const size = `${width}:${height}:${worldWidth}:${worldHeight}`;
-      const reset = !initialized || sceneKey !== previousScene || resetCamera || size !== previousSize;
-      const targetX = actor.x + actor.facing * 60, targetY = actor.y - 100;
+      const reset = !initialized || sceneKey !== previousScene || resetCamera || size !== previousSize || state.active !== previousActor;
+      if (paused && !reset) return camera;
+      // A standard 1.0 view. The renderer extends the scenery instead of enlarging it to cover a tall screen.
+      camera.scale = Math.min(width / Math.min(1280, worldWidth), height / worldHeight);
+      const scale = camera.scale, halfWidth = width / scale / 2, halfHeight = height / scale / 2;
+      if (reset || Math.abs(bottomInset - inset) > 2) inset = bottomInset;
+      const bottom = Math.max(20, Math.min(inset + 12, height * .55)) / scale;
+      const top = 40 / scale;
+      if (reset) { groundY = actor.y; followingAir = false; }
+      const grounded = actor.grounded !== false;
+      // A little surface noise is not a new platform. Ordinary jumps retain this landing-height anchor.
+      if (grounded && Math.abs(actor.y - groundY) > 8) groundY = actor.y;
+      const floorY = clamp(groundY - 100,
+        groundY - halfHeight + bottom, groundY - 84 + halfHeight - top);
+      let targetY = floorY;
+      if (grounded) { followingAir = false; airY = floorY; }
+      else {
+        const vy = actor.vy ?? 0, rising = Math.max(0, -vy);
+        const apex = actor.y - rising * rising / (2 * meta.controls.gravity);
+        const apexTop = height / 2 + (apex - 84 - floorY) * scale;
+        if (apexTop < 16) {
+          const riseY = apex - 84 + halfHeight - top;
+          airY = followingAir ? Math.min(airY, riseY) : Math.min(floorY, riseY);
+          followingAir = true;
+        }
+        if (vy >= 0 && (followingAir || actor.y > groundY + 24)) {
+          // Anticipate falling for 200 ms, so the return begins before the feet reach the lower edge.
+          let feet = actor.y + Math.min(meta.controls.maxFall * 12, Math.max(0, vy) * 12 + meta.controls.fallGravity * 72);
+          const fellBelow = actor.y > groundY + 24;
+          if (!fellBelow) feet = Math.min(groundY, feet);
+          const fallY = feet - halfHeight + bottom;
+          airY = fellBelow ? Math.max(followingAir ? airY : floorY, fallY) : Math.min(floorY, Math.max(airY, fallY));
+          followingAir = true;
+        }
+        if (followingAir) targetY = airY;
+      }
+      // Constrain goals once, then smooth. Never clamp the smoothed camera back to the map every frame.
+      const targetX = boundedCenter(reset ? actor.x : deadzoneTarget(camera.x, actor.x, 140), halfWidth * 2, worldWidth);
       if (reset) { camera.x = targetX; camera.y = targetY; }
-      else if (!paused) {
-        const x = deadzoneTarget(camera.x, targetX, 100), y = deadzoneTarget(camera.y, targetY, 60);
-        camera.x = reduced ? x : blend(camera.x, x, dt, .18);
-        camera.y = reduced ? y : blend(camera.y, y, dt, .28);
+      else {
+        camera.x = reduced ? targetX : blend(camera.x, targetX, dt, .30);
+        camera.y = reduced ? targetY : blend(camera.y, targetY, dt, .40);
       }
-      const halfWidth = width / camera.scale / 2, halfHeight = height / camera.scale / 2;
-      if (!paused || reset) {
-        camera.x = boundedCenter(camera.x, halfWidth * 2, worldWidth);
-        camera.y = boundedCenter(camera.y, halfHeight * 2, worldHeight);
-        // Move the camera, never zoom out, to keep the whole sprite clear of the HUD and touch buttons.
-        const bottom = Math.max(20, Math.min(bottomInset + 12, height * .55)) / camera.scale;
-        const top = 40 / camera.scale;
-        camera.x = boundedCenter(clamp(camera.x, actor.x - halfWidth + 30, actor.x + halfWidth - 30), halfWidth * 2, worldWidth);
-        camera.y = clamp(camera.y, actor.y - halfHeight + bottom, actor.y - 84 + halfHeight - top);
-      }
-      camera.offsetX = width / 2 - camera.x * camera.scale;
-      camera.offsetY = height / 2 - camera.y * camera.scale;
-      initialized = true; previousScene = sceneKey; previousSize = size;
+      camera.offsetX = width / 2 - camera.x * scale;
+      camera.offsetY = height / 2 - camera.y * scale;
+      initialized = true; previousScene = sceneKey; previousSize = size; previousActor = state.active;
       return camera;
     },
   };

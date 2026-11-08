@@ -140,7 +140,7 @@ app.innerHTML = `
 const shell = document.querySelector('.shell');
 const modalRoot = document.querySelector('#modal-root');
 const veil = document.querySelector('.scene-veil');
-let sceneFade = null, celebration = null, arrival = null, nextPending = false;
+let sceneFade = null, celebration = null, arrival = null, nextPending = false, entryPending = true;
 const dialogue = createDialogue(document.querySelector('.character-dialogue'));
 const sharedTasks = createTaskHints(document.querySelector('.task-hints'));
 let awaitingOnlineState = true;
@@ -174,11 +174,15 @@ const network = createNetwork({
         ? { state: previous, sceneKey, cameraReset } : null;
       networkEpoch = info.epoch; sceneKey++; cameraReset++; seenEvent = state.eventSeq;
       hitFeedback.reset(state.eventSeq);
+      entryPending = !rewind && !!(from || entrance.active || network.room.status === 'STARTING');
       shownHint = 0; uiChapter = ''; resetTouchState(); history.reset(game);
       if (rewind) rewind.arrived = true; // the server has installed the courtyard's start
       nextPending = false;
       if (from) startFade(revealCourtyard, { from, arrive: true });
-      else modal = network.room.status === 'STARTING' || entrance.active ? 'online' : null;
+      else {
+        modal = network.room.status === 'STARTING' || entrance.active ? 'online' : null;
+        if (entryPending && !modal) startArrival();
+      }
     }
     const seenBefore = seenEvent;
     for (const e of state.events) if (e.id > seenEvent) {
@@ -256,6 +260,7 @@ viewport = createViewport({
 });
 function enterOnline() {
   clearInputs(); onlineMode = true; modal = 'online'; awaitingOnlineState = true;
+  entryPending = true;
   document.body.classList.add('online-mode'); renderModal();
 }
 function leaveOnline() {
@@ -264,6 +269,7 @@ function leaveOnline() {
   network.leave(); lobby.hide(); onlineMode = false; networkEpoch = null;
   document.body.classList.remove('online-mode');
   state = setup({ level: Number.isInteger(saved.level) ? saved.level : 0 });
+  entryPending = true;
   hitFeedback.reset();
   sceneKey++; seenEvent = 0; uiChapter = ''; uiMode = ''; modal = 'intro'; history.reset(state);
   updateUI(); renderModal();
@@ -274,6 +280,7 @@ function returnToMenu() {
   clearInputs(); persist();
   const { level, unlocked } = state;
   state = setup({ level }); state.unlocked = unlocked;
+  entryPending = true;
   hitFeedback.reset();
   sceneKey++; cameraReset++; seenEvent = 0; shownHint = 0; uiChapter = ''; uiMode = ''; modal = 'intro'; history.reset(state);
   updateUI(); renderModal();
@@ -317,6 +324,8 @@ function dispatch(action, quiet = false) {
     seenEvent = state.eventSeq; sceneKey++; cameraReset++; shownHint = 0;
     hitFeedback.reset(state.eventSeq);
     history.reset(state);
+    entryPending = action.type !== 'restart';
+    if (entryPending && !sceneFade) startArrival();
   }
   const seenBefore = seenEvent;
   for (const e of state.events) if (e.id > seenEvent) { hitFeedback.handle(e, state.active); if (!(e.kind === 'return' && state.events.some(h => h.kind === 'hit' && h.actor === e.actor && h.id > seenBefore))) chime(e); if (e.kind === 'return' && e.actor === state.active) cameraReset++; seenEvent = e.id; }
@@ -427,6 +436,7 @@ function syncStage() {
 function clearStage() {
   entrance.cancel();
   sceneFade = celebration = arrival = null;
+  entryPending = false;
   pauseContext = false;
   nextPending = false;
   veil.hidden = true;
@@ -435,6 +445,7 @@ function clearStage() {
 function startFade(swap, { from = null, revealOnly = false, arrive = false } = {}) {
   const now = performance.now();
   celebration = null;
+  arrival = null;
   resetTouchState(); freezePreview = tapEffect = null;
   sceneFade = { swap, from, arrive, start: now, half: reduced ? 90 : 450, covered: false, revealAt: revealOnly ? now : null };
   veil.style.opacity = revealOnly ? 1 : 0;
@@ -444,8 +455,11 @@ function startFade(swap, { from = null, revealOnly = false, arrive = false } = {
 function revealCourtyard() {
   modal = null; accumulator = 0; previousTick = null;
   updateUI(); renderModal();
+  // Resolve the revealed layout, including safe areas, before showing the incoming scene.
+  measureControls(); cameraReset++;
 }
 function startArrival(time = performance.now()) {
+  entryPending = true;
   arrival = { start: time, duration: reduced ? 180 : ARRIVAL_DURATION };
   accumulator = 0; previousTick = null;
   syncStage();
@@ -459,6 +473,7 @@ function startCelebration() {
 }
 function advanceStage(time) {
   if (arrival && time - arrival.start >= arrival.duration) {
+    entryPending = false;
     arrival = null; accumulator = 0; previousTick = null; syncStage();
     canvas.focus({ preventScroll: true });
   }
@@ -1204,8 +1219,10 @@ function runFrame(time) {
     renderer.draw(displayState, time, {
       reduced, paused: worldPaused && !rewindInfo,
       sceneKey: outgoing?.sceneKey ?? sceneKey, cameraReset: outgoing?.cameraReset ?? cameraReset,
+      followActor: !outgoing && !rewind ? onlineMode ? network.ownActor : state.actors[state.active] : undefined,
       celebration: celebration && { progress: Math.max(0, Math.min(1, (time - celebration.start) / celebration.duration)), finale: celebration.finale },
-      arrival: arrival ? { progress: Math.max(0, Math.min(1, (time - arrival.start) / arrival.duration)) } : sceneFade?.arrive && sceneFade.revealAt !== null ? { progress: 0 } : null,
+      arrival: !outgoing && arrival ? { progress: Math.max(0, Math.min(1, (time - arrival.start) / arrival.duration)) }
+        : !outgoing && (entryPending || onlineMode && ['WAITING', 'READY', 'STARTING'].includes(network.room?.status)) ? { progress: 0, waiting: true } : null,
       target: aim?.target ?? null,
       touch, tappable: !aim && touch && viewActor === 1 && displayState.status === 'playing' ? new Set(abilityTargets(displayState, viewActor).map(o => o.id)) : null,
       rewind: rewindInfo,
