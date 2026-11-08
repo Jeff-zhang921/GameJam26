@@ -1,9 +1,29 @@
 export const CONVERSATIONS = [
-  [[0, 'The bridge is broken. Perhaps we can borrow a moment.'], [1, 'Throw the crate. I trust you to slow its fall.']],
-  [[1, 'I can lure that snail to the right edge. There is a crate hanging above the ledge.'], [0, 'I will slow the snail so we can climb. Then you can age the rope.']],
-  [[0, 'Arrows from the wall, and a canyon with no floor beyond.'], [1, 'Then I will grow us a way: a mushroom between the darts, vines from both cliffs.'], [0, 'And past the canyon, two platforms that meet halfway. We cross together.']],
-  [[1, 'Something is wrong with my hands. Here, time runs backwards when I touch it.'], [0, 'Then let that dead tree be young again, just long enough to climb.']],
-  [[1, 'Every step I take, the gold things take with me. Back a step, and they go back.'], [0, 'And the teal ones keep mine. Then neither of us can carry ourselves.'], [1, 'So you walk for me, and I walk for you.']],
+  [
+    [0, 'Just before midnight, even the rain and our footsteps slowed to a crawl.'],
+    [1, 'I turned the old man’s watch. It wound time back fifteen minutes.'],
+    [0, 'Time’s moving again. Let’s find the Time Manager before it stops.'],
+    [1, 'Being invisible won’t get us across this gap. Let’s use the crate.'],
+  ],
+  [
+    [1, 'We’re on Bureau grounds now. I’ll lure that snail to the right wall.'],
+    [0, 'I’ll slow it so we can climb. Then you can age the rope and drop the crate.'],
+  ],
+  [
+    [0, 'Arrows and a bottomless canyon. The Bureau really doesn’t want visitors.'],
+    [1, 'I’ll grow us a way through. First a mushroom, then vines from both cliffs.'],
+    [0, 'Past the canyon, the two platforms meet halfway. We cross together.'],
+  ],
+  [
+    [1, 'The shift log says the night clerk left the main clock’s brake on.'],
+    [0, 'That’s why the city slowed down. At midnight, time stopped altogether.'],
+    [1, 'Time runs backward here. I’ll rewind that tree so we can reach the tunnel.'],
+  ],
+  [
+    [1, 'The Time Manager’s office is just past those lifts. We’re nearly there.'],
+    [0, 'Gold follows your steps. Teal follows mine. We have to carry each other.'],
+    [1, 'Once we’re through, we’ll show the Time Manager what we found in the log.'],
+  ],
 ];
 // How long a line stays up once typed (ms): long enough to read it, at least DIALOGUE_HOLD.
 export const DIALOGUE_HOLD = 3500;

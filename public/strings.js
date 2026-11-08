@@ -61,8 +61,8 @@ export const S = {
   saved: 'Your journey has been saved', focus: 'The courtyard is waiting for you.', connected: 'Local Adventure',
   // Ending screen after the last chamber. Edit names / roles here.
   ending: {
-    eyebrow: 'THE MOONCLOCK TURNS AGAIN', title: 'One clock, two hands.',
-    body: 'Every moment you held and every moment you hastened is part of the garden now. Thank you for keeping time together.',
+    eyebrow: 'THE MOONCLOCK TURNS AGAIN', title: 'Midnight finally passed.',
+    body: 'Still and Bloom showed the Time Manager the shift log. The Manager released the main clock’s brake, and the city’s clocks ticked past midnight.',
     shards: (n, total) => `Time shards remembered · ${n} / ${total}`,
     playAgain: 'Walk Again', mainMenu: 'Main Menu', hostNote: 'The host can start the journey again.',
     creditsTitle: 'Credits',
