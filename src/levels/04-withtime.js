@@ -38,9 +38,8 @@ export default {
   pits: [{ x: 640, y: 520, plantable: false }, { x: 1920, y: 370, wall: 1, plantable: false }],
   plants: [{ pit: 0, age: 1915 }, { pit: 1, age: 960 }],
   checkpoints: [{ x: 820, y: 320 }, { x: 1460, y: 520 }],
-  // Freeze is optional: it holds the tree near half height for longer. It runs out once Still reaches the cliff
-  // (`freezeEndsX`): a crate slowed in mid-air could stand in for the cloud.
-  freezeCharges: 1, freezePickups: [{ x: 420, y: 432 }], bloomPickups: [], freezeEndsX: 2160,
+  // Freeze can slow the tree at a useful height or hold the cloud while both travellers cross.
+  freezeCharges: 2, freezePickups: [{ x: 420, y: 432 }], bloomPickups: [],
   // The tree must be rewound by anyone still on the start ground; the vine by anyone on the lower ground (once it
   // has rewound away the way is open).
   rewindNeeds: [{ plant: 'plant-0', from: 0 }, { plant: 'plant-1', from: 3, goneOpens: true }],

@@ -1,13 +1,14 @@
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import { setup, validateAction, applyAction } from './logic.js';
 
 const characters = { still: 0, bloom: 1 };
 const lobbyStatuses = new Set(['WAITING', 'READY']);
 const inputTypes = new Set(['move', 'jump', 'jumpRelease', 'grab', 'plant', 'takeSeed', 'stowSeed', 'ability']);
-const codePattern = /^[A-Z0-9]{6}$/;
+const codePattern = /^[0-9]{2}$/;
+const roomCodes = Array.from({ length: 100 }, (_, i) => String(i).padStart(2, '0'));
 const clone = value => JSON.parse(JSON.stringify(value));
 
-export function createRoomManager({ now = Date.now, countdownMs = 0, reconnectMs = 30000, roomTtlMs = 30 * 60 * 1000, maxRooms = 500, rewindMs = 4000 } = {}) {
+export function createRoomManager({ now = Date.now, countdownMs = 0, reconnectMs = 30000, roomTtlMs = 30 * 60 * 1000, maxRooms = roomCodes.length, rewindMs = 4000 } = {}) {
   const rooms = new Map();
   let lastAdvance = now(), accumulator = 0;
   function send(ws, message) { if (ws) { try { ws.send(JSON.stringify(message)); } catch { } } }
@@ -132,15 +133,15 @@ export function createRoomManager({ now = Date.now, countdownMs = 0, reconnectMs
       if (message.type === 'create') {
         if (time - (ws.data.createAt ?? -Infinity) >= 60000) { ws.data.createAt = time; ws.data.createCount = 0; }
         if (++ws.data.createCount > 10) { error(ws, 'CREATE_LIMIT', 'Wait before creating another room.'); return; }
-        if (rooms.size >= maxRooms) { error(ws, 'ROOM_LIMIT', 'The server has no free rooms.'); return; }
-        let code;
-        do { code = Array.from(randomBytes(6), byte => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'[byte % 36]).join(''); } while (rooms.has(code));
+        if (rooms.size >= Math.min(maxRooms, roomCodes.length)) { error(ws, 'ROOM_LIMIT', 'The server has no free rooms.'); return; }
+        const availableCodes = roomCodes.filter(code => !rooms.has(code));
+        const code = availableCodes[randomInt(availableCodes.length)];
         const player = newPlayer(ws);
         const room = { code, hostId: player.id, players: [player], status: 'WAITING', game: null, startAt: null, suspended: false, manualPaused: false, epoch: 0, createdAt: time, lastBroadcast: time };
         rooms.set(code, room); attach(ws, room, player); joined(room, player); return;
       }
-      const code = typeof message.code === 'string' ? message.code.trim().toUpperCase() : '';
-      if (!codePattern.test(code)) { error(ws, 'INVALID_CODE', 'Room codes have six letters or digits.'); return; }
+      const code = typeof message.code === 'string' ? message.code.trim() : '';
+      if (!codePattern.test(code)) { error(ws, 'INVALID_CODE', 'Room codes have two digits.'); return; }
       const room = rooms.get(code);
       if (!room) { error(ws, 'ROOM_NOT_FOUND', 'This room does not exist or has expired.'); return; }
       if (message.type === 'resume') {

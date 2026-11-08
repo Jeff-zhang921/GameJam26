@@ -51,7 +51,7 @@ docker run --rm -p 4181:8080 -e PORT=8080 -e PUBLIC_ORIGIN=http://localhost:4181
 ## 两人在线游戏
 
 1. 两名玩家打开同一服务地址，使用独立的浏览器会话或设备。
-2. 主机点击 **Create Room**，复制六位房间码。另一名玩家点击 **Join Room** 并输入房间码。
+2. 主机点击 **Create Room**，复制两位数字房间码（例如 `07`）。另一名玩家点击 **Join Room** 并输入房间码。
 3. 分别选择 Stillkeeper 和 Bloomkeeper，双方点击 **Ready**。
 4. 主机点击 **Start Game**，等待服务器控制的共享倒计时。
 5. 使用 `A / D` 或方向键移动、`Space` 跳跃、`E` 交互、`F` 使用技能。在线模式每人只能控制自己的角色，不能用 `Tab` 换人。Still 可以直接用鼠标点击场景放置 Freeze Area；Bloom 可以点击物体施放加速，点自己的脚边也能选中脚下的蘑菇或移动平台。需要重来时使用暂停菜单中的 **Restart Level**（会触发 4 秒时间倒流，见下文）。

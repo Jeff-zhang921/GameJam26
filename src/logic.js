@@ -16,7 +16,7 @@ export const meta = {
   // Still's Freeze Area: a circle cast at a chosen point. `range` is how far from Still the centre may be,
   // `duration` is in ticks (60 per second), `rate` is local time inside it.
   freeze: { rate: FROZEN_RATE, radius: 130, range: 380, duration: 600 },
-  charges: { bloomStart: 3, pickupReach: 36 },
+  charges: { bloomStart: 4, pickupReach: 36 },
   // Seeds are carried as a count: Bloom starts with `start` (unless a level sets `startSeeds`) and collects a seed
   // lying in the courtyard by touching it (within `reach` of Bloom's middle).
   seeds: { start: 1, reach: 34 },
@@ -31,8 +31,9 @@ export const meta = {
   // its own point and area). Bloom's Speed runs its clock (1 + speed) times as fast; a Freeze Area touching the form
   // it is in slows it, so that form lasts longer. Neither carries over: the moment it starts to turn into the other
   // form, Speed is gone and the Freeze Areas already cast no longer hold it (a new one does). The first time anyone
-  // stands on a newly formed cloud, it blinks and rains back after `standTicks` (real time, whatever its clock), or
-  // sooner if it had less time left; once both travellers stand on it at the same time, within `crowdTicks`.
+  // stands on a newly formed cloud, it blinks and rains back after `standTicks`, or sooner if it had less time left;
+  // once both travellers stand on it, within `crowdTicks`. A Freeze Area holds a formed cloud completely: its
+  // clock and fading countdown both pause until the last covering area ends.
   cloud: { waterTicks: 360, hastedWaterTicks: 120, formTicks: 60, cloudTicks: 240, rainTicks: 60, standTicks: 180, crowdTicks: 60, h: 20 },
   // In water a traveller moves sideways at `move` of their speed and their vertical speed is damped by `drag` each
   // tick; a loose crate is damped by `itemDrag` each tick of its local time. Both scale with how deep they are in it
@@ -99,6 +100,7 @@ function rushWater(o) {
 // Real ticks a cloud has left as a cloud at its pace right now: until it starts to rain back, or, rewound, until it
 // sinks back into its rise.
 function cloudTimeLeft(o) {
+  if (o.frozen && cloudSolid(o)) return Infinity;
   const rate = cloudRate(o) * (o.frozen ? meta.time.frozenRate : 1), end = rainStart(o);
   return rate > 0 ? (end - o.age) / rate : (o.age - (end - meta.cloud.cloudTicks)) / -rate;
 }
@@ -551,10 +553,11 @@ function ageObjects(state) {
     const slow = o.frozen ? meta.time.frozenRate : 1, walked = walkerTime(state, o);
     if (walked !== null) o.clock += walked;
     // A cloud's clock always runs (Speed adds to it; rewound, it runs backwards), except while it counts down after its
-    // first visitor: then only real time counts, and at the end it starts to rain back. Each change of form is an
-    // event: the pool starting to rise as mist, the cloud formed (and solid), the cloud starting to rain back.
+    // first visitor: then its fading countdown runs, and at the end it starts to rain back. A frozen, formed cloud
+    // pauses both clocks. Each change of form is an event: the pool rising, the cloud formed, the cloud raining back.
     if (o.kind === 'cloud') {
       const was = cloudPhase(o), backwards = o.vanish === null && cloudRate(o) < 0;
+      if (o.frozen && was.form === 'cloud') continue;
       if (o.vanish !== null) {
         if (--o.vanish <= 0) { o.age = rainStart(o); o.vanish = o.vanishTotal = null; }
       } else o.age += cloudRate(o) * slow;
@@ -890,7 +893,7 @@ function moveActors(state) {
   // Both travellers on a fading cloud at once: it rains back within `crowdTicks`, or sooner if it had less time
   // left. Its blinking carries on from where it is.
   for (const o of state.objects) {
-    if (o.kind !== 'cloud' || o.vanish === null || o.vanish <= meta.cloud.crowdTicks) continue;
+    if (o.kind !== 'cloud' || o.frozen || o.vanish === null || o.vanish <= meta.cloud.crowdTicks) continue;
     if (!state.actors.every(p => p.grounded && p.on === o.id)) continue;
     o.vanishTotal += meta.cloud.crowdTicks - o.vanish;
     o.vanish = meta.cloud.crowdTicks;

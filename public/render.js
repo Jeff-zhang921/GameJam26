@@ -582,7 +582,7 @@ export function createRenderer(canvas, S) {
   // evenly to BLINK.slow by the end. Counted in world ticks, so both players see the same blinks.
   const BLINK = { fast: 9, slow: 2.5, dim: .3 };
   function cloudBlink(o) {
-    if (o.vanish === null || o.vanish === undefined || !o.vanishTotal) return 1;
+    if (o.frozen || o.vanish === null || o.vanish === undefined || !o.vanishTotal) return 1;
     const T = o.vanishTotal / 60, s = (o.vanishTotal - o.vanish) / 60;
     const turns = BLINK.fast * s + (BLINK.slow - BLINK.fast) * s * s / (2 * T);
     return turns % 1 < .5 ? 1 : BLINK.dim;

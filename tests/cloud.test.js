@@ -2,10 +2,10 @@ import { describe, test, expect } from 'bun:test';
 import { setup, applyAction, validateAction, abilityCheck, meta, cloudPhase, cloudSolid, waterRect, anchor, objectBox, timeObjectAt } from '../src/logic.js';
 
 // A cloud and its water are one thing in two forms (courtyard 2's basin is the arena): the water lies in the groove,
-// rises as mist, holds as a small cloud (solid only then) and rains back. Cloud : water is 1 : 3. Abilities act on
+// rises as mist, holds as a small cloud (solid only then) and rains back. Abilities act on
 // the cloud while it rises or is a cloud, on the water while it rains back or is water. Speed runs its clock faster
-// and a Freeze Area makes whichever form it is in last longer, but neither carries over once it starts to turn into
-// the other form. Its first visitor sets a new cloud fading. Water slows whoever wades in it.
+// and a Freeze Area slows water / mist and holds formed clouds completely. Neither carries over into the other
+// form. Its first visitor starts a fading countdown that pauses in a Freeze Area. Water slows whoever wades in it.
 const act = (s, a) => { expect(validateAction(s, 'local', a).valid).toBe(true); return applyAction(s, 'local', a); };
 const tick = (s, n = 1) => { for (let i = 0; i < n; i++) s = applyAction(s, 'local', { type: 'tick' }); return s; };
 const STILL = 0, BLOOM = 1;
@@ -88,20 +88,25 @@ describe('cloud and water take turns', () => {
     expect(formTicksLeft(s)[0]).toBe(hastedWaterTicks);
   });
 
-  test('a Freeze Area makes the form it is in last five times as long, then lets the next form go', () => {
+  test('a Freeze Area slows water, holds formed clouds, then lets the next form go', () => {
     let s = arena('water'); freezeOver(s); s = tick(s);
     expect(cloud(s).frozen).toBe(true);
     const age = cloud(s).age; s = tick(s, 10);
     expect(cloud(s).age - age).toBeCloseTo(10 * meta.freeze.rate, 6);
 
-    // Cast on the cloud: it holds five times as long; its rain back into water, and the water, are free again.
+    // A formed cloud holds completely, even past its normal lifetime. Releasing it resumes the remaining clock.
     s = arena('cloud'); freezeOver(s);
+    const cloudAge = cloud(s).age;
+    s = tick(s, meta.cloud.cloudTicks * 6);
+    expect(cloud(s).age).toBe(cloudAge);
+    expect(cloudSolid(cloud(s))).toBe(true);
+    s.freezeAreas = [];
     let n; [n, s] = formTicksLeft(s);
-    expect(n).toBeCloseTo((meta.cloud.cloudTicks - 1) / meta.freeze.rate, -1);
+    expect(n).toBe(meta.cloud.cloudTicks - 1);
     expect(cloudPhase(cloud(s)).form).toBe('rain');
     [n, s] = formTicksLeft(s);
     expect(n).toBe(meta.cloud.rainTicks);
-    expect(s.freezeAreas).toHaveLength(1);
+    expect(s.freezeAreas).toHaveLength(0);
     expect(tick(s).objects.find(o => o.kind === 'cloud').frozen).toBe(false);
 
     // Cast on the water: the cloud rising from it is free, until a new area is cast over the cloud.
@@ -208,22 +213,74 @@ describe('a new cloud fades once someone stands on it', () => {
     s = onCloud(s);
     expect(cloud(s).vanishTotal).toBe(59);
     expect(ticksUntilGone(s)).toBe(59);
-    // Held by a Freeze Area its time left counts five times over, up to three seconds.
+    // Landing on a frozen cloud starts the usual countdown, held until the area ends.
     s = arena('cloud'); cloud(s).age = rainAt() - 30; freezeOver(s);
     s = onCloud(s);
-    expect(cloud(s).vanishTotal).toBeGreaterThanOrEqual(148);
-    expect(cloud(s).vanishTotal).toBeLessThanOrEqual(150);
-    expect(ticksUntilGone(s)).toBe(cloud(s).vanishTotal);
+    expect(cloud(s).vanishTotal).toBe(meta.cloud.standTicks);
+    s = tick(s, meta.cloud.standTicks * 2);
+    expect(cloud(s).vanish).toBe(meta.cloud.standTicks);
+    s.freezeAreas = [];
+    expect(ticksUntilGone(s)).toBe(meta.cloud.standTicks);
     s = arena('cloud'); cloud(s).age = rainAt() - 60; freezeOver(s);
     expect(cloud(onCloud(s)).vanishTotal).toBe(meta.cloud.standTicks);
   });
 
-  test('the countdown runs in real time: Speed and Freeze do not change it', () => {
+  test('Speed does not shorten a visitor\'s fading countdown', () => {
     let s = tick(onCloud(arena('cloud')), 30);
     stand(s, BLOOM, HIGH, 2390);
     s = act(s, { type: 'ability', actor: BLOOM, target: cloud(s).id });
-    freezeOver(s);
     expect(ticksUntilGone(s)).toBe(meta.cloud.standTicks - 30);
+  });
+
+  test('Still holds an occupied cloud until the Freeze expires, then its remaining countdown resumes', () => {
+    let s = tick(onCloud(arena('cloud')), 30);
+    const remaining = cloud(s).vanish, age = cloud(s).age;
+    s = act(s, { type: 'ability', actor: STILL, target: cloud(s).id });
+    s = tick(s, meta.freeze.duration - 1);
+    expect(cloud(s)).toMatchObject({ age, vanish: remaining, frozen: true });
+    expect(s.actors[STILL].on).toBe(cloud(s).id);
+    s = tick(s);
+    expect(cloud(s)).toMatchObject({ vanish: remaining - 1, frozen: false });
+    expect(ticksUntilGone(s)).toBe(remaining - 1);
+  });
+
+  test('freezing with one tick left saves the cloud; cancelling the area resumes that last tick', () => {
+    let s = onCloud(arena('cloud'));
+    cloud(s).vanish = 1;
+    s = act(s, { type: 'ability', actor: STILL, target: cloud(s).id });
+    const area = s.freezeAreas[0].id;
+    s = tick(s, 90);
+    expect(cloud(s).vanish).toBe(1);
+    expect(s.actors[STILL].on).toBe(cloud(s).id);
+    s = act(s, { type: 'ability', actor: STILL, area });
+    s = tick(s);
+    expect(cloudSolid(cloud(s))).toBe(false);
+    expect(s.actors[STILL].on).not.toBe(cloud(s).id);
+  });
+
+  test('a second visitor cannot shorten a frozen cloud\'s countdown', () => {
+    let s = onCloud(arena('cloud'));
+    s = act(s, { type: 'ability', actor: STILL, target: cloud(s).id });
+    Object.assign(s.actors[BLOOM], { x: cloud(s).x - 30, y: cloud(s).y, vx: 0, vy: 0, grounded: true, on: cloud(s).id });
+    s = tick(s, 90);
+    expect(s.actors.every(p => p.on === cloud(s).id)).toBe(true);
+    expect(cloud(s).vanish).toBe(meta.cloud.standTicks);
+    s = act(s, { type: 'ability', actor: STILL, area: s.freezeAreas[0].id });
+    s = tick(s);
+    expect(cloud(s).vanish).toBe(meta.cloud.crowdTicks);
+  });
+
+  test('a cloud with overlapping areas stays held until the last area ends', () => {
+    let s = onCloud(arena('cloud'));
+    freezeOver(s, 'first'); freezeOver(s, 'second');
+    const remaining = cloud(s).vanish;
+    s = tick(s, 90);
+    s.freezeAreas.shift();
+    s = tick(s, 90);
+    expect(cloud(s).vanish).toBe(remaining);
+    s.freezeAreas = [];
+    s = tick(s);
+    expect(cloud(s).vanish).toBe(remaining - 1);
   });
 
   test('with both travellers on it at once, it rains back within a second, or sooner if it had less time left', () => {

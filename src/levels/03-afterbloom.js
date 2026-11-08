@@ -33,12 +33,9 @@ export default {
   // The canyon (x 1400-2190) has a lift 230 from the step and 280 from the far cliff, out of jumping reach.
   // The near vine at full length 240 leaves a 130 jump to the lift; the far vine at length 160 leaves 120.
   // Bloom plants and wakes the near vine from the step / high ledge. For a rescue, jump back from the lift to the step.
-  // A crossbow stands on the lift's left end (x 1770-1810) and fires left, back at the near cliff, at 15-25 above the
-  // lift: low on the lift its bolts sweep vine 1 and pop on the high ledge's face, high on it they cross the ledge's
-  // last stretch and pop on the pillar. Still's Freeze over it slows its fire and its bolts.
   // Two movers in opposite phase cross the chasm and meet in the middle (a 30 gap). All three start running.
   movers: [
-    { axis: 'y', x: 1770, w: 140, y1: 250, y2: 330, speed: 1, dir: -1, crossbow: { at: 20, dir: [-1, 0], every: 180 } },
+    { axis: 'y', x: 1770, w: 140, y1: 250, y2: 330, speed: 1, dir: -1 },
     { x1: 2610, x2: 2910, y: 200, w: 120, speed: 1 },
     { x1: 3060, x2: 3360, y: 200, w: 120, speed: 1, dir: -1 },
   ],
@@ -55,7 +52,7 @@ export default {
   checkpoints: [{ x: 820, y: 300 }, { x: 2250, y: 200 }],
   // Freeze stretches the safe band, the vines' window and the movers' meeting; hourglasses on the high ledge and the
   // far cliff. Spare bolts on the high ledge and the far cliff.
-  freezeCharges: 1, freezePickups: [{ x: 900, y: 212 }, { x: 2370, y: 112 }],
+  freezeCharges: 2, freezePickups: [{ x: 900, y: 212 }, { x: 2370, y: 112 }],
   bloomPickups: [{ x: 1100, y: 212 }, { x: 2520, y: 112 }],
   // The high ledge is out of jumping reach without a mushroom (used by fail detection). Only travellers still on the
   // start ground (platform 0) need one: past the high ledge the vines and movers carry them, so a traveller on the

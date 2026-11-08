@@ -35,8 +35,8 @@ export default {
   ],
   enemies: [{ kind: 'guard', x: 2000, y: 520 }],
   checkpoints: [{ x: 1324, y: 400 }],
-  // One cast for the rope. The ferries, lifts and sprout still follow footsteps.
-  freezeCharges: 1, bloomCharges: 1,
+  // A spare cast for the rope. The ferries, lifts and sprout still follow footsteps.
+  freezeCharges: 2, bloomCharges: 2,
   freezePickups: [{ x: 110, y: 218, touchRadius: 18 }, { x: 2520, y: 432 }], bloomPickups: [],
   exit: { x: 2000, y: 100 }, shards: [{ x: 110, y: 250 }], need: ['moverRide', 'treeLifted'],
 };

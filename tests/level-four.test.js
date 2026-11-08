@@ -66,7 +66,7 @@ describe('courtyard 4 layout', () => {
     expect(box).toMatchObject({ y: cliff.y - 27, homes: [level.platforms.indexOf(lower), level.platforms.indexOf(cliff)] });
     expect(box.respawnRight).toBeUndefined();
     expect(on(cliff, box.x)).toBe(true);
-    expect(s.freezeEndsX).toBe(cliff.x);
+    expect(s.freezeEndsX).toBeNull();
   });
 
   test('the dead tree sleeps, withered and low; the vine sleeps, full and thorny', () => {
@@ -171,9 +171,7 @@ describe('courtyard 4: the cloud basin', () => {
       Object.assign(get(s, 'crate-0'), { x: edge - 30 });
       stand(s, STILL, edge - 20, cliff.y - 54, 'crate-0');
     } }), GATE)).toBe(false);
-    // A crate in the air at the cliff's edge, at any height, is not a step to the gate either. (Freeze is spent here,
-    // and a crate thrown from the cliff and caught while still rising never gets far enough: checked by brute force
-    // outside these tests.)
+    // A crate held in the air at the cliff's edge is not itself a step all the way to the gate.
     for (const top of [-60, 60, 160, 260]) {
       expect(anyJumpReaches(section({ prepare: s => {
         s.platforms.push({ x: edge - 27, y: top, w: 54, h: 54 });
@@ -237,7 +235,7 @@ describe('courtyard 4: the cloud basin', () => {
     expect(get(s, 'crate-0')).toMatchObject({ held: null, x: get(s, 'crate-0').spawnX, y: get(s, 'crate-0').spawnY });
   });
 
-  test('Still\'s Freeze is spent once Still reaches the cliff', () => {
+  test('Still keeps Freeze at the cliff and can hold the cloud from its edge', () => {
     let s = setup({ level: 3 });
     s.freezeCharges = 2;
     s.freezeAreas.push({ id: 'freeze-x', owner: 'local', x: 2000, y: 400, radius: meta.freeze.radius, ticksLeft: 300, duration: 600 });
@@ -247,10 +245,17 @@ describe('courtyard 4: the cloud basin', () => {
     expect(s.freezeAreas).toHaveLength(1);
     stand(s, STILL, cliff.x + 40, cliff.y, 'platform-5');
     s = tick(s);
-    expect(s.freezeCharges).toBe(0);
-    expect(s.freezeAreas).toHaveLength(0);
-    expect(s.events.some(e => e.kind === 'freezeSpent')).toBe(true);
-    expect(validateAction(s, 'local', { type: 'ability', actor: STILL, x: cliff.x + 200, y: 300 }).error).toBe('noCharges');
+    expect(s.freezeCharges).toBe(2);
+    expect(s.freezeAreas).toHaveLength(1);
+    expect(s.events.some(e => e.kind === 'freezeSpent')).toBe(false);
+    const c = get(s, 'cloud-0'); c.age = meta.cloud.waterTicks + meta.cloud.formTicks + 20;
+    const age = c.age;
+    stand(s, STILL, cliff.x + cliff.w - 20, cliff.y, 'platform-5');
+    s = act(s, { type: 'ability', actor: STILL, target: c.id });
+    expect(s.freezeCharges).toBe(1);
+    s = tick(s, meta.cloud.cloudTicks + 30);
+    expect(get(s, c.id)).toMatchObject({ age, frozen: true });
+    expect(cloudSolid(get(s, c.id))).toBe(true);
   });
 
   test('Bloom rewinds the cloud here: water that has just rained away rises back into a fresh cloud', () => {
@@ -319,8 +324,8 @@ describe('courtyard 4 can be finished', () => {
       expect(s.actors[who].on).toBe(box.id);
     }
 
-    // Freeze was spent as Still came up onto the cliff.
-    expect(s.freezeCharges).toBe(0);
+    // Still can save the unused Freeze for the cloud crossing.
+    expect(s.freezeCharges).toBe(1);
     // Once a cloud has formed: Still walks to the crate's right end and jumps onto it, and Bloom follows as Still
     // lands (never both on it for long); each walks on to the cloud's right part and jumps to the gate's ledge.
     for (let i = 0; i < 2400 && !cloudSolid(get(s, 'cloud-0')); i++) s = tick(s);

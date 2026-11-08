@@ -14,7 +14,7 @@ export function createLobby(callbacks) {
       <header class="online-heading"><span class="online-eyebrow">MOONCLOCK · ONLINE CO-OP</span><button class="online-leave" type="button" data-online="leave" aria-label="Leave Room">Leave</button></header>
       <div class="online-join" data-view="join">
         <h2 id="online-title">A moment for two.</h2><p class="online-intro">Meet in the same courtyard. Share an invite code with your partner.</p>
-        <form class="online-code-form"><label for="online-code-input">Room Code</label><div class="online-code-entry"><input id="online-code-input" data-testid="room-code-input" name="code" type="text" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC123" aria-describedby="online-code-help" required><button class="online-primary" type="submit" data-testid="join-room-submit">Join Room</button></div><p id="online-code-help">Enter the six-character code from your host.</p></form>
+        <form class="online-code-form"><label for="online-code-input">Room Code</label><div class="online-code-entry"><input id="online-code-input" data-testid="room-code-input" name="code" type="text" inputmode="numeric" pattern="[0-9]{2}" minlength="2" maxlength="2" autocomplete="off" spellcheck="false" placeholder="07" aria-describedby="online-code-help" required><button class="online-primary" type="submit" data-testid="join-room-submit">Join Room</button></div><p id="online-code-help">Enter the two-digit code from your host.</p></form>
         <div class="online-divider"><span>or start your own</span></div><button class="online-secondary online-create" type="button" data-online="create" data-testid="create-room-submit">Create Room</button>
       </div>
       <div class="online-room" data-view="room" hidden>
@@ -177,11 +177,11 @@ export function createLobby(callbacks) {
 
   $('.online-code-form').addEventListener('submit', event => {
     event.preventDefault();
-    const code = input.value.trim().toUpperCase(); input.value = code;
-    if (!/^[A-Z0-9]{6}$/.test(code)) { setError('Enter a six-character room code using letters and numbers.'); input.focus(); return; }
+    const code = input.value.trim(); input.value = code;
+    if (!/^[0-9]{2}$/.test(code)) { setError('Enter a two-digit room code.'); input.focus(); return; }
     invoke('joinRoom', code);
   });
-  input.addEventListener('input', () => { input.value = input.value.toUpperCase(); setError(''); });
+  input.addEventListener('input', () => { setError(''); });
   root.addEventListener('click', event => {
     const card = event.target.closest('[data-character]');
     if (card && !card.disabled) { invoke('selectCharacter', card.dataset.character); return; }

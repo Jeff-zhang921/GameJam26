@@ -35,7 +35,7 @@ export default {
   enemies: [{ kind: 'guard', x: 1100, y: 580, minX: 740, maxX: 1460 }],
   checkpoints: [{ x: 640, y: 500 }, { x: 1560, y: 390 }],
   // Freeze: one to start, plus an hourglass on the start ledge and one on the middle ledge.
-  freezeCharges: 1, freezePickups: [{ x: 450, y: 412 }, { x: 1700, y: 302 }],
+  freezeCharges: 2, freezePickups: [{ x: 450, y: 412 }, { x: 1700, y: 302 }],
   bloomPickups: [{ x: 320, y: 412 }],
   exitRope: 'rope-0',
   exit: { x: 3040, y: 220 }, shards: [{ x: 1100, y: 340 }], need: ['guardRide', 'ropeReleased', 'cloudRide'],

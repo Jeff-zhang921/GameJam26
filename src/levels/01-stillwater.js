@@ -15,7 +15,7 @@ export default {
   crates: [{ x: 350, y: 443 }, { x: 90, y: 443 }], crateRespawn: false,
   // Freeze: crossing the gap takes one Freeze Area per traveller. Only travellers still on the start ledge
   // (platform 0) need the crossing.
-  freezeCharges: 2, crossingNeedsFreeze: true, crossingFrom: 0,
+  freezeCharges: 3, crossingNeedsFreeze: true, crossingFrom: 0,
   // The middle ledge, left to right: the hourglass (Freeze +1), the seed, an ancient mushroom blocking the way
   // (Bloom hastens it until it wilts and lets travellers pass) and the pit for a new mushroom beside the gate's
   // ledge. Bloom starts empty-handed, so this seed is the only one. The ancient mushroom's pit cannot be planted
