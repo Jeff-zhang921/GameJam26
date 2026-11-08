@@ -1,7 +1,7 @@
 export const CONVERSATIONS = [
   [[0, 'The bridge is broken. Perhaps we can borrow a moment.'], [1, 'Throw the crate. I trust you to slow its fall.']],
   [[1, 'Our seed rolled into the trench. I can lure that snail to the right edge.'], [0, 'It cannot leave its platform. I will slow it so we can climb on its shell.']],
-  [[0, 'Even this ancient mushroom has an ending.'], [1, 'Then let it finish its story. We will plant another.']],
+  [[0, 'Arrows from the wall, and a canyon with no floor beyond.'], [1, 'Then I will grow us a way: a mushroom between the darts, vines from both cliffs.'], [0, 'And past the canyon, two platforms that meet halfway. We cross together.']],
   [[1, 'That platform is waiting for a little encouragement.'], [0, 'Grow a path to it. We will cross the last gap together.']],
   [[0, 'The garden is restless. Watch for the glow before they strike.'], [1, 'And the moon lamps?'], [0, 'A place to begin again. Stay close.']],
 ];
