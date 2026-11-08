@@ -33,7 +33,7 @@ export function createRenderer(canvas, S) {
   let transform, portalView = null;
   const woodenGate = createWoodenGate();
   const cyan = '#a1e3e5', gold = '#e1c68a', muted = '#8aa89b';
-  const sprites = Object.fromEntries(['crate', 'seed', 'mushroom-grow', 'mushroom-die', 'still', 'mage', 'snail', 'pit'].map(name => { const img = new Image(); img.src = `/sprites/${name}.png`; return [name, img]; }));
+  const sprites = Object.fromEntries(['crate', 'seed', 'mushroom-grow', 'mushroom-die', 'still', 'mage', 'snail', 'pit', 'vine'].map(name => { const img = new Image(); img.src = `/sprites/${name}.png`; return [name, img]; }));
   const loaded = (...names) => names.every(name => sprites[name].complete && sprites[name].naturalWidth > 0);
   // Theme art (ground, background images) is loaded on first use, by path. `theme` is the current courtyard's.
   const artCache = new Map();
@@ -277,6 +277,14 @@ export function createRenderer(canvas, S) {
   const PIT = { w: 100, soil: .38 };
   function pit(p) {
     if (!p.plant && p.plantable === false) return;
+    if (p.wall) {
+      // A wall pit is the same bed turned on its side, its soil facing the way the vine grows.
+      ctx.save(); ctx.translate(p.x, p.y + 8); ctx.rotate(-p.wall * Math.PI / 2);
+      if (loaded('pit')) { const img = sprites.pit, w = 60, h = w * img.naturalHeight / img.naturalWidth; ctx.drawImage(img, -w / 2, -h * PIT.soil, w, h); }
+      else { ellipse(ctx, 0, 0, 20, 6, 0, '#2a3d33'); ellipse(ctx, 0, -2, 15, 3, 0, p.plant ? '#4d5a41' : '#1b2a25'); }
+      ctx.restore();
+      return;
+    }
     if (loaded('pit')) {
       const img = sprites.pit, h = PIT.w * img.naturalHeight / img.naturalWidth;
       ctx.drawImage(img, p.x - PIT.w / 2, p.y - 2 - h * PIT.soil, PIT.w, h);
@@ -307,7 +315,33 @@ export function createRenderer(canvas, S) {
     }
     if (targeted) { circle(ctx, x, y - h - 16, 13, '#d7bd7d10', '#e1c68a70'); star(ctx, x, y - h - 16, 5, gold); }
   }
+  // The vine sheet is 4x2 frames of 443.5px, each vine growing right from the cell's left edge. Per frame: the
+  // art's left and right edge in the cell, and the y of the stem's top (where travellers stand). The frame for
+  // the vine's length is stretched to exactly the standable strip and mirrored for a vine growing left. Withered,
+  // it shrinks back through the frames and dries to yellow-brown.
+  const VINE = { cell: 443.5, scale: .67, frames: [[9, 111, 232], [10, 152, 232], [9, 206, 232], [9, 345, 232], [9, 338, 200], [10, 376, 200], [8, 431, 200], [8, 435, 200]] };
+  let vineTint;
+  function vine(o, targeted, t) {
+    const L = o.height, a = anchor(o);
+    timeRing(a.x, a.y, Math.max(22, L / 2 + 10), o, t);
+    if (L < .5) { sprite('seed', o.x + o.wall * 10, o.base + 9, 14, 1); return; }
+    if (!loaded('vine')) { line(ctx, [[o.x, o.base + 6], [o.x + o.wall * L, o.base + 6]], o.withered ? '#a08a52' : '#6f8f4a', 10); return; }
+    const f = Math.max(0, Math.min(7, Math.round(L / meta.vine.maxLength * 7))), [left, right, top] = VINE.frames[f];
+    const sx = f % 4 * VINE.cell + left, sy = Math.floor(f / 4) * VINE.cell, sw = right - left, sh = VINE.cell;
+    const k = VINE.scale, w = Math.ceil(L), h = Math.ceil(sh * k);
+    vineTint ??= document.createElement('canvas');
+    if (vineTint.width !== w || vineTint.height !== h) { vineTint.width = w; vineTint.height = h; }
+    const c = vineTint.getContext('2d');
+    c.globalCompositeOperation = 'source-over'; c.clearRect(0, 0, w, h);
+    c.drawImage(sprites.vine, sx, sy, sw, sh, 0, 0, w, h);
+    if (o.withered) { c.globalCompositeOperation = 'source-atop'; c.fillStyle = 'rgba(176, 140, 70, .55)'; c.fillRect(0, 0, w, h); }
+    ctx.save(); ctx.translate(o.x, o.base - top * k); ctx.scale(o.wall, 1);
+    ctx.drawImage(vineTint, 0, 0);
+    ctx.restore();
+    if (targeted) { circle(ctx, a.x, o.base - 22, 13, '#d7bd7d10', '#e1c68a70'); star(ctx, a.x, o.base - 22, 5, gold); }
+  }
   function plant(o, targeted, t, reduced) {
+    if (o.wall) return vine(o, targeted, t);
     if (loaded('seed', 'mushroom-grow', 'mushroom-die')) return mushroom(o, targeted, t);
     const h = o.height, x = o.x, y = o.base, dead = o.withered, g = Math.min(1, h / meta.plant.maxHeight), top = y - h;
     timeRing(x, y - h / 2, Math.max(22, h / 2 + 12), o, t);
@@ -507,7 +541,7 @@ export function createRenderer(canvas, S) {
   }
   // Slowed objects carry a small mark so it is clear what the area is holding.
   function frostMark(o, t) {
-    const b = isEnemy(o) ? enemyBox(o) : o.kind === 'plant' ? { x: o.x - 10, y: o.base - o.height - 4, w: 20, h: 0 } : o.kind === 'mover' ? { x: o.x, y: o.y, w: o.w, h: 0 } : { x: o.x - 10, y: o.y - (o.kind === 'crate' ? 30 : 14), w: 20, h: 0 };
+    const b = isEnemy(o) ? enemyBox(o) : o.kind === 'plant' ? (o.wall ? { x: anchor(o).x - 10, y: o.base - 4, w: 20, h: 0 } : { x: o.x - 10, y: o.base - o.height - 4, w: 20, h: 0 }) : o.kind === 'mover' ? { x: o.x, y: o.y, w: o.w, h: 0 } : { x: o.x - 10, y: o.y - (o.kind === 'crate' ? 30 : 14), w: 20, h: 0 };
     const x = b.x + b.w / 2 + Math.sin(t * .003 + b.x) * 3, y = b.y - 10;
     ctx.save(); ctx.globalAlpha *= .85; glow(ctx, x, y, 12, '#e6d6a366'); star(ctx, x, y, 4, '#f6ecc8'); ctx.restore();
   }
@@ -751,8 +785,8 @@ export function createRenderer(canvas, S) {
     if (options.throwArc) throwArc(options.throwArc);
     const selected = state.objects.find(o => o.id === target);
     if (state.status === 'playing' && selected) {
-      const top = isEnemy(selected) ? enemyBox(selected).y - 26 : selected.kind === 'plant' ? selected.base - selected.height - 53 : selected.kind === 'mover' ? selected.y - 30 : selected.y - 62;
-      const x = selected.kind === 'mover' ? selected.x + selected.w / 2 : selected.x;
+      const top = isEnemy(selected) ? enemyBox(selected).y - 26 : selected.kind === 'plant' ? (selected.wall ? selected.base - 45 : selected.base - selected.height - 53) : selected.kind === 'mover' ? selected.y - 30 : selected.y - 62;
+      const x = selected.kind === 'mover' ? selected.x + selected.w / 2 : selected.kind === 'plant' && selected.wall ? anchor(selected).x : selected.x;
       const words = options.touch ? S.tapLabels : { freeze: S.targetFreeze, wake: S.targetWake, hasten: S.targetHasten, max: S.targetMax };
       if (state.active === 0) label(x, top, words.freeze);
       else if (selected.speed >= meta.time.maxSpeed) label(x, top, words.max, muted);
