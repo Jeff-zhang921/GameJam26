@@ -1,6 +1,6 @@
 import { applyAction, validateAction, heldPosition } from '../src/logic.js';
 
-const predictionActions = new Set(['move', 'jump', 'jumpRelease', 'grab']);
+const predictionActions = new Set(['move', 'jump', 'jumpRelease', 'grab', 'takeSeed']);
 const sessionKey = 'moonclock-online';
 export function interpolateGame(older, newer, alpha, ownActor) {
   const game = { ...newer, actors: newer.actors.map(actor => ({ ...actor })) };
@@ -29,7 +29,13 @@ export function attachCarried(game, predicted = null, ownActor = null) {
     const carrier = game.actors[view.held];
     return carrier ? { ...view, ...heldPosition(view, carrier), vx: 0, vy: 0 } : view;
   });
-  if (local && game.actors[ownActor]) game.actors[ownActor] = { ...game.actors[ownActor], carrying };
+  // A predicted object the snapshot does not have yet (a seed just taken in hand) shows up held too.
+  const carrier = game.actors[ownActor];
+  if (local && carrier) {
+    const known = new Set(game.objects.map(o => o.id));
+    for (const o of predicted.objects) if (o.held === ownActor && !known.has(o.id)) { game.objects.push({ ...o, ...heldPosition(o, carrier), vx: 0, vy: 0 }); carrying = o.id; }
+    game.actors[ownActor] = { ...carrier, carrying };
+  }
   return game;
 }
 
@@ -149,7 +155,7 @@ export function createNetwork({ onRoom, onState, onConnection, onError, onReplay
     if (value.type === 'pause') return send({ type: 'pause', paused: latest?.status !== 'paused' });
     if (['restart', 'next'].includes(value.type)) return send({ type: 'control', action: value.type });
     if (value.type === 'level') return Number.isInteger(value.level) && send({ type: 'control', action: 'level', level: value.level });
-    if (!['move', 'jump', 'jumpRelease', 'grab', 'ability'].includes(value.type) || room.status !== 'PLAYING' || room.rewinding || latest?.status !== 'playing') return false;
+    if (!['move', 'jump', 'jumpRelease', 'grab', 'takeSeed', 'ability'].includes(value.type) || room.status !== 'PLAYING' || room.rewinding || latest?.status !== 'playing') return false;
     const input = { ...value, actor };
     if (input.type === 'move' && input.dir === lastMove) return true;
     if (input.type === 'move') lastMove = input.dir;
@@ -173,6 +179,7 @@ export function createNetwork({ onRoom, onState, onConnection, onError, onReplay
     get active() { return active; }, get connected() { return connected; },
     get host() { return room?.hostId === playerId; }, get latest() { return latest; },
     // This client's own character as locally predicted (ahead of snapshots): used to gate touch jumps.
+    get predicted() { return predicted; },
     get ownActor() { return predicted?.actors?.[actor] ?? latest?.actors?.[actor] ?? null; },
     create() { credentials = null; seq = 0; save(); connect({ type: 'create' }); },
     join(code) { credentials = null; seq = 0; save(); connect({ type: 'join', code: code.trim().toUpperCase() }); },

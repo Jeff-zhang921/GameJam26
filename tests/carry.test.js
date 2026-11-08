@@ -82,7 +82,7 @@ describe('contextual interaction label', () => {
     expect(interactionFor(state, 0)).toEqual({ kind: 'pickup', available: false });
     state.actors[0].x = 300;
     expect(interactionFor(state, 0)).toEqual({ kind: 'pickup', available: true });
-    expect(interactionFor(send(state, 'grab'), 0)).toEqual({ kind: 'throw', available: true });
+    expect(interactionFor(send(state, 'grab'), 0)).toEqual({ kind: 'throw', available: true, item: 'crate' });
   });
 
   test('Bloom with a seed in the count is offered Plant beside an empty pit, and nothing to plant elsewhere', () => {
@@ -127,6 +127,16 @@ describe('online rendering of carried boxes', () => {
     const flying = attachCarried({ ...predicted, actors: predicted.actors.map(a => ({ ...a })) }, thrown, 0);
     expect(crate(flying)).toMatchObject({ held: null, x: crate(thrown).x, y: crate(thrown).y });
     expect(flying.actors[0].carrying).toBe(null);
+  });
+
+  test('a seed just taken in hand shows up held before the snapshot has it', () => {
+    const server = classicCourtyard(); server.seeds = 1;
+    const predicted = send(server, 'takeSeed', 1);
+    const rendered = attachCarried({ ...server, actors: server.actors.map(a => ({ ...a })), objects: [...server.objects] }, predicted, 1);
+    const id = predicted.actors[1].carrying, seed = rendered.objects.find(o => o.id === id);
+    expect(seed).toMatchObject({ held: 1, ...heldPosition(seed, rendered.actors[1]) });
+    expect(rendered.actors[1].carrying).toBe(id);
+    expect(server.objects.some(o => o.id === id)).toBe(false);
   });
 
   test('the server stays authoritative for the partner: a local prediction cannot steal their box', () => {

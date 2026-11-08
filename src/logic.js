@@ -7,6 +7,8 @@ export const meta = {
   controls: { speed: 4.2, airSpeed: 4.8, jump: -12.5, springJump: -15.3, gravity: 0.48, fallGravity: 0.8, maxFall: 16, jumpCut: 0.45, coyote: 7, jumpBuffer: 7, range: 300, reach: 95, pitReach: 50 },
   time: { moverSpeed: 1, maxSpeed: 3, hintTicks: 90 * 60, invulnTicks: 60, frozenRate: FROZEN_RATE },
   plant: { maxHeight: 235, springHeight: 45, growTicks: 960, matureTicks: 480, witherTicks: 480 },
+  // A vine grows horizontally out of a wall pit, as long as `maxLength`, on the mushroom's clock.
+  vine: { maxLength: 240 },
   // Still's Freeze Area: a circle cast at a chosen point. `range` is how far from Still the centre may be,
   // `duration` is in ticks (60 per second), `rate` is local time inside it.
   freeze: { rate: FROZEN_RATE, radius: 130, range: 380, duration: 600 },
@@ -48,7 +50,7 @@ export function attachHeld(state) {
 
 export function anchor(o) {
   if (isEnemy(o)) { const b = enemyBox(o); return { x: b.x + b.w / 2, y: b.y + b.h / 2 }; }
-  if (o.kind === 'plant') return { x: o.x, y: o.base - o.height / 2 };
+  if (o.kind === 'plant') return o.wall ? { x: o.x + o.wall * o.height / 2, y: o.base - 2 } : { x: o.x, y: o.base - o.height / 2 };
   if (o.kind === 'mover') return { x: o.x + o.w / 2, y: o.y + 10 };
   return { x: o.x, y: o.y };
 }
@@ -56,13 +58,19 @@ export function anchor(o) {
 const witherProgress = age => (age - meta.plant.growTicks - meta.plant.matureTicks) / meta.plant.witherTicks;
 // A mushroom rises while growing, holds while mature, then sinks with its wilting animation.
 const heightAt = age => { const { growTicks, matureTicks, maxHeight } = meta.plant; return age > growTicks + matureTicks ? dieFrame(witherProgress(age)).height * maxHeight : Math.min(age, growTicks) / growTicks * maxHeight; };
+// The strip a vine occupies: from the wall face out to its tip, its top at the pit's height.
+const vineStrip = o => ({ x: o.wall === 1 ? o.x : o.x - o.height, y: o.base, w: o.height, h: 16 });
+// A vine reaches out while growing, holds while mature, then shrinks back evenly while withered.
+const vineLengthAt = age => { const { growTicks, matureTicks } = meta.plant; return age > growTicks + matureTicks ? Math.max(0, 1 - witherProgress(age)) * meta.vine.maxLength : Math.min(age, growTicks) / growTicks * meta.vine.maxLength; };
+// A plant's size: a mushroom's height, or a vine's length (a vine is a plant in a wall pit).
+const sizeAt = (wall, age) => wall ? vineLengthAt(age) : heightAt(age);
 // The standable cap is as wide as the mushroom art drawn at this height.
 export const canopyWidth = plant => plant.height * (plant.withered ? dieFrame(witherProgress(plant.age)).ratio : growFrame(plant.height, meta.plant.maxHeight, meta.plant.springHeight).ratio);
 
 function makePlant(id, pit, grown = 0, barrier = false) {
   pit.plant = id;
   const age = grown * (meta.plant.growTicks + meta.plant.matureTicks);
-  return { kind: 'plant', id, pit: pit.id, x: pit.x, base: pit.y, age, height: heightAt(age), withered: false, speed: 0, frozen: false, barrier };
+  return { kind: 'plant', id, pit: pit.id, x: pit.x, base: pit.y, age, height: sizeAt(pit.wall, age), withered: false, speed: 0, frozen: false, barrier, ...(pit.wall && { wall: pit.wall }) };
 }
 
 // A seed lying in the courtyard; Bloom collects it by touch.
@@ -71,7 +79,8 @@ const makeSeed = (id, x, y) => ({ kind: 'seed', id, x, y, vx: 0, vy: 0, frozen: 
 function makeLevel(index, players, unlocked, totalShards, collected = LEVELS.map(() => false)) {
   const level = LEVELS[index];
   // A pit marked `plantable: false` only holds the plant the level starts with (it cannot be planted again).
-  const pits = level.pits.map((p, i) => ({ id: `pit-${i}`, x: p.x, y: p.y, plant: null, ...(p.plantable === false && { plantable: false }) }));
+  // A pit with `wall: 1 | -1` sits on a wall face; its vine grows toward +x / −x.
+  const pits = level.pits.map((p, i) => ({ id: `pit-${i}`, x: p.x, y: p.y, plant: null, ...(p.plantable === false && { plantable: false }), ...(p.wall && { wall: p.wall }) }));
   const objects = [
     ...level.crates.map((p, i) => ({ kind: 'crate', id: `crate-${i}`, x: p.x, y: p.y, vx: 0, vy: 0, frozen: false, held: null, spawnX: p.x, spawnY: p.y })),
     ...level.seeds.map((p, i) => makeSeed(`seed-${i}`, p.x, p.y)),
@@ -83,7 +92,7 @@ function makeLevel(index, players, unlocked, totalShards, collected = LEVELS.map
     level: index, levelId: level.id, unlocked, totalShards, collected: clone(collected), tick: 0, status: 'playing', active: 0,
     playerIds: players, width: level.width ?? 1280, height: 640,
     actors: level.spawn.map((p, i) => ({ id: i, x: p.x, y: p.y, vx: 0, vy: 0, facing: 1, grounded: true, on: 'ground', coyote: meta.controls.coyote, jumpBuffer: 0, jumpHeld: false, jumpCut: true, move: 0, carrying: null, invuln: 0, checkpoint: null, respawnTick: null, spawnX: p.x, spawnY: p.y })),
-    platforms: clone(level.platforms), objects, pits, nextPlant: level.plants.length, nextEnemy: objects.length,
+    platforms: clone(level.platforms), objects, pits, nextPlant: level.plants.length, nextSeed: 0, nextEnemy: objects.length,
     checkpoints: (level.checkpoints ?? []).map((c, i) => ({ id: `cp-${i}`, x: c.x, y: c.y, lit: false })),
     exit: clone(level.exit), shards: level.shards.map((p, i) => ({ ...p, id: i, taken: false })),
     flags: { frozenTouched: false, treeLifted: false, withered: false, sproutJump: false, moverRide: false, dartRide: false, miteGone: false, guardRide: false },
@@ -143,6 +152,7 @@ export function objectBox(o) {
   if (o.kind === 'crate') return { x: o.x - 27, y: o.y - 27, w: 54, h: 54 };
   if (o.kind === 'seed') return { x: o.x - 10, y: o.y - 10, w: 20, h: 20 };
   if (o.kind === 'mover') return { x: o.x, y: o.y - 6, w: o.w, h: 26 };
+  if (o.kind === 'plant' && o.wall) { const w = Math.max(44, o.height); return { x: o.wall === 1 ? o.x : o.x - w, y: o.base - 20, w, h: 36 }; }
   if (o.kind === 'plant') { const w = Math.max(44, canopyWidth(o)); return { x: o.x - w / 2, y: o.base - o.height - 24, w, h: o.height + 30 }; }
   return enemyBox(o);
 }
@@ -221,18 +231,24 @@ function pickable(state, p) {
 }
 
 function plantingPit(state, p) {
-  return state.pits.filter(t => t.plant === null && t.plantable !== false && Math.abs(t.x - p.x) <= meta.controls.pitReach && Math.abs(t.y - p.y) <= 30)
+  return state.pits.filter(t => t.plant === null && t.plantable !== false && !t.wall && Math.abs(t.x - p.x) <= meta.controls.pitReach && Math.abs(t.y - p.y) <= 30)
     .sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0];
 }
 
 // Bloom, hands free, beside an empty pit with a seed to spare: the pit to plant in.
 const plantable = (state, p) => p.id === BLOOM && p.carrying === null && state.seeds > 0 ? plantingPit(state, p) : null;
 
+// Bloom, hands free, with a seed to spare, can take one in hand to throw (long press of grab).
+export const canTakeSeed = (state, actor) => {
+  const p = state?.actors?.[actor];
+  return !!p && state.status === 'playing' && p.id === BLOOM && p.carrying === null && state.seeds > 0;
+};
+
 // What the grab action would do for this actor right now: 'pickup', 'throw' or 'plant'.
 export function interactionFor(state, actor) {
   const p = state?.actors?.[actor];
   if (!p) return { kind: 'pickup', available: false };
-  if (p.carrying !== null && p.carrying !== undefined) return { kind: 'throw', available: true };
+  if (p.carrying !== null && p.carrying !== undefined) return { kind: 'throw', available: true, item: find(state, p.carrying)?.kind ?? 'crate' };
   if (plantable(state, p)) return { kind: 'plant', available: true };
   return { kind: 'pickup', available: pickable(state, p).length > 0 };
 }
@@ -252,17 +268,18 @@ export function throwLaunch(state, actor, aim) {
   return { x: p.x + side * offset.x, y: p.y + offset.y, ...v, facing: side };
 }
 
-// The flight of a crate thrown with `aim`, tick by tick, using the same physics as a real throw (including the
+// The flight of a crate or seed thrown with `aim`, tick by tick, using the same physics as a real throw (including the
 // local time of Freeze Areas it passes through), until it lands, hits a wall or leaves the courtyard.
 export function throwPath(state, actor, aim, maxTicks = 180) {
   const start = throwLaunch(state, actor, aim), carried = state.actors[actor].carrying;
-  const o = { kind: 'crate', id: carried, x: start.x, y: start.y, vx: start.vx, vy: start.vy, frozen: false, held: null };
+  const kind = find(state, carried)?.kind === 'seed' ? 'seed' : 'crate', half = kind === 'seed' ? 10 : 27;
+  const o = { kind, id: carried, x: start.x, y: start.y, vx: start.vx, vy: start.vy, frozen: false, held: null };
   const all = surfaces(state).filter(f => f.id !== carried), points = [{ x: o.x, y: o.y }];
   for (let i = 0; i < maxTicks; i++) {
-    o.frozen = state.freezeAreas.some(a => circleTouches(a, { x: o.x - 27, y: o.y - 27, w: 54, h: 54 }));
+    o.frozen = state.freezeAreas.some(a => circleTouches(a, { x: o.x - half, y: o.y - half, w: half * 2, h: half * 2 }));
     const { landed, wall } = stepItem(state, o, all);
     points.push({ x: o.x, y: o.y });
-    if (landed || wall || o.y > 720 || o.x < 20 || o.x > state.width - 20) break;
+    if (landed || wall || (kind === 'seed' && seedPit(state, o)) || o.y > 720 || o.x < 20 || o.x > state.width - 20) break;
   }
   return points;
 }
@@ -281,6 +298,12 @@ export function validateAction(state, playerId, action) {
   if (!Number.isInteger(action.actor) || action.actor < 0 || action.actor > 1 || !actorAllowed(state, playerId, action.actor)) return no('role');
   if (action.type === 'move') return [-1, 0, 1].includes(action.dir) ? { valid: true } : no('invalid');
   if (action.type === 'jump' || action.type === 'jumpRelease') return { valid: true };
+  if (action.type === 'takeSeed') {
+    if (action.actor !== BLOOM) return no('role');
+    if (state.actors[BLOOM].carrying !== null) return no('handsFull');
+    if (state.seeds <= 0) return no('noSeeds');
+    return canTakeSeed(state, action.actor) ? { valid: true } : no('invalid');
+  }
   if (action.type === 'grab') {
     const p = state.actors[action.actor];
     if (action.aim !== undefined) {
@@ -329,7 +352,10 @@ function surfaces(state) {
   for (const o of state.objects) {
     if (o.kind === 'crate' && o.held === null) result.push({ id: o.id, x: o.x - 27, y: o.y - 27, w: 54, h: 54 });
     if (o.kind === 'mover') result.push({ id: o.id, x: o.x, y: o.y, w: o.w, h: 20 });
-    if (o.kind === 'plant' && o.height > 0) { const w = canopyWidth(o); result.push({ id: o.id, x: o.x - w / 2, y: o.base - o.height, w, h: 16, spring: !o.withered && o.height <= meta.plant.springHeight }); }
+    if (o.kind === 'plant' && o.height > 0) {
+      if (o.wall) result.push({ id: o.id, ...vineStrip(o) });
+      else { const w = canopyWidth(o); result.push({ id: o.id, x: o.x - w / 2, y: o.base - o.height, w, h: 16, spring: !o.withered && o.height <= meta.plant.springHeight }); }
+    }
     if (isSolidEnemy(o)) result.push({ id: o.id, ...enemyBox(o) });
   }
   return result;
@@ -348,10 +374,11 @@ function ageObjects(state) {
         continue;
       }
       if (!o.withered && o.age > growTicks + matureTicks) { event(state, 'wither', o.x, o.base); o.withered = true; if (o.barrier) state.flags.withered = true; }
-      const rise = heightAt(o.age) - o.height;
+      const rise = sizeAt(o.wall, o.age) - o.height;
       o.height += rise;
-      if (rise > 0 && state.tick % 60 === 0) event(state, 'growth', o.x, o.base - o.height);
-      if (rise) for (const p of state.actors) if (p.on === o.id && p.grounded) {
+      if (rise > 0 && state.tick % 60 === 0) event(state, 'growth', o.wall ? o.x + o.wall * o.height : o.x, o.wall ? o.base : o.base - o.height);
+      // A rising cap lifts whoever stands on it; a vine only lengthens under them.
+      if (rise && !o.wall) for (const p of state.actors) if (p.on === o.id && p.grounded) {
         p.y -= rise;
         if (o.height > meta.plant.springHeight) state.flags.treeLifted = true;
       }
@@ -364,7 +391,7 @@ function ageObjects(state) {
 }
 
 // A living mushroom's stem is solid from the side, for actors and items alike; only its cap top is standable.
-const stemBoxes = state => state.objects.filter(o => o.kind === 'plant' && !o.withered && o.height > 0)
+const stemBoxes = state => state.objects.filter(o => o.kind === 'plant' && !o.wall && !o.withered && o.height > 0)
   .map(o => { const w = Math.min(84, Math.max(30, canopyWidth(o))); return { x: o.x - w / 2, y: o.base - o.height, w, h: o.height }; });
 
 // How fast (px per tick of local time) an item whose centre is past an edge slides off it.
@@ -393,25 +420,49 @@ function stepItem(state, o, all) {
   return { landed, wall };
 }
 
+// The empty pit a seed in flight has reached, if any: within 24 px of a ground pit's soil or a wall pit's face.
+const SEED_PIT_REACH = 24;
+function seedPit(state, o) {
+  return state.pits.find(t => t.plant === null && t.plantable !== false
+    && Math.hypot(o.x - (t.wall ? t.x + t.wall * 10 : t.x), o.y - (t.wall ? t.y : t.y - 10)) <= SEED_PIT_REACH);
+}
+
 // Moves loose items. Returns the ids of items that were reset to their spawn or lost, so riders are not carried
 // along with them.
 function moveItems(state) {
-  const all = surfaces(state), reset = new Set(), lost = new Set();
-  for (const o of state.objects) {
+  const all = surfaces(state), reset = new Set(), lost = new Set(), planted = new Set();
+  for (const o of [...state.objects]) {
     if (o.kind !== 'crate' && o.kind !== 'seed') continue;
     const crate = o.kind === 'crate', half = crate ? 27 : 10;
     // Carried items take no physics step; attachHeld places them after their carrier has moved.
     if (o.held !== null) continue;
     const { landed } = stepItem(state, o, all);
+    // A thrown seed that reaches an empty pit plants it; one that lands anywhere else just lies there.
+    if (o.kind === 'seed' && o.thrown) {
+      const pit = seedPit(state, o);
+      if (pit) {
+        planted.add(o.id);
+        state.objects.push(makePlant(`plant-${state.nextPlant++}`, pit));
+        event(state, 'plant', pit.x, pit.y - 10);
+        continue;
+      }
+      if (landed) o.thrown = false;
+    }
     if (landed && landed.speed > 1) event(state, crate ? 'crateLand' : 'seedLand', o.x, landed.y);
     if (o.y > 720 || o.x < 20 || o.x > state.width - 20) {
+      if (o.fromHand) {
+        const bloom = state.actors[BLOOM];
+        lost.add(o.id); state.seeds++;
+        event(state, 'seedPick', bloom.x, bloom.y - 20, { actor: BLOOM, seeds: state.seeds });
+        continue;
+      }
       reset.add(o.id);
       // Where crates do not respawn, a lost crate is gone for good. Seeds always return.
       if (crate && state.crateRespawn === false) { lost.add(o.id); event(state, 'crateLost', o.x, Math.min(o.y, state.height)); continue; }
-      o.x = respawnX(state, o, half); o.y = o.spawnY; o.vx = 0; o.vy = 0; event(state, 'return', o.x, o.y);
+      o.thrown = false; o.x = respawnX(state, o, half); o.y = o.spawnY; o.vx = 0; o.vy = 0; event(state, 'return', o.x, o.y);
     }
   }
-  if (lost.size) state.objects = state.objects.filter(o => !lost.has(o.id));
+  if (lost.size || planted.size) state.objects = state.objects.filter(o => !lost.has(o.id) && !planted.has(o.id));
   return reset;
 }
 
@@ -497,7 +548,7 @@ function moveActors(state) {
         respawn(state, p, 'hit');
       }
     }
-    if (p.id === BLOOM) for (const seed of state.objects.filter(o => o.kind === 'seed' && dist({ x: p.x, y: p.y - 20 }, o) < meta.seeds.reach)) {
+    if (p.id === BLOOM) for (const seed of state.objects.filter(o => o.kind === 'seed' && free(o) && !o.thrown && dist({ x: p.x, y: p.y - 20 }, o) < meta.seeds.reach)) {
       state.objects = state.objects.filter(o => o !== seed); state.seeds++;
       event(state, 'seedPick', seed.x, seed.y, { actor: p.id, seeds: state.seeds });
     }
@@ -647,16 +698,24 @@ export function applyAction(state, playerId, action) {
   if (action.type === 'pause') { if (s.status === 'playing' || s.status === 'paused') s.status = s.status === 'paused' ? 'playing' : 'paused'; for (const p of s.actors) { p.move = 0; p.jumpHeld = false; p.jumpCut = true; p.jumpBuffer = 0; } return s; }
   if (action.type === 'switch') { for (const p of s.actors) { p.move = 0; p.jumpHeld = false; p.jumpCut = true; p.jumpBuffer = 0; } s.active = 1 - s.active; return s; }
   const p = s.actors[action.actor];
-  if (action.type === 'jump' || action.type === 'grab' || action.type === 'ability' || (action.type === 'move' && action.dir !== 0)) s.started = true;
+  if (action.type === 'jump' || action.type === 'grab' || action.type === 'takeSeed' || action.type === 'ability' || (action.type === 'move' && action.dir !== 0)) s.started = true;
   if (action.type === 'move') p.move = action.dir;
   if (action.type === 'jump' && !p.jumpHeld) { p.jumpHeld = true; p.jumpBuffer = meta.controls.jumpBuffer; }
   if (action.type === 'jumpRelease') p.jumpHeld = false;
+  if (action.type === 'takeSeed') {
+    // One seed from the count goes into Bloom's hand. If it is ever lost it goes back to the count.
+    s.seeds--;
+    const o = { ...makeSeed(`seed-taken-${s.nextSeed++}`, p.x, p.y - 10), held: BLOOM, fromHand: true };
+    Object.assign(o, heldPosition(o, p));
+    s.objects.push(o); p.carrying = o.id;
+    event(s, 'seedTake', o.x, o.y, { actor: BLOOM, seeds: s.seeds });
+  }
   if (action.type === 'grab') {
     if (p.carrying !== null) {
-      // Throw the carried crate, aimed or the default way.
+      // Throw the carried crate or seed, aimed or the default way.
       const o = find(s, p.carrying), launch = throwLaunch(s, action.actor, action.aim);
       p.carrying = null; o.held = null; p.facing = launch.facing;
-      Object.assign(o, { frozen: false, x: launch.x, y: launch.y, vx: launch.vx, vy: launch.vy });
+      Object.assign(o, { frozen: false, x: launch.x, y: launch.y, vx: launch.vx, vy: launch.vy, ...(o.kind === 'seed' && { thrown: true }) });
       event(s, 'throw', o.x, o.y);
     } else if (plantable(s, p)) {
       // Plant one of Bloom's seeds in the pit beside them.

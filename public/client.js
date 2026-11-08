@@ -1,7 +1,7 @@
 import { playEffect, createGrowthAudio, createRewindAudio } from './sfx.js';
 import { createMusic } from './music.js';
 import { themeFor, MENU_MUSIC } from './themes.js';
-import { setup, applyAction, validateAction, viewFor, hintLevel, levelCount, interactionFor, aimedThrowVelocity, throwPath, abilityCheck, abilityTargets, bloomTargetAt, bloomSupport, anchor, exitStatus, freezeAreaAt, freezeCheck, meta } from '../src/logic.js';
+import { setup, applyAction, validateAction, viewFor, hintLevel, levelCount, interactionFor, canTakeSeed, aimedThrowVelocity, throwPath, abilityCheck, abilityTargets, bloomTargetAt, bloomSupport, anchor, exitStatus, freezeAreaAt, freezeCheck, meta } from '../src/logic.js';
 import { createHistory, compactFrame, rewindFrame, REWIND } from './rewind.js';
 import { S } from './strings.js';
 import { createRenderer } from './render.js';
@@ -81,6 +81,13 @@ let throwAim = null;
 // Desktop aiming: hold F (skill) or E while carrying (throw), point with the mouse, let go to act; Esc cancels.
 // `mouseClient` is the last mouse position on screen (turned into a world point each frame, as the camera moves).
 let mouseAim = null, mouseClient = null;
+// Holding E (or the interact button) for SEED_HOLD_MS with a seed to spare takes one in hand to throw;
+// a shorter press does what grab always did.
+const SEED_HOLD_MS = 300;
+let seedHold = null;
+// What this player's own decisions (carrying? seed to take?) read: the predicted state online, the live state offline.
+const ownState = () => onlineMode ? network.predicted ?? lastView : state;
+function clearSeedHold() { if (seedHold) clearTimeout(seedHold.timer); seedHold = null; }
 // Touch: the last drawn world (for tap hit-testing) and the short-lived feedback of the last tap.
 let lastView = null, tapEffect = null;
 // Height (px) the bottom touch controls take up; the camera lowers the world only as far as keeps the
@@ -281,16 +288,16 @@ function chime(event) {
 }
 function dispatch(action, quiet = false) {
   const releasing = action.type === 'jumpRelease' || (action.type === 'move' && action.dir === 0);
-  if (viewport?.blocked && !releasing && ['tick', 'move', 'jump', 'grab', 'ability', 'switch', 'pause'].includes(action.type)) return { valid: false };
+  if (viewport?.blocked && !releasing && ['tick', 'move', 'jump', 'grab', 'takeSeed', 'ability', 'switch', 'pause'].includes(action.type)) return { valid: false };
   if (rewind && action.type !== 'tick' && !releasing) return { valid: false };
-  if (stageBusy() && !releasing && ['tick', 'move', 'jump', 'grab', 'ability', 'switch'].includes(action.type)) return { valid: false };
+  if (stageBusy() && !releasing && ['tick', 'move', 'jump', 'grab', 'takeSeed', 'ability', 'switch'].includes(action.type)) return { valid: false };
   if (onlineMode) {
     if (action.actor !== undefined && action.actor !== network.actor) return { valid: false };
     if (['switch', 'tick'].includes(action.type)) return { valid: false };
     if (action.type === 'level' && !network.host) return { valid: false }; // the server enforces this too
     return { valid: network.action(action) };
   }
-  if (action.actor === undefined && ['move', 'jump', 'jumpRelease', 'grab', 'ability'].includes(action.type)) action = { ...action, actor: state.active };
+  if (action.actor === undefined && ['move', 'jump', 'jumpRelease', 'grab', 'takeSeed', 'ability'].includes(action.type)) action = { ...action, actor: state.active };
   const result = validateAction(state, 'local', action);
   if (!result.valid) { if (!quiet) toast(S.errors[result.error]); return result; }
   const oldLevel = state.level, oldStatus = state.status;
@@ -367,7 +374,7 @@ function updateUI() {
 }
 // Forget every held key, finger and joystick state without sending anything.
 function resetTouchState() {
-  clearSkillAim(); clearThrowAim(); mouseAim = null;
+  clearSeedHold(); clearSkillAim(); clearThrowAim(); mouseAim = null;
   held.clear(); touchPointers.clear(); touchJumpActor = null;
   Object.assign(joy, { pointer: null, actor: null, dx: 0, dy: 0, dir: 0 });
   const stick = document.querySelector('.joystick');
@@ -601,6 +608,7 @@ document.addEventListener('keydown', event => {
   if (viewport.blocked) return;
   if (rewind) return;
   if (stageBusy()) { event.preventDefault(); return; }
+  if (code === 'Escape' && seedHold) { event.preventDefault(); clearSeedHold(); return; }
   if (code === 'Escape' && (skillAim || throwAim || mouseAim)) { event.preventDefault(); clearSkillAim(); clearThrowAim(); mouseAim = null; return; }
   if (code === 'Escape') { event.preventDefault(); if (modal && !['intro', 'win'].includes(modal)) resume(); else if (!modal) setModal('pause'); return; }
   if (modal) {
@@ -623,8 +631,15 @@ document.addEventListener('keydown', event => {
   if (code === 'Tab' && !onlineMode) { clearInputs(); dispatch({ type: 'switch' }); }
   if (['KeyW', 'Space', 'ArrowUp'].includes(code) && !alreadyJumping) dispatch({ type: 'jump', actor });
   if (['KeyE', 'Enter'].includes(code)) {
-    if (interactionFor(lastView ?? state, actor).kind === 'throw') startMouseAim('throw', code, actor);
-    else dispatch({ type: 'grab', actor });
+    const view = ownState();
+    if (interactionFor(view, actor).kind === 'throw') startMouseAim('throw', code, actor);
+    else if (canTakeSeed(view, actor)) {
+      clearSeedHold();
+      seedHold = { key: code, actor, timer: setTimeout(() => {
+        seedHold = null;
+        if (dispatch({ type: 'takeSeed', actor }, true).valid !== false) startMouseAim('throw', code, actor);
+      }, SEED_HOLD_MS) };
+    } else dispatch({ type: 'grab', actor });
   }
   if (['KeyF', 'KeyL'].includes(code)) startMouseAim('skill', code, actor);
 });
@@ -633,6 +648,7 @@ function keyboardJumpHeld() {
 }
 document.addEventListener('keyup', event => {
   held.delete(event.code);
+  if (seedHold && event.code === seedHold.key) { const { actor } = seedHold; clearSeedHold(); dispatch({ type: 'grab', actor }); }
   if (mouseAim && event.code === mouseAim.key) finishMouseAim();
   if (['KeyW', 'Space', 'ArrowUp'].includes(event.code) && !modal) {
     const actor = onlineMode ? network.actor : state.active;
@@ -870,12 +886,12 @@ function finishMouseAim() {
     if (aim.actor === 1 && !preview?.target && castUnderfoot(view)) return;
     castSkill(preview); return;
   }
-  if (view.actors[aim.actor]?.carrying === null) return;
+  if (ownState()?.actors[aim.actor]?.carrying === null) return;
   const point = mouseWorld(), velocity = point && throwToward(view, aim.actor, point);
   dispatch(velocity ? { type: 'grab', actor: aim.actor, aim: velocity } : { type: 'grab', actor: aim.actor });
 }
 
-const cancelAim = event => { event?.preventDefault(); clearSkillAim(); clearThrowAim(); cancelAimButton.setAttribute('aria-label', S.cancelAim); };
+const cancelAim = event => { event?.preventDefault(); clearSeedHold(); clearSkillAim(); clearThrowAim(); cancelAimButton.setAttribute('aria-label', S.cancelAim); };
 cancelAimButton.addEventListener('pointerdown', cancelAim);
 cancelAimButton.addEventListener('click', () => cancelAim());
 // Each circle captures only its own pointer, so presses coexist with held movement and with each other.
@@ -887,9 +903,19 @@ for (const button of document.querySelectorAll('[data-touch]')) {
     if (button === abilityButton) {
       const { clientX: x, clientY: y, pointerId: pointer } = event;
       skillAim = { pointer, actor: touchActor(), x, y, startX: x, startY: y, started: performance.now(), travel: Math.max(76, button.clientWidth * 1.15), active: false, overCancel: false };
-    } else if (button === interactButton && interactionFor(lastView ?? state, touchActor()).kind === 'throw') {
+    } else if (button === interactButton && interactionFor(ownState(), touchActor()).kind === 'throw') {
       const { clientX: x, clientY: y, pointerId: pointer } = event;
       throwAim = { pointer, actor: touchActor(), x, y, startX: x, startY: y, travel: Math.max(90, button.clientWidth * 1.4), active: false, overCancel: false };
+    } else if (button === interactButton && canTakeSeed(ownState(), touchActor())) {
+      const { clientX: x, clientY: y, pointerId: pointer } = event, actor = touchActor();
+      clearSeedHold();
+      seedHold = { pointer, actor, x, y, timer: setTimeout(() => {
+        const { x: nowX, y: nowY } = seedHold; seedHold = null;
+        if (dispatch({ type: 'takeSeed', actor }, true).valid === false) return;
+        // Aim from where the finger went down, so a drag that began during the hold already counts.
+        throwAim = { pointer, actor, x: nowX, y: nowY, startX: x, startY: y, travel: Math.max(90, button.clientWidth * 1.4), active: false, overCancel: false };
+        updateThrowAim();
+      }, SEED_HOLD_MS) };
     } else touchAction(button.dataset.touch);
     touchPointers.set(button, event.pointerId); button.classList.add('pressed');
   });
@@ -898,6 +924,10 @@ for (const button of document.querySelectorAll('[data-touch]')) {
     touchPointers.delete(button); button.classList.remove('pressed');
     if (button.dataset.touch === 'jump') releaseTouchJump();
     if (button === abilityButton) finishSkillAim(event, name === 'pointerup');
+    if (button === interactButton && seedHold?.pointer === event.pointerId) {
+      clearSeedHold();
+      if (name === 'pointerup') touchAction(button.dataset.touch); // a short tap: grab as before
+    }
     if (button === interactButton) finishThrowAim(event, name === 'pointerup');
   });
   // Keyboard / switch-access activation (pointer taps were already handled on pointerdown).
@@ -909,14 +939,18 @@ for (const button of document.querySelectorAll('[data-touch]')) {
   });
 }
 abilityButton.addEventListener('pointermove', updateSkillAim);
-interactButton.addEventListener('pointermove', updateThrowAim);
+interactButton.addEventListener('pointermove', event => {
+  if (seedHold?.pointer === event.pointerId) { seedHold.x = event.clientX; seedHold.y = event.clientY; }
+  updateThrowAim(event);
+});
 const chargeBadge = abilityButton.querySelector('.skill-charges');
 function updateTouchControls(view) {
   if (!document.body.classList.contains('touch-layout') || !view?.actors) return;
   const actor = onlineMode ? network.actor : view.active;
   const charges = skillCharges(view, actor);
   const interaction = interactionFor(view, actor);
-  const next = `${actor}:${charges}:${interaction.kind}:${interaction.available}`;
+  const available = interaction.available || canTakeSeed(view, actor);
+  const next = `${actor}:${charges}:${interaction.kind}:${interaction.item ?? ''}:${available}`;
   if (next === touchKey) return;
   touchKey = next;
   chargeBadge.textContent = charges;
@@ -928,10 +962,11 @@ function updateTouchControls(view) {
     abilityButton.dataset.actor = actor;
   }
   interactButton.classList.toggle('bloom', actor === 1);
-  interactButton.classList.toggle('unavailable', !interaction.available);
-  if (interactButton.dataset.kind !== interaction.kind) {
-    interactButton.dataset.kind = interaction.kind;
-    interactButton.innerHTML = `${itemArt(interaction.kind === 'plant' ? 'seed' : 'crate')}<span>${S.interact[interaction.kind]}</span>`;
+  interactButton.classList.toggle('unavailable', !available);
+  const art = interaction.kind === 'plant' || interaction.item === 'seed' ? 'seed' : 'crate', artKey = `${interaction.kind}:${art}`;
+  if (interactButton.dataset.art !== artKey) {
+    interactButton.dataset.kind = interaction.kind; interactButton.dataset.art = artKey;
+    interactButton.innerHTML = `${itemArt(art)}<span>${S.interact[interaction.kind]}</span>`;
     interactButton.setAttribute('aria-label', S.interact[interaction.kind]);
   }
 }

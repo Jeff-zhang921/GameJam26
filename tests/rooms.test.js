@@ -103,6 +103,13 @@ describe('rooms and shared lobby', () => {
     input(f.guest, 3, { type: 'grab', aim });
     expect(f.room.game.objects.find(o => o.id === 'crate-0')).toMatchObject({ held: null, ...aim });
   });
+  test('Bloom can take a seed in hand online', () => {
+    const f = fixture(); f.start();
+    f.room.game.seeds = 1;
+    f.send(f.host, { type: 'input', seq: 1, action: { type: 'takeSeed' } }); // the host plays Bloom
+    expect(f.room.game.seeds).toBe(0);
+    expect(f.room.game.actors[1].carrying).toMatch(/^seed-taken-/);
+  });
   test('different room codes isolate input and state', () => {
     const f = fixture(); f.start();
     const other = f.socket(); f.send(other, { type: 'create' });
