@@ -121,6 +121,12 @@ async function checkLocal(url, { reducedMotion = 'no-preference', finale = false
     await page.waitForTimeout(1800);
     await page.screenshot({ path: '.audit/win-finale.png' });
   }
+  if (finale) {
+    // The last chamber ends on the ending screen with credits instead of looping straight back.
+    await stage(page, 'ending');
+    assert.match(await page.getByTestId('ending').innerText(), /Credits/);
+    await page.getByTestId('play-again').click();
+  }
   await ready(page);
   assert.equal(await page.getByTestId('next').count(), 0, 'Gate passage must not show results');
   assert.equal((await snapshot(page)).level, (level + 1) % 5);

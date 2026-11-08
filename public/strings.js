@@ -63,7 +63,7 @@ export const S = {
     playAgain: 'Walk Again', mainMenu: 'Main Menu', hostNote: 'The host can start the journey again.',
     creditsTitle: 'Credits',
     credits: [
-      ['Made by', ['StephenYang', 'Kehao Zhou', 'Yihua Ren (Carol)', 'Jeff Zhang', 'Erised233']],
+      ['Made by', ['StephenYang', 'Kehao Zhou', 'Yihua Ren (Carol)', 'Jeff Zhang', 'Dorian Li']],
       ['Music', ['The 1999 — 共生 · 她未曾见过的 · 叠子对望 · 瑞尼尔雪山的丧钟 · 梦境之主 · 贝希摩斯', 'Gymnopédie No. 1 — Erik Satie, performed by Kevin MacLeod (incompetech.com), CC BY 4.0']],
       ['Built with', ['Bun · Canvas · WebSocket']],
       ['Made for', ['Game Jam 2026 · 24 hours']],
