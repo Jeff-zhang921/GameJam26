@@ -50,7 +50,7 @@ export function attachHeld(state) {
 
 export function anchor(o) {
   if (isEnemy(o)) { const b = enemyBox(o); return { x: b.x + b.w / 2, y: b.y + b.h / 2 }; }
-  if (o.kind === 'plant') return { x: o.x, y: o.base - o.height / 2 };
+  if (o.kind === 'plant') return o.wall ? { x: o.x + o.wall * o.height / 2, y: o.base - 2 } : { x: o.x, y: o.base - o.height / 2 };
   if (o.kind === 'mover') return { x: o.x + o.w / 2, y: o.y + 10 };
   return { x: o.x, y: o.y };
 }
@@ -58,6 +58,8 @@ export function anchor(o) {
 const witherProgress = age => (age - meta.plant.growTicks - meta.plant.matureTicks) / meta.plant.witherTicks;
 // A mushroom rises while growing, holds while mature, then sinks with its wilting animation.
 const heightAt = age => { const { growTicks, matureTicks, maxHeight } = meta.plant; return age > growTicks + matureTicks ? dieFrame(witherProgress(age)).height * maxHeight : Math.min(age, growTicks) / growTicks * maxHeight; };
+// The strip a vine occupies: from the wall face out to its tip, its top at the pit's height.
+const vineStrip = o => ({ x: o.wall === 1 ? o.x : o.x - o.height, y: o.base, w: o.height, h: 16 });
 // A vine reaches out while growing, holds while mature, then shrinks back evenly while withered.
 const vineLengthAt = age => { const { growTicks, matureTicks } = meta.plant; return age > growTicks + matureTicks ? Math.max(0, 1 - witherProgress(age)) * meta.vine.maxLength : Math.min(age, growTicks) / growTicks * meta.vine.maxLength; };
 // A plant's size: a mushroom's height, or a vine's length (a vine is a plant in a wall pit).
@@ -152,6 +154,7 @@ export function objectBox(o) {
   if (o.kind === 'crate') return { x: o.x - 27, y: o.y - 27, w: 54, h: 54 };
   if (o.kind === 'seed') return { x: o.x - 10, y: o.y - 10, w: 20, h: 20 };
   if (o.kind === 'mover') return { x: o.x, y: o.y - 6, w: o.w, h: 26 };
+  if (o.kind === 'plant' && o.wall) { const w = Math.max(44, o.height); return { x: o.wall === 1 ? o.x : o.x - w, y: o.base - 20, w, h: 36 }; }
   if (o.kind === 'plant') { const w = Math.max(44, canopyWidth(o)); return { x: o.x - w / 2, y: o.base - o.height - 24, w, h: o.height + 30 }; }
   return enemyBox(o);
 }
@@ -338,7 +341,7 @@ function surfaces(state) {
   for (const o of state.objects) {
     if (o.kind === 'crate' && o.held === null) result.push({ id: o.id, x: o.x - 27, y: o.y - 27, w: 54, h: 54 });
     if (o.kind === 'mover') result.push({ id: o.id, x: o.x, y: o.y, w: o.w, h: 20 });
-    if (o.kind === 'plant' && o.height > 0) { const w = canopyWidth(o); result.push({ id: o.id, x: o.x - w / 2, y: o.base - o.height, w, h: 16, spring: !o.withered && o.height <= meta.plant.springHeight }); }
+    if (o.kind === 'plant' && o.height > 0) result.push(o.wall ? { id: o.id, ...vineStrip(o) } : (() => { const w = canopyWidth(o); return { id: o.id, x: o.x - w / 2, y: o.base - o.height, w, h: 16, spring: !o.withered && o.height <= meta.plant.springHeight }; })());
     if (isSolidEnemy(o)) result.push({ id: o.id, ...enemyBox(o) });
   }
   return result;
@@ -374,7 +377,7 @@ function ageObjects(state) {
 }
 
 // A living mushroom's stem is solid from the side, for actors and items alike; only its cap top is standable.
-const stemBoxes = state => state.objects.filter(o => o.kind === 'plant' && !o.withered && o.height > 0)
+const stemBoxes = state => state.objects.filter(o => o.kind === 'plant' && !o.wall && !o.withered && o.height > 0)
   .map(o => { const w = Math.min(84, Math.max(30, canopyWidth(o))); return { x: o.x - w / 2, y: o.base - o.height, w, h: o.height }; });
 
 // How fast (px per tick of local time) an item whose centre is past an edge slides off it.
