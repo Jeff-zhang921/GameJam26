@@ -371,23 +371,30 @@ function surfaces(state) {
 function ageObjects(state) {
   for (const o of [...state.objects]) {
     const slow = o.frozen ? meta.time.frozenRate : 1;
-    if (o.kind === 'plant' && o.speed > 0) {
+    if (o.kind === 'plant' && o.speed !== 0) {
       const { growTicks, matureTicks, witherTicks } = meta.plant;
       o.age += o.speed * slow;
-      if (o.age >= growTicks + matureTicks + witherTicks) {
+      if (o.age >= growTicks + matureTicks + witherTicks || o.age <= 0) {
         state.objects = state.objects.filter(x => x !== o);
         state.pits.find(p => p.id === o.pit).plant = null;
-        event(state, 'vanish', o.x, o.base - o.height, { plant: true, base: o.base });
+        event(state, 'vanish', o.x, o.base - o.height, { plant: true, base: o.base, ...(o.age <= 0 && { rewound: true }) });
         continue;
       }
-      if (!o.withered && o.age > growTicks + matureTicks) { event(state, 'wither', o.x, o.base); o.withered = true; if (o.barrier) state.flags.withered = true; }
+      // Withered past maturity; a rewinding plant that comes back into maturity is alive again.
+      const past = o.age > growTicks + matureTicks;
+      if (past !== o.withered) {
+        o.withered = past;
+        event(state, past ? 'wither' : 'unwither', o.x, o.base);
+        if (past && o.barrier) state.flags.withered = true;
+      }
       const rise = sizeAt(o.wall, o.age) - o.height;
       o.height += rise;
       if (rise > 0 && state.tick % 60 === 0) event(state, 'growth', o.wall ? o.x + o.wall * o.height : o.x, o.wall ? o.base : o.base - o.height);
-      // A rising cap lifts whoever stands on it; a vine only lengthens under them.
+      // A cap carries whoever stands on it, up or down; a vine only lengthens or shortens under them.
       if (rise && !o.wall) for (const p of state.actors) if (p.on === o.id && p.grounded) {
         p.y -= rise;
-        if (o.height > meta.plant.springHeight) state.flags.treeLifted = true;
+        if (rise > 0 && o.height > meta.plant.springHeight) state.flags.treeLifted = true;
+        if (o.speed < 0) state.flags.treeRewound = true;
       }
     }
     if (o.kind === 'mover' && o.speed > 0) {

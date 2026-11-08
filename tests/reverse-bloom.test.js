@@ -58,3 +58,55 @@ describe('rewinding Bloom: the cast', () => {
     expect(s.flags.vineRewound).toBe(true);
   });
 });
+
+describe('rewinding Bloom: plants age backwards', () => {
+  const { growTicks, matureTicks, maxHeight } = meta.plant;
+
+  test('a mature mushroom holds its height back through maturity, then shrinks', () => {
+    let s = rewind(reverseArena({ age: 1200 }));
+    s = tick(s, 240);
+    expect(plant(s).age).toBeCloseTo(960);
+    expect(plant(s).height).toBeCloseTo(maxHeight);
+    s = tick(s, 480);
+    expect(plant(s).age).toBeCloseTo(480);
+    expect(plant(s).height).toBeCloseTo(maxHeight / 2);
+  });
+
+  test('a withered mushroom grows back and is alive again once it is back in maturity', () => {
+    let s = rewind(reverseArena({ age: 1800 }));
+    const start = plant(s).height;
+    s = tick(s, 300);
+    expect(plant(s).withered).toBe(true);
+    expect(plant(s).height).toBeGreaterThan(start);
+    s = tick(s, 100);
+    expect(plant(s).withered).toBe(false);
+    expect(s.events.some(e => e.kind === 'unwither')).toBe(true);
+  });
+
+  test('rewound to age 0 the plant is gone and its pit empty', () => {
+    let s = rewind(reverseArena({ age: 100 }));
+    s = tick(s, 101);
+    expect(plant(s)).toBeUndefined();
+    expect(s.pits[0].plant).toBe(null);
+    expect(s.events.some(e => e.kind === 'vanish' && e.rewound)).toBe(true);
+  });
+
+  test('a Freeze Area slows the rewind to a fifth', () => {
+    let s = rewind(reverseArena({ age: 1200 }));
+    s.freezeAreas.push({ id: 'freeze-9', owner: 'local', x: 600, y: 420, radius: 130, ticksLeft: 600, duration: 600 });
+    s = tick(s, 100);
+    expect(plant(s).age).toBeCloseTo(1200 - 100 * meta.time.frozenRate);
+  });
+
+  test('a rider sinks with a shrinking cap and earns treeRewound', () => {
+    let s = reverseArena({ age: 480 });
+    Object.assign(s.actors[STILL], { x: 600, y: 540 - plant(s).height, vx: 0, vy: 0, grounded: true, on: 'plant-0' });
+    s = rewind(s);
+    s = tick(s, 60);
+    expect(plant(s).height).toBeLessThan(maxHeight / 2);
+    expect(s.actors[STILL].y).toBeCloseTo(540 - plant(s).height, 0);
+    expect(s.actors[STILL].on).toBe('plant-0');
+    expect(s.flags.treeRewound).toBe(true);
+    expect(s.flags.treeLifted).toBe(false);
+  });
+});
