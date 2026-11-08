@@ -41,6 +41,7 @@ try {
 
 async function openPage(options) {
   const page = await browser.newPage(options);
+  page.setDefaultTimeout(60000);
   page.on('pageerror', error => errors.push(error.message));
   return page;
 }
@@ -86,7 +87,6 @@ async function checkLocal(url, { reducedMotion = 'no-preference', finale = false
   await page.goto(url);
   if (finale) assert.match(await page.getByTestId('start').innerText(), /Continue Journey/);
   await page.getByTestId('start').click();
-  assert.equal(await page.getByTestId('online-entrance').count(), 0, 'Opening film must be removed');
   if (!finale) {
     await page.keyboard.down('KeyD');
     await ready(page);
@@ -113,7 +113,7 @@ async function checkLocal(url, { reducedMotion = 'no-preference', finale = false
   await page.keyboard.down('ArrowRight');
   await stage(page, 'ending');
   await page.keyboard.up('ArrowRight');
-  assert.equal(await page.getByTestId('epilogue').count(), 0, 'Ending film must be removed');
+  assert.equal(await page.getByTestId('cinematic').isVisible(), false, 'The newspaper must finish before the ending dialog');
   if (finale) {
     // The last chamber ends on the ending screen with credits instead of looping straight back.
     await stage(page, 'ending');
@@ -147,7 +147,6 @@ async function checkOnline(server) {
   await host.getByTestId('character-still').click(); await guest.getByTestId('character-bloom').click();
   await host.getByTestId('ready').click(); await guest.getByTestId('ready').click();
   await host.getByTestId('start-game').click();
-  assert.equal(await host.getByTestId('online-entrance').count(), 0, 'Online opening film must be removed');
   await Promise.all([ready(host), ready(guest)]);
 
   const room = server.rooms.rooms.get(code);

@@ -1,6 +1,8 @@
 import { resolve, sep } from 'node:path';
 import { existsSync } from 'node:fs';
 import { createRoomManager } from './src/rooms.js';
+import { OPENING_DURATION } from './src/cinematic-timeline.js';
+import { ARRIVAL_DURATION } from './public/portal.js';
 
 const publicRoot = resolve(import.meta.dir, 'public');
 const sourceRoot = resolve(import.meta.dir, 'src');
@@ -21,7 +23,7 @@ export function createGameServer({
     configuredOrigin = parsed.origin;
   }
   const staticRoot = production ? resolve(buildRoot) : publicRoot;
-  const rooms = createRoomManager(roomOptions);
+  const rooms = createRoomManager({ countdownMs: OPENING_DURATION + ARRIVAL_DURATION, ...roomOptions });
   const server = Bun.serve({
     hostname, port,
     async fetch(request, server) {

@@ -16,7 +16,7 @@ const frames = page => page.evaluate(() => window.entryFrames);
 
 async function open(options, reduced = false) {
   const context = await browser.newContext(options), page = await context.newPage();
-  page.setDefaultTimeout(20000);
+  page.setDefaultTimeout(60000);
   page.on('pageerror', error => errors.push(error.message));
   page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
   await page.addInitScript(reduced => {

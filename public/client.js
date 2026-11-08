@@ -14,6 +14,8 @@ import { createDialogue } from './dialogue.js';
 import { createTaskHints } from './task-hints.js';
 import { GATE_DURATION, ARRIVAL_DURATION } from './portal.js';
 import { createHitFeedback } from './hit-feedback.js';
+import { createCinematic } from './cinematic.js';
+import { OPENING_DURATION } from '../src/cinematic-timeline.js';
 
 // One music player: menus play MENU_MUSIC, a courtyard plays the track its theme names (themes.js).
 const music = createMusic();
@@ -143,7 +145,15 @@ const sharedTasks = createTaskHints(document.querySelector('.task-hints'), {
   story: document.querySelector('.character-dialogue'), hud: document.querySelector('.game-bottom'),
 });
 let awaitingOnlineState = true;
-const stageBusy = () => !!(sceneFade || celebration || arrival);
+let onlineOpening = null, storySequence = 0;
+const seenEndings = new Set();
+const cinematic = createCinematic({ onFinish(session) {
+  if (session.shared) return;
+  if (session.kind === 'opening') { revealCourtyard(); startArrival(); }
+  else { modal = 'ending'; syncStage(); renderModal(); }
+} });
+cinematic.preload('opening'); cinematic.preload('newspaper');
+const stageBusy = () => !!(sceneFade || celebration || arrival || cinematic.active || onlineOpening);
 const canvas = document.querySelector('#game');
 const renderer = createRenderer(canvas, S);
 const debug = new URLSearchParams(location.search).has('debug');
@@ -152,10 +162,15 @@ const network = createNetwork({
     const starting = room.status === 'STARTING' && !room.suspended && !room.canReturnLobby;
     if (starting && (sceneFade || celebration)) clearStage();
     lobby.update(room, playerId, serverTime);
+    if (starting) updateOnlineOpening(room, serverTime);
+    else if (onlineOpening && room.status === 'PLAYING' && !room.suspended) {
+      cinematic.cancel(); onlineOpening = arrival = null; entryPending = false;
+      revealCourtyard(); syncStage();
+    }
     if (['WAITING', 'READY', 'STARTING'].includes(room.status) || room.canReturnLobby) {
       if (!starting && stageBusy()) clearStage();
       nextPending = false;
-      modal = 'online'; renderModal();
+      modal = onlineOpening ? 'story' : 'online'; renderModal();
     } else if (room.status === 'PLAYING' && network.latest && modal === 'online' && !room.suspended) {
       modal = null;
       if (entryPending && !arrival && networkEpoch === room.epoch) startArrival();
@@ -181,7 +196,7 @@ const network = createNetwork({
       if (from) startFade(revealCourtyard, { from, arrive: true });
       else {
         modal = network.room.status === 'STARTING' ? 'online' : null;
-        if (entryPending && !modal) startArrival();
+        if (entryPending && !modal && !onlineOpening) startArrival();
       }
     }
     const seenBefore = seenEvent;
@@ -195,7 +210,7 @@ const network = createNetwork({
     if (rewind || network.room.rewinding) {
       pauseContext = false; modal = null;
     } else if (game.status === 'won' && !network.room.canReturnLobby) {
-      if (!celebration && !sceneFade && !nextPending && modal !== 'advancing' && modal !== 'ending') startCelebration();
+      if (!celebration && !sceneFade && !cinematic.active && !nextPending && modal !== 'advancing' && modal !== 'ending') startCelebration();
     }
     else if (game.status === 'paused' && (previous.status !== 'paused' || !pauseContext || !live || modal === 'online')) {
       pauseContext = true; resetTouchState(); modal = 'pause';
@@ -203,7 +218,7 @@ const network = createNetwork({
       if (['pause', 'help', 'settings', 'confirm-restart', 'confirm-level'].includes(modal)) modal = null;
       pauseContext = false; resetTouchState(); accumulator = 0; previousTick = null;
     }
-    if (!rewind && !network.room.rewinding && (network.room.status === 'STARTING' || network.room.canReturnLobby)) modal = 'online';
+    if (!rewind && !network.room.rewinding && (network.room.status === 'STARTING' || network.room.canReturnLobby)) modal = onlineOpening ? 'story' : 'online';
     if (!sceneFade?.from) updateUI();
     if (modalRoot.dataset.phase !== String(modal)) { renderModal(); if (!modal && !stageBusy()) canvas.focus({ preventScroll: true }); }
   },
@@ -242,6 +257,7 @@ viewport = createViewport({
   isMobile: touchDevice,
   onResize: measureControls,
   onBlocked(blocked) {
+    cinematic.resetClock();
     clearInputs(); freezePreview = tapEffect = null;
     accumulator = 0; previousTick = null;
     app.inert = blocked;
@@ -431,8 +447,10 @@ function syncStage() {
   shell.inert = modalRoot.inert = stageBusy() || !!viewport?.blocked;
   document.body.classList.toggle('celebrating', !!(celebration || arrival || sceneFade?.arrive));
   document.body.classList.toggle('scene-changing', !!sceneFade);
+  document.body.classList.toggle('story-starting', !!onlineOpening);
 }
 function clearStage() {
+  cinematic.cancel(); onlineOpening = null;
   sceneFade = celebration = arrival = null;
   entryPending = false;
   pauseContext = false;
@@ -464,10 +482,38 @@ function startArrival(time = performance.now()) {
   accumulator = 0; previousTick = null;
   syncStage();
 }
+function updateOnlineOpening(room, serverTime) {
+  const key = `opening:${room.code}:${room.epoch}`;
+  if (onlineOpening?.key !== key) {
+    clearStage();
+    const duration = Math.max(0, room.startDuration), tail = Math.min(ARRIVAL_DURATION, duration);
+    onlineOpening = { key, duration, tail, opening: duration - tail, start: room.startAt - duration, server: serverTime, sampled: performance.now() };
+    entryPending = true;
+    if (onlineOpening.opening > 0) cinematic.play('opening', { key, shared: true, reduced });
+    modal = 'story'; syncStage();
+  }
+  onlineOpening.server = serverTime; onlineOpening.sampled = performance.now();
+}
+function advanceOnlineOpening(time) {
+  const opening = onlineOpening;
+  const elapsed = Math.max(0, opening.server + time - opening.sampled - opening.start);
+  if (elapsed < opening.opening) {
+    cinematic.advance(time, { elapsed: elapsed / opening.opening * OPENING_DURATION });
+  } else {
+    cinematic.cancel();
+    if (!arrival) { arrival = { start: time - (elapsed - opening.opening), duration: Math.max(1, opening.tail) }; syncStage(); }
+    arrival.start = time - Math.min(opening.tail, elapsed - opening.opening);
+  }
+}
 function startCelebration() {
   resetTouchState(); freezePreview = tapEffect = null;
   document.querySelector('#toast').classList.remove('show');
-  if (state.level === levelCount - 1) { modal = 'ending'; syncStage(); renderModal(); return; }
+  if (state.level === levelCount - 1) {
+    const key = onlineMode ? `ending:${network.room.code}:${networkEpoch}` : `ending:local:${sceneKey}`;
+    if (seenEndings.has(key)) modal = 'ending';
+    else { seenEndings.add(key); modal = 'story'; cinematic.play('newspaper', { key, reduced }); }
+    syncStage(); renderModal(); return;
+  }
   celebration = { start: performance.now(), duration: reduced ? 1200 : GATE_DURATION };
   chime({ kind: 'gate' });
   // A newly opened chamber rings once the victory coda has settled (not on replays of a known chamber).
@@ -476,7 +522,9 @@ function startCelebration() {
   modal = 'celebration'; syncStage(); renderModal();
 }
 function advanceStage(time) {
-  if (arrival && time - arrival.start >= arrival.duration) {
+  if (onlineOpening) advanceOnlineOpening(time);
+  else cinematic.advance(time, { paused: document.hidden || viewport.blocked });
+  if (arrival && !onlineOpening && time - arrival.start >= arrival.duration) {
     entryPending = false;
     arrival = null; accumulator = 0; previousTick = null; syncStage();
     canvas.focus({ preventScroll: true });
@@ -570,7 +618,7 @@ function renderModal() {
   const root = modalRoot;
   root.dataset.phase = String(modal);
   shell.classList.toggle('at-entry', modal === 'intro');
-  if (!modal || ['online', 'celebration', 'advancing'].includes(modal)) { root.innerHTML = ''; return; }
+  if (!modal || ['online', 'celebration', 'advancing', 'story'].includes(modal)) { root.innerHTML = ''; return; }
   let contents = '';
   const close = `<button class="iconbutton close" data-action="close" aria-label="${S.close}">${icon('close')}</button>`;
   if (modal === 'help') contents = `${close}<div class="intro-icon">${icon('help')}</div><h2>${S.helpTitle}</h2><p>${S.helpBody}</p><div class="help-grid">${(touchLayout() ? S.touchKeys : S.keys).map(([k, v]) => `${key(k)}<span>${v}</span>`).join('')}</div><button class="primary" data-action="close">${S.continue}${icon('arrow')}</button>`;
@@ -647,7 +695,9 @@ document.addEventListener('click', event => {
   if (action === 'start') {
     if (modal !== 'intro') return;
     clearInputs();
-    persist(); revealCourtyard(); startArrival();
+    persist(); modal = 'story';
+    cinematic.play('opening', { key: `opening:local:${++storySequence}`, reduced });
+    syncStage(); renderModal();
     return;
   }
   if (action === 'sound') { sound = !sound; if (!sound) audioContext?.suspend(); initAudio(); updateUI(); persist(); if (['settings', 'intro', 'pause'].includes(modal)) renderModal(); else if (!modal) canvas.focus({ preventScroll: true }); return; }
@@ -1143,6 +1193,7 @@ window.addEventListener('orientationchange', () => clearInputs());
 // server's clock, so it simply catches up (the server has already installed the start).
 let hiddenAt = null;
 document.addEventListener('visibilitychange', () => {
+  cinematic.resetClock();
   if (document.hidden) { hiddenAt = performance.now(); clearInputs(); if (!viewport.blocked && !onlineMode && !modal && state.status === 'playing') setModal('pause'); audioContext?.suspend(); return; }
   if (rewind && !rewind.online && hiddenAt !== null) rewind.start += performance.now() - hiddenAt;
   hiddenAt = null;
@@ -1155,7 +1206,7 @@ window.__moonclock = {
   snapshot: () => ({ ...viewFor(state, onlineMode ? network.playerId : 'local'), phase: modal || state.status, players: structuredClone(state.actors) }),
   presentation: () => renderer.inspect(),
   audio: () => music.inspect(),
-  transition: () => ({ phase: celebration ? 'entering' : sceneFade ? 'crossing' : arrival ? 'landing' : null }),
+  transition: () => ({ phase: cinematic.active ? 'story' : celebration ? 'entering' : sceneFade ? 'crossing' : arrival ? 'landing' : null, cinematic: cinematic.inspect() }),
   history: () => ({ frames: history.frames.length, stride: history.stride, bytes: history.bytes(), first: history.frames[0]?.tick ?? null, last: history.frames[history.frames.length - 1]?.tick ?? null }),
   rewind: () => rewind && { progress: rewind.u, frames: rewind.frames.length, online: rewind.online },
   connection: () => ({ online: onlineMode, status: networkStatus, room: network.room, playerId: network.playerId, actor: network.actor }),
@@ -1172,11 +1223,12 @@ function blendTicks(a, b, t) {
   };
 }
 // The title screen and the pause / settings / help menus have their own music.
-const menuScreen = () => ['intro', 'online', 'pause', 'settings', 'help', 'confirm-restart', 'confirm-level', 'ending'].includes(modal);
+const menuScreen = () => ['intro', 'online', 'story', 'pause', 'settings', 'help', 'confirm-restart', 'confirm-level', 'ending'].includes(modal);
 const currentTrack = () => menuScreen() ? MENU_MUSIC : themeFor(state.level).music;
 // The loop always schedules its next frame, even if this one fails: an error in one frame (a drawing glitch,
 // say) must never stop the game. Each distinct error is reported once.
 const frameErrors = new Set();
+let cinematicWorldAt = -Infinity;
 function frame(time) {
   requestAnimationFrame(frame);
   try { runFrame(time); } catch (error) {
@@ -1227,7 +1279,10 @@ function runFrame(time) {
   lastView = displayState;
   const tapAge = tapEffect ? (performance.now() - tapEffect.at) / 1400 : 1;
   if (tapAge >= 1) tapEffect = null;
-  renderer.draw(displayState, time, {
+  const film = cinematic.inspect();
+  if (!film || ['pull', 'fade'].includes(film.phase) || time - cinematicWorldAt >= 200) {
+    cinematicWorldAt = time;
+    renderer.draw(displayState, time, {
     reduced, paused: worldPaused && !rewindInfo,
     sceneKey: outgoing?.sceneKey ?? sceneKey, cameraReset: outgoing?.cameraReset ?? cameraReset,
     followActor: !outgoing && !rewind ? onlineMode ? network.ownActor : state.actors[state.active] : undefined,
@@ -1241,7 +1296,8 @@ function runFrame(time) {
     preview: freezePreview && !mouseAim && displayState.status === 'playing' ? cancelPreview ? { ...cancelPreview, cancel: true } : { ...freezePreview, radius: meta.freeze.radius, valid: freezeCheck(displayState, freezePreview) === 'ok' } : null,
     tap: tapEffect && { ...tapEffect, age: tapAge },
     bottomInset: touch ? controlsReserve : 0,
-  });
+    });
+  }
   if (!outgoing) {
     const camera = renderer.inspect().camera;
     sharedTasks.update(state, displayState, camera, !!camera && !worldPaused && !rewind, sceneKey);
