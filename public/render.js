@@ -277,7 +277,7 @@ export function createRenderer(canvas, S) {
     if (!p.plant && p.plantable === false) return;
     if (p.wall) {
       // A wall pit is the same bed turned on its side, its soil facing the way the vine grows.
-      ctx.save(); ctx.translate(p.x, p.y + 8); ctx.rotate(-p.wall * Math.PI / 2);
+      ctx.save(); ctx.translate(p.x - p.wall * 8, p.y + 8); ctx.rotate(-p.wall * Math.PI / 2);
       if (loaded('pit')) { const img = sprites.pit, w = 60, h = w * img.naturalHeight / img.naturalWidth; ctx.drawImage(img, -w / 2, -h * PIT.soil, w, h); }
       else { ellipse(ctx, 0, 0, 20, 6, 0, '#2a3d33'); ellipse(ctx, 0, -2, 15, 3, 0, p.plant ? '#4d5a41' : '#1b2a25'); }
       ctx.restore();
