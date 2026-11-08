@@ -1,9 +1,9 @@
-import { OPENING_DURATION, NEWSPAPER_DURATION, STORY_ASSETS, NEWSPAPER_ASSET, openingFrame, newspaperFrame, newspaperTransform } from '../src/cinematic-timeline.js';
+import { OPENING_DURATION, NEWSPAPER_DURATION, STORY_ASSETS, NEWSPAPER_ASSET, openingFrame, openingTransform, newspaperFrame, newspaperTransform } from '../src/cinematic-timeline.js';
 
 export function createCinematic({ onFinish }) {
   const root = document.createElement('section');
   root.className = 'cinematic'; root.dataset.testid = 'cinematic'; root.hidden = true; root.setAttribute('aria-label', 'Moonclock story');
-  root.innerHTML = `<div class="cinematic-opening-scene"><div class="cinematic-world"><img class="cinematic-backdrop" src="/art/moonlit-conservatory.svg" alt=""><div class="cinematic-door"><div class="cinematic-leaf left"></div><div class="cinematic-leaf right"></div></div></div></div><div class="cinematic-paper-stack">${STORY_ASSETS.map((src, i) => `<img class="cinematic-story" data-testid="story-${i + 1}" src="${src}" alt="Opening story, page ${i + 1}">`).join('')}</div><p class="cinematic-caption" data-testid="newspaper-caption">后来，人们出了报道</p><img class="cinematic-newspaper" data-testid="newspaper" src="${NEWSPAPER_ASSET}" alt="Timekeeper Gazette, final edition">`;
+  root.innerHTML = `<div class="cinematic-opening-scene"><div class="cinematic-world"><img class="cinematic-backdrop" src="/art/moonlit-conservatory.svg" alt=""><div class="cinematic-door"><div class="cinematic-leaf left"></div><div class="cinematic-leaf right"></div></div></div></div><div class="cinematic-paper-stack">${STORY_ASSETS.map((src, i) => `<img class="cinematic-story" data-testid="story-${i + 1}" src="${src}" alt="Opening story, page ${i + 1}">`).join('')}</div><p class="cinematic-caption" data-testid="newspaper-caption">later, report came out</p><img class="cinematic-newspaper" data-testid="newspaper" src="${NEWSPAPER_ASSET}" alt="Timekeeper Gazette, final edition">`;
   document.body.append(root);
   const scene = root.querySelector('.cinematic-opening-scene'), world = root.querySelector('.cinematic-world'), stack = root.querySelector('.cinematic-paper-stack');
   const cards = [...root.querySelectorAll('.cinematic-story')], paper = root.querySelector('.cinematic-newspaper'), leaves = [...root.querySelectorAll('.cinematic-leaf')];
@@ -12,8 +12,6 @@ export function createCinematic({ onFinish }) {
   let session = null, width = 1, height = 1;
   function resize() {
     width = root.clientWidth || window.innerWidth; height = root.clientHeight || window.innerHeight;
-    const scale = Math.max(width / 1600, height / 1000), w = 1600 * scale, h = 1000 * scale;
-    world.style.width = `${w}px`; world.style.height = `${h}px`; world.style.transform = `translate(${(width - w) * .68}px,${(height - h) / 2}px)`;
     if (session) paint(session);
   }
   new ResizeObserver(resize).observe(root);
@@ -32,6 +30,9 @@ export function createCinematic({ onFinish }) {
     const frame = current.kind === 'opening' ? openingFrame(current.elapsed, current.reduced) : newspaperFrame(current.elapsed, current.reduced);
     current.phase = root.dataset.phase = frame.phase;
     if (current.kind === 'opening') {
+      const camera = openingTransform(frame, width, height);
+      world.style.width = `${camera.width}px`; world.style.height = `${camera.height}px`;
+      world.style.transform = `translate(${camera.x}px,${camera.y}px) scale(${camera.scale})`;
       scene.style.opacity = frame.backdrop;
       leaves[0].style.transform = `rotateY(${-88 * frame.door}deg)`; leaves[1].style.transform = `rotateY(${88 * frame.door}deg)`;
       cards.forEach((card, index) => { card.style.opacity = frame.cards[index]; });

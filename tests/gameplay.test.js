@@ -246,7 +246,7 @@ describe('role-specific resources', () => {
       // Courtyard 5 has a single charge for the rope (see level-five.test.js).
       if (level === 4) { expect(s.bloomCharges).toBe(1); continue; }
       expect(s.bloomCharges).toBe(3);
-      // Courtyard 4 has its flower seed already planted and a mature vine to age (see level-four.test.js).
+      // Courtyard 4 has neither seeds nor a bolt: every cast there rewinds a plant (see level-four.test.js).
       if (level === 3) continue;
       // Courtyard 1 has a seed out in the courtyard, courtyard 2 uses a hanging crate, and courtyard 3 needs three
       // seeds (a mushroom and two vines).
