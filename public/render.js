@@ -365,7 +365,8 @@ export function createRenderer(canvas, S) {
   }
   function mover(o, targeted, t) {
     timeRing(o.x + o.w / 2, o.y + 10, o.w / 2 + 10, o, t);
-    line(ctx, [[o.x1 + 6, o.y + 26], [o.x2 + o.w - 6, o.y + 26]], '#b6bea133', 1);
+    if (o.axis === 'y') line(ctx, [[o.x + o.w / 2, o.y1 + 10], [o.x + o.w / 2, o.y2 + 30]], '#b6bea133', 1);
+    else line(ctx, [[o.x1 + 6, o.y + 26], [o.x2 + o.w - 6, o.y + 26]], '#b6bea133', 1);
     const g = ctx.createLinearGradient(0, o.y, 0, o.y + 20); g.addColorStop(0, '#b9c0a4'); g.addColorStop(.4, '#647c66'); g.addColorStop(1, '#1b3839');
     ctx.fillStyle = g; ctx.beginPath(); ctx.roundRect(o.x, o.y, o.w, 20, 4); ctx.fill();
     line(ctx, [[o.x, o.y - 1], [o.x + o.w, o.y - 1]], '#e5ddba', 1.5); circle(ctx, o.x + o.w / 2, o.y + 10, 5, '#183e42', o.speed ? gold : '#8aa89b', 1.5);
