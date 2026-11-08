@@ -187,7 +187,11 @@ const network = createNetwork({
       if (!(e.kind === 'return' && state.events.some(h => h.kind === 'hit' && h.actor === e.actor && h.id > seenBefore))) chime(e);
       if (e.kind === 'return' && e.actor === network.actor) cameraReset++; seenEvent = e.id;
     }
-    if (game.status === 'won' && !rewind && !network.room.canReturnLobby) {
+    // Rewind snapshots still contain the old paused world. The restart owns the screen
+    // until the server installs its fresh state; those snapshots must not reopen a menu.
+    if (rewind || network.room.rewinding) {
+      pauseContext = false; modal = null;
+    } else if (game.status === 'won' && !network.room.canReturnLobby) {
       if (!celebration && !sceneFade && !nextPending && modal !== 'advancing' && modal !== 'ending') startCelebration();
     }
     else if (game.status === 'paused' && (previous.status !== 'paused' || !pauseContext || !live || modal === 'online')) {
@@ -196,7 +200,7 @@ const network = createNetwork({
       if (['pause', 'help', 'settings', 'confirm-restart', 'confirm-level'].includes(modal)) modal = null;
       pauseContext = false; resetTouchState(); accumulator = 0; previousTick = null;
     }
-    if (network.room.status === 'STARTING' || network.room.canReturnLobby || entrance.active) modal = 'online';
+    if (!rewind && !network.room.rewinding && (network.room.status === 'STARTING' || network.room.canReturnLobby || entrance.active)) modal = 'online';
     if (!sceneFade?.from) updateUI();
     if (modalRoot.dataset.phase !== String(modal)) { renderModal(); if (!modal && !stageBusy()) canvas.focus({ preventScroll: true }); }
     entrance.confirm(network.room, info.epoch);
