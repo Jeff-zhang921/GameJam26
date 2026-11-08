@@ -38,7 +38,7 @@ reads `o.wall` without looking up the pit.
 - No stem box: a vine is not solid from the side, so `stemBoxes` skips vines.
 - Riders: a growing vine needs no special handling (the surface widens under them). A shrinking vine drops
   anyone left past its tip through normal physics.
-- Freeze holds the length (frozen rate as now); Hasten speeds it, both via the existing `speed` / `frozen` fields.
+- Freeze slows its growth to the frozen rate, as for a mushroom; Hasten speeds it, both via the existing `speed` / `frozen` fields.
 - The ancient-mushroom flags (`treeLifted`, barrier wither) stay mushroom-only.
 
 ## Throwing a seed
@@ -52,7 +52,8 @@ reads `o.wall` without looking up the pit.
   `throwLaunch`, `throwPath`, `attachHeld` all handle a seed (`attachHeld` places it at the hand).
 - A held seed is dropped when Bloom is hit, as a crate is.
 - `interactionFor` reports `'throw'` while Bloom carries a seed.
-- Planting by throw: during `moveItems`, a loose seed that is not held and whose centre comes within 24 px of an
+- Planting by throw: during `moveItems`, a seed in flight (`thrown: true`, set when thrown, cleared when it lands
+  or returns) whose centre comes within 24 px of an
   empty, plantable pit (ground or wall) is removed and a plant is created in that pit (event `plant`). For a wall
   pit the test point is `(pit.x + wall * 10, pit.y)`.
 - A seed that lands elsewhere stays loose; Bloom picks it up by touch (`seeds++`), as now. A seed leaving the
@@ -88,7 +89,7 @@ no change beyond the logic.
 ## Testing
 
 - Logic (bun test): a seed thrown at a wall pit plants a vine; the vine's length grows over time and an actor can
-  stand on it; frozen, its length holds; after withering it vanishes and the pit is empty again; a missed seed
+  stand on it; frozen, it grows at the frozen rate; after withering it vanishes and the pit is empty again; a missed seed
   can be picked up and the count restored; `takeSeed` is rejected for Still, with no seeds, or with hands full.
 - Visual: a wall pit added to a test layout and checked by eye in the browser.
 
