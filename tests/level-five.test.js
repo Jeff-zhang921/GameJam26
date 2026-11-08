@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { setup, applyAction, validateAction, abilityTargets, bloomTargetAt, canopyWidth, meta } from '../src/logic.js';
+import { setup, applyAction, validateAction, abilityTargets, bloomTargetAt, meta } from '../src/logic.js';
 import { LEVELS } from '../src/levels/index.js';
 
 // Courtyard 5, the hidden one: teal things keep Still's pace and gold things Bloom's. Walking right runs their time
@@ -90,14 +90,9 @@ test('Bloom can aim at and age the rope, then the released crate falls and can b
   expect(restarted.bloomCharges).toBe(1);
 });
 
-test('Still can ride the sprout to its full height to collect the hourglass', () => {
+test('Still can spring from the starting sprout and collect the hourglass before it grows', () => {
   let s = setup({ level: 4 });
-  const [hourglass] = s.pickups, plant = get(s, 'plant-0');
-  stand(s, STILL, hourglass.x, hourglass.y + 52, null);
-  s = tick(s);
-  expect(s.pickups[0].taken).toBe(false);
-
-  s = setup({ level: 4 });
+  const plant = get(s, 'plant-0');
   s = walkUntil(s, STILL, -1, s2 => s2.actors[STILL].x <= plant.x + 45);
   s = act(s, { type: 'jump', actor: STILL });
   s = walkUntil(s, STILL, -1, s2 => Math.abs(s2.actors[STILL].x - plant.x) < 5);
@@ -105,36 +100,23 @@ test('Still can ride the sprout to its full height to collect the hourglass', ()
   s = act(s, { type: 'jumpRelease', actor: STILL });
   expect(s.actors[STILL].on).toBe(plant.id);
   expect(s.freezeCharges).toBe(0);
-  s = walkUntil(s, BLOOM, 1, s2 => get(s2, plant.id).height === meta.plant.maxHeight);
+  s = act(s, { type: 'jump', actor: STILL });
+  for (let i = 0; i < 60 && !s.pickups[0].taken; i++) s = tick(s);
+  expect(s.actors[STILL].grounded).toBe(false);
+  expect(s.pickups[0].taken).toBe(true);
+  expect(get(s, plant.id).height).toBe(plant.height);
   expect(s.freezeCharges).toBe(1);
-  expect(s.actors[STILL].on).toBe(plant.id);
 });
 
-test('the mature cap awards the hourglass to a rider at either edge', () => {
-  for (const side of [-1, 1]) {
-    let s = setup({ level: 4 });
-    const plant = get(s, 'plant-0');
-    Object.assign(plant, { age: meta.plant.growTicks, height: meta.plant.maxHeight });
-    stand(s, STILL, plant.x + side * (canopyWidth(plant) / 2 - 25), plant.base - plant.height, plant.id);
-    s = tick(s);
-    expect(s.actors[STILL].on).toBe(plant.id);
-    expect(s.freezeCharges).toBe(1);
-    expect(s.pickups[0].taken).toBe(true);
-  }
-});
-
-test('Still can touch the hourglass in the air when Bloom finishes growing the cap', () => {
+test('touching the hourglass grants a charge to Still only and only once', () => {
   let s = setup({ level: 4 });
-  const plant = get(s, 'plant-0'), { growTicks, maxHeight } = meta.plant;
-  plant.age = growTicks - 4;
-  plant.height = maxHeight * plant.age / growTicks;
-  stand(s, STILL, plant.x, plant.base - plant.height, plant.id);
-  s = tick(act(s, { type: 'jump', actor: STILL }));
-  expect(s.actors[STILL].grounded).toBe(false);
+  const [hourglass] = s.pickups;
+  const touch = who => Object.assign(s.actors[who], { x: hourglass.x, y: hourglass.y + 45, grounded: false, on: null });
+  touch(BLOOM);
+  s = tick(s);
   expect(s.pickups[0].taken).toBe(false);
-
-  s = tick(move(s, BLOOM, 1), 2);
-  expect(s.actors[STILL].grounded).toBe(false);
+  touch(STILL);
+  s = tick(s, 3);
   expect(s.pickups[0].taken).toBe(true);
   expect(s.freezeCharges).toBe(1);
 });
@@ -180,6 +162,22 @@ test('the far checkpoint is reachable by jumping from the ground outside the gua
   s = walkUntil(s, STILL, -1, s2 => s2.actors[STILL].checkpoint === cp.id);
   s = tick(s, 35);
   expect(s.actors[STILL].on).toBe('platform-3');
+});
+
+test('the checkpoint ledge is too far from the gold lift even with coyote time', () => {
+  for (const overhang of [0, 5, 10, 14.9]) for (let delay = 0; delay <= meta.controls.coyote + 4; delay++) {
+    let s = setup({ level: 4 });
+    const shelf = s.platforms[3], lift = get(s, 'mover-2');
+    // Take the crate and guard out of the trial and keep Bloom still, so the lift is at its lowest.
+    s.objects = s.objects.filter(o => o.kind === 'mover');
+    stand(s, STILL, shelf.x + shelf.w + overhang, shelf.y, 'platform-3');
+    s = tick(move(s, STILL, 1), delay);
+    s = act(s, { type: 'jump', actor: STILL });
+    for (let i = 0; i < 64; i++) {
+      s = tick(s);
+      expect(s.actors[STILL].on).not.toBe(lift.id);
+    }
+  }
 });
 
 describe('courtyard 5: time keeps pace', () => {

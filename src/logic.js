@@ -795,11 +795,8 @@ function collectPickups(state) {
     if (c.taken) continue;
     const frost = c.kind === 'frost';
     const player = state.actors[frost ? STILL : BLOOM];
-    if (c.onMaturePlant) {
-      const plant = find(state, c.onMaturePlant);
-      if (!plant || plant.height < meta.plant.maxHeight) continue;
-      // Riders can stand anywhere on the mature cap. An airborne traveller can touch the 36-unit badge.
-      if (player.on !== plant.id && !circleTouches({ ...c, radius: 18 }, hurtBox(player))) continue;
+    if (c.touchRadius) {
+      if (!circleTouches({ x: c.x, y: c.y, radius: c.touchRadius }, hurtBox(player))) continue;
     } else if (Math.hypot(player.x - c.x, player.y - 26 - c.y) >= meta.charges.pickupReach) continue;
     c.taken = true;
     state[frost ? 'freezeCharges' : 'bloomCharges']++;

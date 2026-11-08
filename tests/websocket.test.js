@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { createGameServer } from '../server.js';
-import { meta, setup } from '../src/logic.js';
+import { setup } from '../src/logic.js';
 import { rootriseArena } from './arena.js';
 
 const servers = [], sockets = [];
@@ -46,19 +46,18 @@ async function start(pair) {
 }
 
 describe('real WebSocket multiplayer', () => {
-  test('both clients see Still collect the hourglass from the edge of the mature cap', async () => {
+  test('both clients see Still collect the hourglass by springing off the young mushroom', async () => {
     const server = serve(), p = await pair(server);
     await start(p);
     p.room.game = setup({ level: 4, players: p.room.game.playerIds });
     p.room.epoch++;
     const plant = p.room.game.objects.find(o => o.id === 'plant-0');
-    const { growTicks, maxHeight } = meta.plant;
-    Object.assign(plant, { age: growTicks - 4, height: maxHeight * (growTicks - 4) / growTicks });
-    Object.assign(p.room.game.actors[0], { x: plant.x + 84, y: plant.base - plant.height, on: plant.id });
-    p.host.send({ type: 'input', seq: 1, action: { type: 'move', dir: 1 } });
+    Object.assign(p.room.game.actors[0], { x: plant.x, y: plant.base - plant.height, on: plant.id });
+    p.guest.send({ type: 'input', seq: 1, action: { type: 'jump' } });
 
     const collected = await p.host.next('snapshot', m => m.game.level === 4 && m.game.pickups[0].taken);
     expect(collected.game.freezeCharges).toBe(1);
+    expect(collected.game.objects.find(o => o.id === plant.id).height).toBe(plant.height);
     const partner = await p.guest.next('snapshot', m => m.game.level === 4 && m.game.tick === collected.game.tick);
     expect(partner.game.freezeCharges).toBe(1);
     expect(partner.game.pickups[0].taken).toBe(true);

@@ -43,7 +43,7 @@ const settle = (s, limit = 600) => { for (let i = 0; i < limit && s.actors.some(
 test('every charge pickup stays overhead when standing and can be reached with a jump tap', () => {
   for (let level = 0; level < levelCount; level++) {
     for (const pickup of setup({ level }).pickups) {
-      if (pickup.onMaturePlant) continue; // The full-height mushroom pickup has its own route test.
+      if (pickup.touchRadius) continue; // The sprout jump has its own route test.
       let s = setup({ level });
       const platform = s.platforms.find(p => pickup.x >= p.x && pickup.x <= p.x + p.w && pickup.y < p.y);
       expect(platform.y - pickup.y).toBe(88);

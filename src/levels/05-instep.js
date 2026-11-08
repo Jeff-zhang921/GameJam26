@@ -13,7 +13,7 @@ export default {
     { x: 0, y: 520, w: 760, h: 140 },
     { x: 1740, y: 100, w: 520, h: 60, ceiling: true },
     { x: 1280, y: 520, w: 1280, h: 140 },
-    { x: 1290, y: 400, w: 104, h: 14, ceiling: true },
+    { x: 1280, y: 400, w: 88, h: 14, ceiling: true },
   ],
   spawn: [{ x: 230, y: 520 }, { x: 300, y: 520 }],
   // Bloom ages the rope to drop a step for both lifts. A lost crate returns to the ground below the rope.
@@ -34,8 +34,8 @@ export default {
     { axis: 'y', x: 2270, w: 80, y1: 100, y2: 330, dir: -1, walker: 0, pace: 1, waitsFor: 'rope-0' },
   ],
   enemies: [{ kind: 'guard', x: 2000, y: 520 }],
-  checkpoints: [{ x: 1342, y: 400 }],
+  checkpoints: [{ x: 1324, y: 400 }],
   // One cast for the rope. The ferries, lifts and sprout still follow footsteps.
-  freezeCharges: 0, bloomCharges: 1, freezePickups: [{ x: 110, y: 218, onMaturePlant: 'plant-0' }], bloomPickups: [],
+  freezeCharges: 0, bloomCharges: 1, freezePickups: [{ x: 110, y: 218, touchRadius: 18 }], bloomPickups: [],
   exit: { x: 2000, y: 100 }, shards: [{ x: 110, y: 250 }], need: ['moverRide', 'treeLifted'],
 };
