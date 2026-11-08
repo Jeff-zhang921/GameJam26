@@ -56,7 +56,7 @@ async function localOpening(options) {
   const initial = await snapshot(page);
   await page.keyboard.down('KeyD'); await page.waitForTimeout(180); await page.keyboard.up('KeyD');
   assert.equal((await snapshot(page)).tick, initial.tick, 'Gameplay advanced while the opening was visible');
-  for (const [phase, at] of [['door', 2400], ['approach', 4000], ['approach', 5500], ['story-1', 7500], ['story-1', 11600], ['story-2', 16400], ['story-2', 19800], ['story-3', 27700], ['pull', 31600]]) {
+  for (const [phase, at] of [['door', 2400], ['approach', 4000], ['approach', 5500], ['story-1', 7500], ['story-1', 9200], ['story-2', 11600], ['story-2', 13300], ['story-3', 17250], ['pull', 19200]]) {
     await seek(page, at); await waitPhase(page, phase);
     assert.equal((await snapshot(page)).tick, initial.tick);
     if (at === 4000) assert.equal(await page.getByTestId('story-1').evaluate(image => Number(image.style.opacity)), 0, 'Story starts before the door finishes opening');
@@ -75,7 +75,7 @@ async function localOpening(options) {
       const alpha = await page.getByTestId('story-1').evaluate(image => Number(image.style.opacity));
       assert.ok(alpha > .1 && alpha < .9, 'The first story image does not fade in gradually');
     }
-    await page.screenshot({ path: `${output}/${options.width || 1194}-${phase}-${at}${options.reduced ? '-reduced' : ''}.png` });
+    if (phase !== 'pull') await page.screenshot({ path: `${output}/${options.width || 1194}-${phase}-${at}${options.reduced ? '-reduced' : ''}.png` });
   }
   await seek(page, OPENING_DURATION + 150, true); await page.waitForFunction(() => window.__moonclock.transition().phase === 'landing');
   await page.evaluate(() => { window.storyClockOffset += 1500; }); await idle(page);
@@ -109,7 +109,7 @@ try {
   const initialRoom = await command({ code, type: 'inspect' }), room = initialRoom.room, duration = room.startDuration;
   assert.ok(duration >= OPENING_DURATION + 1200, 'Server start leaves insufficient story reading time');
   const started = room.startAt - duration;
-  for (const [phase, elapsed] of [['approach', 5500], ['story-1', 11600], ['story-2', 19800], ['story-3', 27700]]) {
+  for (const [phase, elapsed] of [['approach', 5500], ['story-1', 9200], ['story-2', 13300], ['story-3', 17250]]) {
     serverNow = started + elapsed; const current = await command({ code, type: 'time', time: serverNow });
     await Promise.all([waitPhase(host, phase), waitPhase(guest, phase)]);
     assert.equal(current.room.status, 'STARTING'); assert.equal(current.tick, 0);
@@ -138,18 +138,19 @@ try {
     window.requestAnimationFrame = callback => raf.call(window, time => callback(time + window.storyClockOffset));
   };
   await host.evaluate(script); await guest.evaluate(script);
-  for (const [phase, at] of [['caption', 3400], ['reveal', 6800], ['whole', 9500], ['top-left', 14500], ['bottom-left', 20000], ['top-right', 25500], ['bottom-right', 32000], ['pullback', 35000], ['fade', 37400]]) {
+  for (const [phase, originalTime] of [['caption', 3400], ['reveal', 6800], ['whole', 9500], ['top-left', 14500], ['bottom-left', 20000], ['top-right', 25500], ['bottom-right', 32000], ['pullback', 35000], ['fade', 36400]]) {
+    const at = originalTime / 2;
     serverNow += 100; await command({ code, type: 'time', time: serverNow });
     await seek(host, at); await seek(guest, at); await Promise.all([waitPhase(host, phase), waitPhase(guest, phase)]);
     assert.equal((await film(host)).key, key, 'A snapshot restarted the final newspaper');
     const paperAlpha = await host.getByTestId('newspaper').evaluate(image => Number(image.style.opacity));
     if (phase === 'caption') {
       assert.equal(paperAlpha, 0, 'Newspaper appeared before the caption finished');
-      assert.equal(await host.getByTestId('newspaper-caption').textContent(), 'Later, reports came out');
+      assert.equal(await host.getByTestId('newspaper-caption').textContent(), 'later, report came out');
       assert.equal(await host.getByTestId('newspaper-caption').evaluate(node => Number(node.style.opacity)), 1);
     }
     if (phase === 'reveal') assert.ok(paperAlpha > .1 && paperAlpha < .9, 'Newspaper did not reveal gradually');
-    await host.screenshot({ path: `${output}/newspaper-${phase}.png` });
+    if (!['pullback', 'fade'].includes(phase)) await host.screenshot({ path: `${output}/newspaper-${phase}.png` });
     if (phase === 'bottom-right') await guest.screenshot({ path: `${output}/newspaper-ipad-bottom-right.png` });
   }
   await seek(host, NEWSPAPER_DURATION + 200, true); await seek(guest, NEWSPAPER_DURATION + 200, true);
