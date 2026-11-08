@@ -25,12 +25,14 @@ export const meta = {
   throw: { maxSpeed: 11, default: { vx: 6.8, vy: -6 }, offset: { x: 48, y: -48 } },
   // A cloud and the water in its pool are one thing in two forms, on a clock of its own that always runs: the water
   // lies in its pool for `waterTicks`, rises as mist over `formTicks`, holds as a cloud for `cloudTicks` (cloud :
-  // water is 1 : 6) and rains back over `rainTicks`. Only the fully formed cloud is solid; it is `h` thick. Bloom's
-  // Speed runs its clock (1 + speed) times as fast; a Freeze Area slows it, so whichever form it is in lasts longer.
-  // Neither carries over: once the change into the other form is complete, Speed is gone and the Freeze Areas cast
-  // on the old form no longer hold it (a new one does). The first time anyone stands on a newly formed cloud, it
-  // blinks and rains back after `standTicks` (real time, whatever its clock), or sooner if it had less time left.
-  cloud: { waterTicks: 1440, formTicks: 60, cloudTicks: 240, rainTicks: 60, standTicks: 180, h: 20 },
+  // water is 1 : 6) and rains back over `rainTicks`. Only the fully formed cloud is solid; it is `h` thick. While it
+  // rises as mist or is a cloud, abilities act on the cloud; while it rains back or is water, on the water (each has
+  // its own point and area). Bloom's Speed runs its clock (1 + speed) times as fast; a Freeze Area touching the form
+  // it is in slows it, so that form lasts longer. Neither carries over: the moment it starts to turn into the other
+  // form, Speed is gone and the Freeze Areas already cast no longer hold it (a new one does). The first time anyone
+  // stands on a newly formed cloud, it blinks and rains back after `standTicks` (real time, whatever its clock), or
+  // sooner if it had less time left; once both travellers stand on it at the same time, within `crowdTicks`.
+  cloud: { waterTicks: 1440, formTicks: 60, cloudTicks: 240, rainTicks: 60, standTicks: 180, crowdTicks: 60, h: 20 },
   // In water a traveller moves sideways at `move` of their speed and their vertical speed is damped by `drag` each
   // tick; a loose crate is damped by `itemDrag` each tick of its local time. Both scale with how deep they are in it
   // (a full pool reaches a traveller's waist).
@@ -67,15 +69,16 @@ export function attachHeld(state) {
 }
 
 // Where a cloud is in its cycle: `form` is 'water', 'mist' (rising into a cloud), 'cloud' or 'rain' (falling back
-// into the pool); `mist` is how much cloud there is (0..1) and `fill` how full the pool is (0..1).
+// into the pool); `shape` is what abilities act on: 'cloud' (mist or cloud) or 'water' (rain or water); `mist` is how
+// much cloud there is (0..1) and `fill` how full the pool is (0..1).
 export function cloudPhase(o) {
   const { waterTicks, formTicks, cloudTicks, rainTicks } = meta.cloud, length = waterTicks + formTicks + cloudTicks + rainTicks;
   let u = ((o.age % length) + length) % length;
-  if (u < waterTicks) return { form: 'water', mist: 0, fill: 1 };
-  if ((u -= waterTicks) < formTicks) { const k = u / formTicks; return { form: 'mist', mist: k, fill: 1 - k }; }
-  if ((u -= formTicks) < cloudTicks) return { form: 'cloud', mist: 1, fill: 0 };
+  if (u < waterTicks) return { form: 'water', shape: 'water', mist: 0, fill: 1 };
+  if ((u -= waterTicks) < formTicks) { const k = u / formTicks; return { form: 'mist', shape: 'cloud', mist: k, fill: 1 - k }; }
+  if ((u -= formTicks) < cloudTicks) return { form: 'cloud', shape: 'cloud', mist: 1, fill: 0 };
   const k = (u - cloudTicks) / rainTicks;
-  return { form: 'rain', mist: 1 - k, fill: k };
+  return { form: 'rain', shape: 'water', mist: 1 - k, fill: k };
 }
 export const cloudSolid = o => cloudPhase(o).form === 'cloud';
 // The cloud's clock at the moment it starts to rain back, in its current cycle (while it is a cloud, `rainStart(o) -
@@ -103,7 +106,8 @@ function wetness(state, box) {
 
 export function anchor(o) {
   if (isEnemy(o)) { const b = enemyBox(o); return { x: b.x + b.w / 2, y: b.y + b.h / 2 }; }
-  if (o.kind === 'cloud') return { x: o.x, y: o.y + meta.cloud.h / 2 };
+  // A cloud's point is the middle of the cloud or of its pool, whichever form abilities act on now.
+  if (o.kind === 'cloud') return cloudPhase(o).shape === 'cloud' ? { x: o.x, y: o.y + meta.cloud.h / 2 } : { x: o.pool.x + o.pool.w / 2, y: o.pool.y + o.pool.h / 2 };
   if (o.kind === 'plant') return o.wall ? { x: o.x + o.wall * o.height / 2, y: o.base - 2 } : { x: o.x, y: o.base - o.height / 2 };
   if (o.kind === 'mover') return { x: o.x + o.w / 2, y: o.y + 10 };
   return { x: o.x, y: o.y };
@@ -237,11 +241,18 @@ const timeObject = o => o.kind === 'plant' || o.kind === 'mover' || o.kind === '
 const canAffect = (state, actor, o) => timeObject(o) && o.walker === undefined && (actor === STILL ||
   (o.kind !== 'crate' && (!state.bloomReverses || o.kind === 'plant') && (!state.walkingTime || o.kind === 'rope')));
 
+// Where reach to an object is measured, from point `p`: its anchor, or for a pool of water (wide, and low under the
+// ledges beside it), the nearest point of its surface.
+function reachPoint(o, p) {
+  if (o.kind === 'cloud' && cloudPhase(o).shape === 'water') return { x: Math.max(o.pool.x, Math.min(o.pool.x + o.pool.w, p.x)), y: o.pool.y };
+  return anchor(o);
+}
+
 // Everything this actor's ability can reach right now.
 export function abilityTargets(state, actor) {
   const p = state.actors[actor];
   if (!p) return [];
-  return state.objects.filter(o => canAffect(state, actor, o) && free(o) && dist(p, anchor(o)) <= meta.controls.range);
+  return state.objects.filter(o => canAffect(state, actor, o) && free(o) && dist(p, reachPoint(o, p)) <= meta.controls.range);
 }
 
 // Validate the target shown in a Bloom preview before sending the cast to the server.
@@ -250,7 +261,7 @@ export function abilityCheck(state, actor, id) {
   if (!p || !o || !timeObject(o)) return 'missing';
   if (!free(o)) return 'held';
   if (!canAffect(state, actor, o)) return 'unsupported';
-  if (dist(p, anchor(o)) > meta.controls.range) return 'range';
+  if (dist(p, reachPoint(o, p)) > meta.controls.range) return 'range';
   if (actor === BLOOM && Math.abs(o.speed) >= meta.time.maxSpeed) return 'maxSpeed';
   if (actor === BLOOM && state.bloomCharges <= 0) return 'noBloomCharges';
   return 'ok';
@@ -262,12 +273,9 @@ export function objectBox(o) {
   if (o.kind === 'rope') return { x: o.x - 7, y: o.top, w: 14, h: o.bottom - o.top };
   if (o.kind === 'seed') return { x: o.x - 10, y: o.y - 10, w: 20, h: 20 };
   if (o.kind === 'mover') return { x: o.x, y: o.y - 6, w: o.w, h: 26 };
-  // A cloud is the cloud and its full pool together, in either form: tap the water or the cloud, and a Freeze Area
-  // touching either one slows the whole cycle.
-  if (o.kind === 'cloud') {
-    const c = cloudRect(o), x = Math.min(c.x, o.pool.x), y = Math.min(c.y, o.pool.y);
-    return { x, y, w: Math.max(c.x + c.w, o.pool.x + o.pool.w) - x, h: Math.max(c.y + c.h, o.pool.y + o.pool.h) - y };
-  }
+  // A cloud is tapped, and held by a Freeze Area, where its current form is: the cloud (a little taller than its
+  // body, like a moving platform's) or the whole pool.
+  if (o.kind === 'cloud') return cloudPhase(o).shape === 'cloud' ? { x: o.x - o.w / 2, y: o.y - 8, w: o.w, h: meta.cloud.h + 16 } : { ...o.pool };
   if (o.kind === 'plant' && o.wall) { const w = Math.max(44, o.height); return { x: o.wall === 1 ? o.x : o.x - w, y: o.base - 20, w, h: 36 }; }
   if (o.kind === 'plant') { const w = Math.max(44, canopyWidth(o)); return { x: o.x - w / 2, y: o.base - o.height - 24, w, h: o.height + 30 }; }
   return enemyBox(o);
@@ -527,25 +535,25 @@ function ageObjects(state) {
     // real time counts, and at the end it starts to rain back. Each change of form is an event: the pool starts to
     // rise as mist, the cloud is formed (and solid), the cloud starts to rain back.
     if (o.kind === 'cloud') {
-      const was = cloudPhase(o).form;
+      const was = cloudPhase(o);
       if (o.vanish !== null) {
         if (--o.vanish <= 0) { o.age = rainStart(o); o.vanish = o.vanishTotal = null; }
       } else o.age += (1 + o.speed) * slow;
-      const now = cloudPhase(o).form;
-      if (now !== was) {
-        // A form just completed keeps nothing of the last one's time: no Speed, and the Freeze Areas holding it now
-        // were cast on the old form, so they let it go. A new cloud has not been stood on yet.
-        if (now === 'cloud' || now === 'water') {
-          // It starts the new form from its very beginning (a hastened clock may have run a little past it).
-          const { waterTicks, formTicks, cloudTicks } = meta.cloud;
-          o.age = rainStart(o) - cloudTicks - (now === 'water' ? waterTicks + formTicks : 0);
+      const now = cloudPhase(o);
+      if (now.form !== was.form) {
+        // Starting to turn into the other form (mist rising, or rain falling), it keeps nothing of the old one's time:
+        // it starts the change from its very beginning (a hastened clock may have run a little past it), without
+        // Speed, and every Freeze Area cast so far lets it go. A new cloud has not been stood on yet.
+        if (now.shape !== was.shape) {
+          const { formTicks, cloudTicks } = meta.cloud;
+          o.age = rainStart(o) - (now.form === 'mist' ? cloudTicks + formTicks : 0);
           o.speed = 0;
-          o.immune = state.freezeAreas.filter(a => circleTouches(a, objectBox(o))).map(a => a.id);
+          o.immune = state.freezeAreas.map(a => a.id);
+          o.stood = false;
         }
-        if (now === 'cloud') o.stood = false;
-        if (now !== 'cloud') o.vanish = o.vanishTotal = null;
-        const at = now === 'mist' ? { x: o.x, y: o.pool.y } : anchor(o);
-        if (now !== 'water') event(state, now === 'cloud' ? 'cloudForm' : now, at.x, at.y, { cloud: o.id });
+        if (now.form !== 'cloud') o.vanish = o.vanishTotal = null;
+        const at = now.form === 'mist' ? { x: o.x, y: o.pool.y } : { x: o.x, y: o.y + meta.cloud.h / 2 };
+        if (now.form !== 'water') event(state, now.form === 'cloud' ? 'cloudForm' : now.form, at.x, at.y, { cloud: o.id });
       }
     }
     if (o.kind === 'rope' && o.speed > 0) {
@@ -824,6 +832,15 @@ function moveActors(state) {
     for (const shard of state.shards) if (!shard.taken && dist({ x: p.x, y: p.y - 28 }, shard) < 42) {
       shard.taken = true; event(state, 'shard', shard.x, shard.y);
     }
+  }
+  // Both travellers on a fading cloud at once: it rains back within `crowdTicks`, or sooner if it had less time
+  // left. Its blinking carries on from where it is.
+  for (const o of state.objects) {
+    if (o.kind !== 'cloud' || o.vanish === null || o.vanish <= meta.cloud.crowdTicks) continue;
+    if (!state.actors.every(p => p.grounded && p.on === o.id)) continue;
+    o.vanishTotal += meta.cloud.crowdTicks - o.vanish;
+    o.vanish = meta.cloud.crowdTicks;
+    event(state, 'cloudFade', o.x, o.y, { cloud: o.id, ticks: o.vanish, both: true });
   }
 }
 

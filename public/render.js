@@ -545,9 +545,11 @@ export function createRenderer(canvas, S) {
     const turns = BLINK.fast * s + (BLINK.slow - BLINK.fast) * s * s / (2 * T);
     return turns % 1 < .5 ? 1 : BLINK.dim;
   }
+  // Its time ring and target brackets go on whichever form abilities act on now: here while it rises or is a cloud,
+  // on the water (see `water`) while it rains back or is water.
   function cloud(o, targeted, t) {
-    const { form, mist } = cloudPhase(o), cx = o.x, top = o.y, w = o.w, h = meta.cloud.h, formed = form === 'cloud';
-    timeRing(cx, top + h / 2, w / 2 + 14, o, t);
+    const { form, mist, shape } = cloudPhase(o), cx = o.x, top = o.y, w = o.w, h = meta.cloud.h, formed = form === 'cloud';
+    if (shape === 'cloud') timeRing(cx, top + h / 2, w / 2 + 14, o, t);
     const below = o.pool.y + o.pool.h * (1 - cloudPhase(o).fill), bottom = top + h;
     if (form === 'rain' || form === 'mist') {
       ctx.save(); ctx.lineCap = 'round';
@@ -568,22 +570,28 @@ export function createRenderer(canvas, S) {
     }
     // Where the cloud will stand, faint while the pool is full.
     if (!formed) { ctx.save(); ctx.setLineDash([4, 6]); ctx.globalAlpha *= .25 + .4 * mist; ctx.beginPath(); ctx.ellipse(cx, top + h / 2 - 4, w / 2 + 4, h / 2 + 12, 0, 0, Math.PI * 2); ctx.strokeStyle = '#e9f3f8'; ctx.lineWidth = 1.2; ctx.stroke(); ctx.restore(); }
-    if (targeted) { const a = w / 2 + 8, cy = top + h / 2; for (const [x, y] of [[-a, -20], [a, -20], [-a, 18], [a, 18]]) line(ctx, [[cx + x, cy + y - Math.sign(y) * 8], [cx + x, cy + y], [cx + x - Math.sign(x) * 8, cy + y]], gold); }
+    if (targeted && shape === 'cloud') { const a = w / 2 + 8, cy = top + h / 2; for (const [x, y] of [[-a, -20], [a, -20], [-a, 18], [a, 18]]) line(ctx, [[cx + x, cy + y - Math.sign(y) * 8], [cx + x, cy + y], [cx + x - Math.sign(x) * 8, cy + y]], gold); }
   }
-  // The water in a cloud's pool, drawn over the travellers so whoever wades in it shows only above the surface.
-  function water(o, t) {
-    const r = waterRect(o);
-    if (r.h <= .5) return;
-    const surface = x => r.y + Math.sin(x * .09 + t * .004) * 1.2;
-    ctx.save(); ctx.beginPath(); ctx.moveTo(r.x, r.y + r.h);
-    for (let x = r.x; x < r.x + r.w; x += 7) ctx.lineTo(x, surface(x));
-    ctx.lineTo(r.x + r.w, surface(r.x + r.w)); ctx.lineTo(r.x + r.w, r.y + r.h); ctx.closePath();
-    const g = ctx.createLinearGradient(0, r.y, 0, o.pool.y + o.pool.h);
-    g.addColorStop(0, '#86c9e0b8'); g.addColorStop(1, '#2f6d88d8');
-    ctx.fillStyle = g; ctx.fill();
-    ctx.beginPath(); for (let x = r.x; x <= r.x + r.w; x += 7) ctx[x === r.x ? 'moveTo' : 'lineTo'](x, surface(x));
-    ctx.strokeStyle = '#e8f7fccc'; ctx.lineWidth = 1.5; ctx.stroke();
-    ctx.restore();
+  // The water in a cloud's pool, drawn over the travellers so whoever wades in it shows only above the surface. While
+  // abilities act on the water, its time ring and target brackets are drawn around the pool.
+  function water(o, t, targeted) {
+    const r = waterRect(o), p = o.pool;
+    if (r.h > .5) {
+      const surface = x => r.y + Math.sin(x * .09 + t * .004) * 1.2;
+      ctx.save(); ctx.beginPath(); ctx.moveTo(r.x, r.y + r.h);
+      for (let x = r.x; x < r.x + r.w; x += 7) ctx.lineTo(x, surface(x));
+      ctx.lineTo(r.x + r.w, surface(r.x + r.w)); ctx.lineTo(r.x + r.w, r.y + r.h); ctx.closePath();
+      const g = ctx.createLinearGradient(0, r.y, 0, p.y + p.h);
+      g.addColorStop(0, '#86c9e0b8'); g.addColorStop(1, '#2f6d88d8');
+      ctx.fillStyle = g; ctx.fill();
+      ctx.beginPath(); for (let x = r.x; x <= r.x + r.w; x += 7) ctx[x === r.x ? 'moveTo' : 'lineTo'](x, surface(x));
+      ctx.strokeStyle = '#e8f7fccc'; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.restore();
+    }
+    if (cloudPhase(o).shape !== 'water') return;
+    const { x: cx, y: cy } = anchor(o);
+    timeRing(cx, cy, p.h / 2 + 22, o, t);
+    if (targeted) { const ax = p.w / 2 + 8, ay = p.h / 2 + 10; for (const [x, y] of [[-ax, -ay], [ax, -ay], [-ax, ay], [ax, ay]]) line(ctx, [[cx + x, cy + y - Math.sign(y) * 8], [cx + x, cy + y], [cx + x - Math.sign(x) * 8, cy + y]], gold); }
   }
   function checkpoint(cp, active, t) {
     line(ctx, [[cp.x, cp.y], [cp.x, cp.y - 34]], '#b8ac71', 2);
@@ -813,7 +821,7 @@ export function createRenderer(canvas, S) {
   }
   // Slowed objects carry a small mark so it is clear what the area is holding.
   function frostMark(o, t) {
-    const b = isEnemy(o) ? enemyBox(o) : o.kind === 'plant' ? (o.wall ? { x: anchor(o).x - 10, y: o.base - 4, w: 20, h: 0 } : { x: o.x - 10, y: o.base - o.height - 4, w: 20, h: 0 }) : o.kind === 'mover' ? { x: o.x, y: o.y, w: o.w, h: 0 } : o.kind === 'cloud' ? { x: o.x - 10, y: o.y - 8, w: 20, h: 0 } : { x: o.x - 10, y: o.y - (o.kind === 'crate' ? 30 : 14), w: 20, h: 0 };
+    const b = isEnemy(o) ? enemyBox(o) : o.kind === 'plant' ? (o.wall ? { x: anchor(o).x - 10, y: o.base - 4, w: 20, h: 0 } : { x: o.x - 10, y: o.base - o.height - 4, w: 20, h: 0 }) : o.kind === 'mover' ? { x: o.x, y: o.y, w: o.w, h: 0 } : o.kind === 'cloud' ? { x: anchor(o).x - 10, y: cloudPhase(o).shape === 'cloud' ? o.y - 8 : o.pool.y - 6, w: 20, h: 0 } : { x: o.x - 10, y: o.y - (o.kind === 'crate' ? 30 : 14), w: 20, h: 0 };
     const x = b.x + b.w / 2 + Math.sin(t * .003 + b.x) * 3, y = b.y - 10;
     ctx.save(); ctx.globalAlpha *= .85; glow(ctx, x, y, 12, '#e6d6a366'); star(ctx, x, y, 4, '#f6ecc8'); ctx.restore();
   }
@@ -1089,7 +1097,7 @@ export function createRenderer(canvas, S) {
       o.kind === 'crate' ? crate(held, false, t) : seed(held, t);
       ctx.restore();
     }
-    for (const o of state.objects) if (o.kind === 'cloud') water(o, t);
+    for (const o of state.objects) if (o.kind === 'cloud') water(o, t, marked(o));
     for (const o of state.objects) if (isEnemy(o) && flying(o)) enemy(o, marked(o), t, options.reduced);
     for (const o of state.objects) if (o.frozen && (o.held === null || o.held === undefined)) frostMark(o, t);
     // While time rewinds, faint afterimages trail the travellers.
@@ -1126,8 +1134,8 @@ export function createRenderer(canvas, S) {
     if (options.throwArc) throwArc(options.throwArc);
     const selected = state.objects.find(o => o.id === target);
     if (state.status === 'playing' && selected) {
-      const top = isEnemy(selected) ? enemyBox(selected).y - 26 : selected.kind === 'plant' ? (selected.wall ? selected.base - 45 : selected.base - selected.height - 53) : selected.kind === 'mover' ? selected.y - 30 : selected.kind === 'cloud' ? selected.y - 34 : selected.y - 62;
-      const x = selected.kind === 'mover' ? selected.x + selected.w / 2 : selected.kind === 'plant' && selected.wall ? anchor(selected).x : selected.x;
+      const top = isEnemy(selected) ? enemyBox(selected).y - 26 : selected.kind === 'plant' ? (selected.wall ? selected.base - 45 : selected.base - selected.height - 53) : selected.kind === 'mover' ? selected.y - 30 : selected.kind === 'cloud' ? (cloudPhase(selected).shape === 'cloud' ? selected.y - 34 : selected.pool.y - 30) : selected.y - 62;
+      const x = selected.kind === 'mover' ? selected.x + selected.w / 2 : (selected.kind === 'plant' && selected.wall) || selected.kind === 'cloud' ? anchor(selected).x : selected.x;
       const words = options.touch ? S.tapLabels : { freeze: S.targetFreeze, wake: S.targetWake, hasten: S.targetHasten, max: S.targetMax, rewind: S.targetRewind };
       if (state.active === 0) label(x, top, words.freeze);
       else if (Math.abs(selected.speed) >= meta.time.maxSpeed) label(x, top, words.max, muted);

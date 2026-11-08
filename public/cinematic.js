@@ -3,10 +3,11 @@ import { OPENING_DURATION, NEWSPAPER_DURATION, STORY_ASSETS, NEWSPAPER_ASSET, op
 export function createCinematic({ onFinish }) {
   const root = document.createElement('section');
   root.className = 'cinematic'; root.dataset.testid = 'cinematic'; root.hidden = true; root.setAttribute('aria-label', 'Moonclock story');
-  root.innerHTML = `<div class="cinematic-opening-scene"><div class="cinematic-world"><img class="cinematic-backdrop" src="/art/moonlit-conservatory.svg" alt=""><div class="cinematic-door"><div class="cinematic-leaf left"></div><div class="cinematic-leaf right"></div></div></div></div><div class="cinematic-paper-stack">${STORY_ASSETS.map((src, i) => `<img class="cinematic-story" data-testid="story-${i + 1}" src="${src}" alt="Opening story, page ${i + 1}">`).join('')}</div><img class="cinematic-newspaper" data-testid="newspaper" src="${NEWSPAPER_ASSET}" alt="Timekeeper Gazette, final edition">`;
+  root.innerHTML = `<div class="cinematic-opening-scene"><div class="cinematic-world"><img class="cinematic-backdrop" src="/art/moonlit-conservatory.svg" alt=""><div class="cinematic-door"><div class="cinematic-leaf left"></div><div class="cinematic-leaf right"></div></div></div></div><div class="cinematic-paper-stack">${STORY_ASSETS.map((src, i) => `<img class="cinematic-story" data-testid="story-${i + 1}" src="${src}" alt="Opening story, page ${i + 1}">`).join('')}</div><p class="cinematic-caption" data-testid="newspaper-caption">后来，人们出了报道</p><img class="cinematic-newspaper" data-testid="newspaper" src="${NEWSPAPER_ASSET}" alt="Timekeeper Gazette, final edition">`;
   document.body.append(root);
   const scene = root.querySelector('.cinematic-opening-scene'), world = root.querySelector('.cinematic-world'), stack = root.querySelector('.cinematic-paper-stack');
   const cards = [...root.querySelectorAll('.cinematic-story')], paper = root.querySelector('.cinematic-newspaper'), leaves = [...root.querySelectorAll('.cinematic-leaf')];
+  const caption = root.querySelector('.cinematic-caption');
   const loads = new Map();
   let session = null, width = 1, height = 1;
   function resize() {
@@ -37,21 +38,22 @@ export function createCinematic({ onFinish }) {
       stack.style.opacity = frame.opacity; stack.style.transform = `translateY(${frame.lift}%)`;
     } else {
       const camera = newspaperTransform(frame, width, height);
-      paper.style.transform = `translate(${camera.x}px,${camera.y}px) scale(${camera.scale})`; paper.style.opacity = frame.opacity * frame.transitionOpacity;
+      paper.style.transform = `translate(${camera.x}px,${camera.y}px) scale(${camera.scale})`; paper.style.opacity = frame.reveal * frame.opacity * frame.transitionOpacity;
+      caption.style.opacity = frame.caption;
     }
-    root.style.backgroundColor = `rgba(10,32,43,${frame.opacity})`;
+    root.style.backgroundColor = current.kind === 'opening' ? `rgba(10,32,43,${frame.opacity})` : `rgba(0,0,0,${frame.backdrop})`;
   }
   return {
     preload,
     play(kind, { key, shared = false, reduced = false } = {}) {
       if (session?.key === key && session.kind === kind) return;
-      const current = session = { kind, key, shared, reduced, elapsed: 0, previous: null, ready: shared, duration: kind === 'opening' ? OPENING_DURATION : NEWSPAPER_DURATION, phase: kind === 'opening' ? 'door' : 'whole' };
-      root.hidden = true; scene.hidden = stack.hidden = kind !== 'opening'; paper.hidden = kind === 'opening';
+      const current = session = { kind, key, shared, reduced, elapsed: 0, previous: null, ready: shared, duration: kind === 'opening' ? OPENING_DURATION : NEWSPAPER_DURATION, phase: kind === 'opening' ? 'door' : 'black' };
+      root.hidden = true; scene.hidden = stack.hidden = kind !== 'opening'; paper.hidden = caption.hidden = kind === 'opening';
       root.style.backgroundColor = '#0a202b';
       root.dataset.kind = kind; root.dataset.phase = current.phase; document.body.classList.add('cinematic-active');
       cards.forEach(card => { card.style.opacity = 0; }); stack.style.opacity = 1; stack.style.transform = ''; scene.style.opacity = 1;
       leaves.forEach(leaf => { leaf.style.transform = 'rotateY(0deg)'; });
-      paper.style.opacity = 1;
+      paper.style.opacity = caption.style.opacity = 0;
       resize(); root.hidden = false;
       preload(kind).then(() => { if (session === current) current.ready = true; });
     },
