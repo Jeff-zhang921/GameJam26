@@ -125,8 +125,14 @@ async function checkOnline(browser, engine) {
     for (const page of [host, guest]) await page.waitForFunction(() => window.__moonclock.snapshot().objects.find(o => o.kind === 'guard')?.target === 1);
     assert.equal(guard().platformIndex, 3, 'The nearer player on the upper ledge must not become the target');
     guard().x = 1100;
-    stand(0, 3, 950); stand(1, 3, 1300);
+    stand(0, 3, 950); stand(1, 2, 1520);
     for (const page of [host, guest]) await page.waitForFunction(() => window.__moonclock.snapshot().objects.find(o => o.kind === 'guard')?.target === 0);
+    stand(1, 3, guard().x + 45);
+    for (const page of [host, guest]) await page.waitForFunction(() => {
+      const state = window.__moonclock.snapshot(), g = state.objects.find(o => o.kind === 'guard');
+      return g.target === 0 && state.tick < g.targetLockUntil
+        && state.actors[1].on === 'platform-3' && Math.abs(state.actors[1].x - g.x) < Math.abs(state.actors[0].x - g.x);
+    });
     stand(0, 2, 1520);
     for (const page of [host, guest]) await page.waitForFunction(() => window.__moonclock.snapshot().objects.find(o => o.kind === 'guard')?.target === 1);
     guard().x = 1450;
@@ -142,6 +148,6 @@ async function checkOnline(browser, engine) {
     await guest.getByTestId('skip-dialogue').tap();
     await guest.screenshot({ path: `.audit/portal/${engine}-guard-head-jump.png` });
     for (const page of [host, guest]) { assert.equal(await page.getByTestId('next').count(), 0); assert.equal((await snap(page)).status, 'playing'); }
-    console.log(`PASS ${engine} online: subtitles fade, new tasks return, shared gate transition, platform/nearest guard targets and Freeze head-jump cues`);
+    console.log(`PASS ${engine} online: subtitles fade, new tasks return, shared gate transition, shared guard lock and Freeze head-jump cues`);
   } finally { for (const c of contexts) await c.close(); }
 }

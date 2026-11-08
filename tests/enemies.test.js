@@ -19,6 +19,25 @@ function arena(enemies, actors = [{ x: 60 }, { x: 1220 }]) {
 }
 
 describe('guards', () => {
+  test('normal chase moves at the same speed as a grounded player', () => {
+    const s = arena([{ kind: 'guard', id: 'g', x: 500, y: 540 }], [{ x: 630, move: 1 }, { x: 60 }]);
+    const next = step(s);
+    expect(next.actors[0].x - s.actors[0].x).toBeCloseTo(meta.controls.speed);
+    expect(get(next, 'g').x - get(s, 'g').x).toBeCloseTo(next.actors[0].x - s.actors[0].x);
+  });
+
+  test('a hit breaks the guard lock even when the player respawns on the same floor', () => {
+    let s = arena([{ kind: 'guard', id: 'g', x: 300, y: 540 }], [{ x: 240, spawnX: 250, spawnY: 540 }, { x: 450 }]);
+    s = step(s);
+    expect(get(s, 'g').target).toBe(0);
+    Object.assign(get(s, 'g'), { attack: ENEMY.guard.attackEvery - 1 });
+    s.actors[0].x = get(s, 'g').x;
+    s = step(s);
+    expect(s.actors[0]).toMatchObject({ x: 250, y: 540, invuln: meta.time.invulnTicks });
+    s = step(s);
+    expect(get(s, 'g').target).toBe(1);
+  });
+
   test('patrol back and forth without leaving their range', () => {
     let s = arena([{ kind: 'guard', id: 'g', x: 500, y: 540, minX: 450, maxX: 550 }]);
     let min = Infinity, max = -Infinity;
@@ -45,7 +64,7 @@ describe('guards', () => {
     s = step(s, 60);
     const moved = Math.abs(get(s, 'g').x - x);
     expect(moved).toBeGreaterThan(0);
-    expect(moved).toBeLessThanOrEqual(60 * ENEMY.guard.chase * meta.time.frozenRate + 1e-9);
+    expect(moved).toBeLessThanOrEqual(60 * meta.controls.speed * meta.time.frozenRate + 1e-9);
     expect(isHazard(get(s, 'g'))).toBe(false);
     Object.assign(s.actors[0], { x: get(s, 'g').x, y: 540 - ENEMY.guard.h - 1, vy: 0, grounded: false, on: null });
     s = step(s, 3);

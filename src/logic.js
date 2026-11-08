@@ -82,7 +82,7 @@ function makeLevel(index, players, unlocked, totalShards, collected = LEVELS.map
   const state = {
     level: index, levelId: level.id, unlocked, totalShards, collected: clone(collected), tick: 0, status: 'playing', active: 0,
     playerIds: players, width: level.width ?? 1280, height: 640,
-    actors: level.spawn.map((p, i) => ({ id: i, x: p.x, y: p.y, vx: 0, vy: 0, facing: 1, grounded: true, on: 'ground', coyote: meta.controls.coyote, jumpBuffer: 0, jumpHeld: false, jumpCut: true, move: 0, carrying: null, invuln: 0, spawnX: p.x, spawnY: p.y })),
+    actors: level.spawn.map((p, i) => ({ id: i, x: p.x, y: p.y, vx: 0, vy: 0, facing: 1, grounded: true, on: 'ground', coyote: meta.controls.coyote, jumpBuffer: 0, jumpHeld: false, jumpCut: true, move: 0, carrying: null, invuln: 0, respawnTick: null, spawnX: p.x, spawnY: p.y })),
     platforms: clone(level.platforms), objects, pits, nextPlant: level.plants.length, nextEnemy: objects.length,
     checkpoints: (level.checkpoints ?? []).map((c, i) => ({ id: `cp-${i}`, x: c.x, y: c.y, lit: false })), checkpoint: null,
     exit: clone(level.exit), shards: level.shards.map((p, i) => ({ ...p, id: i, taken: false })),
@@ -517,6 +517,7 @@ function respawn(state, p, kind) {
   p.x = cp ? cp.x + (p.id ? 18 : -18) : p.spawnX; p.y = cp ? cp.y : p.spawnY;
   p.vx = 0; p.vy = 0; p.grounded = true; p.on = 'ground'; p.jumpHeld = false; p.jumpCut = true; p.jumpBuffer = 0;
   p.invuln = kind === 'hit' ? meta.time.invulnTicks : p.invuln;
+  p.respawnTick = state.tick;
   event(state, 'return', p.x, p.y, { actor: p.id });
 }
 
@@ -554,7 +555,9 @@ function tick(state) {
   applyFreezeAreas(state);
   const before = new Map(state.objects.filter(o => o.kind === 'crate' || o.kind === 'mover' || isEnemy(o)).map(o => [o.id, [o.x, o.y]]));
   ageObjects(state);
-  const strikes = updateEnemies(state, { event, nextId: kind => `${kind}-${state.nextEnemy++}` });
+  const strikes = updateEnemies(state, {
+    event, nextId: kind => `${kind}-${state.nextEnemy++}`, walkSpeed: meta.controls.speed, tickRate: meta.tickRate,
+  });
   carryRiders(state, before, moveItems(state));
   moveActors(state);
   resolveStrikes(state, strikes);
