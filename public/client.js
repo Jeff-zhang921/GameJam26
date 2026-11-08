@@ -334,11 +334,12 @@ function updateUI() {
     document.querySelector('#controls').innerHTML = `<span>${key('A D')}${S.move}</span><span>${key('Space')}${S.jump}</span><span>${key('E')}${S.touchGrab}</span>`;
     uiMode = String(onlineMode);
   }
-  if (uiValues.actor !== state.active) {
-    document.querySelector('#ability-label').textContent = `${S.roleLabels[state.active]} · ${S.ability[state.active]}`;
+  const abilityKey = `${state.active}:${!!state.bloomReverses}`;
+  if (uiValues.actor !== abilityKey) {
+    document.querySelector('#ability-label').textContent = `${S.roleLabels[state.active]} · ${state.active === 1 && state.bloomReverses ? S.abilityRewind : S.ability[state.active]}`;
     document.querySelector('#ability').classList.toggle('bloom', state.active === 1);
     document.querySelector('#ability svg').innerHTML = icons[state.active ? 'leaf' : 'hourglass'];
-    uiValues.actor = state.active;
+    uiValues.actor = abilityKey;
   }
   if (uiValues.sound !== sound) {
     document.querySelector('[data-testid="sound"]').innerHTML = icon(sound ? 'sound' : 'mute');
@@ -950,12 +951,13 @@ function updateTouchControls(view) {
   const charges = skillCharges(view, actor);
   const interaction = interactionFor(view, actor);
   const available = interaction.available || canTakeSeed(view, actor);
-  const next = `${actor}:${charges}:${interaction.kind}:${interaction.item ?? ''}:${available}`;
+  const rewinds = actor === 1 && !!view.bloomReverses;
+  const next = `${actor}:${charges}:${interaction.kind}:${interaction.item ?? ''}:${available}:${rewinds}`;
   if (next === touchKey) return;
   touchKey = next;
   chargeBadge.textContent = charges;
   abilityButton.classList.toggle('empty', charges <= 0);
-  abilityButton.setAttribute('aria-label', S.skillCount(S.ability[actor], charges));
+  abilityButton.setAttribute('aria-label', S.skillCount(rewinds ? S.abilityRewind : S.ability[actor], charges));
   if (abilityButton.dataset.actor !== String(actor)) {
     abilityButton.classList.toggle('bloom', actor === 1);
     abilityButton.querySelector('.skill-art').outerHTML = skillArt(actor === 1 ? 'bolt' : 'hourglass');

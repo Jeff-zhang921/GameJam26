@@ -268,7 +268,7 @@ export function createRenderer(canvas, S) {
   function timeRing(x, y, r, o, t) {
     if (o.frozen) { glow(ctx, x, y, r * 1.7, '#9de3e527'); circle(ctx, x, y, r + Math.sin(t * .002) * 2, null, '#a1e3e570'); return; }
     if (!o.speed) return;
-    ctx.save(); ctx.translate(x, y); ctx.rotate(t * .0012 * o.speed); ctx.setLineDash([6, 9]); circle(ctx, 0, 0, r, null, '#e1c68a88', 1.5); ctx.restore();
+    ctx.save(); ctx.translate(x, y); ctx.rotate(t * .0012 * o.speed); ctx.setLineDash([6, 9]); circle(ctx, 0, 0, r, null, o.speed < 0 ? '#9fc4e888' : '#e1c68a88', 1.5); ctx.restore();
   }
   // A stone-rimmed bed of soil (sprite 480x100, soil centred 38% down), drawn 100 wide with the soil just above
   // the ground line so a mushroom rises out of it and the rim's front sinks a little into the ledge.
@@ -336,6 +336,14 @@ export function createRenderer(canvas, S) {
     ctx.save(); ctx.translate(o.x, o.base - top * k); ctx.scale(o.wall, 1);
     ctx.drawImage(vineTint, 0, 0);
     ctx.restore();
+    // A thorny vine (a ceiling) shows thorns along its underside.
+    if (o.ceiling) {
+      ctx.fillStyle = '#4a5a33';
+      for (let i = 10; i < L - 4; i += 18) {
+        const tx = o.x + o.wall * i;
+        ctx.beginPath(); ctx.moveTo(tx - 4, o.base + 14); ctx.lineTo(tx + 4, o.base + 14); ctx.lineTo(tx, o.base + 23); ctx.closePath(); ctx.fill();
+      }
+    }
     if (targeted) { circle(ctx, a.x, o.base - 22, 13, '#d7bd7d10', '#e1c68a70'); star(ctx, a.x, o.base - 22, 5, gold); }
   }
   function plant(o, targeted, t, reduced) {
@@ -818,10 +826,10 @@ export function createRenderer(canvas, S) {
     if (state.status === 'playing' && selected) {
       const top = isEnemy(selected) ? enemyBox(selected).y - 26 : selected.kind === 'plant' ? (selected.wall ? selected.base - 45 : selected.base - selected.height - 53) : selected.kind === 'mover' ? selected.y - 30 : selected.y - 62;
       const x = selected.kind === 'mover' ? selected.x + selected.w / 2 : selected.kind === 'plant' && selected.wall ? anchor(selected).x : selected.x;
-      const words = options.touch ? S.tapLabels : { freeze: S.targetFreeze, wake: S.targetWake, hasten: S.targetHasten, max: S.targetMax };
+      const words = options.touch ? S.tapLabels : { freeze: S.targetFreeze, wake: S.targetWake, hasten: S.targetHasten, max: S.targetMax, rewind: S.targetRewind };
       if (state.active === 0) label(x, top, words.freeze);
-      else if (selected.speed >= meta.time.maxSpeed) label(x, top, words.max, muted);
-      else label(x, top, selected.speed ? words.hasten : words.wake, gold);
+      else if (Math.abs(selected.speed) >= meta.time.maxSpeed) label(x, top, words.max, muted);
+      else label(x, top, state.bloomReverses ? words.rewind : selected.speed ? words.hasten : words.wake, gold);
     }
     ctx.restore();
     if (options.rewind) rewindOverlay(options.rewind.progress, t);
