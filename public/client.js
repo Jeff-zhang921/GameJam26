@@ -187,7 +187,7 @@ const network = createNetwork({
       if (e.kind === 'return' && e.actor === network.actor) cameraReset++; seenEvent = e.id;
     }
     if (game.status === 'won' && !rewind && !network.room.canReturnLobby) {
-      if (!celebration && !sceneFade && !nextPending && modal !== 'advancing') startCelebration();
+      if (!celebration && !sceneFade && !nextPending && modal !== 'advancing' && modal !== 'ending') startCelebration();
     }
     else if (game.status === 'paused' && (previous.status !== 'paused' || !pauseContext || !live || modal === 'online')) {
       pauseContext = true; resetTouchState(); modal = 'pause';
@@ -462,7 +462,10 @@ function advanceStage(time) {
     canvas.focus({ preventScroll: true });
   }
   if (celebration && time - celebration.start >= celebration.duration) {
-    celebration = null; modal = 'advancing';
+    const finale = celebration.finale;
+    celebration = null;
+    if (finale) { modal = 'ending'; syncStage(); renderModal(); return; }
+    modal = 'advancing';
     if (onlineMode) {
       if (network.host && !nextPending) nextPending = dispatch({ type: 'next' }).valid;
       syncStage(); renderModal();
@@ -566,6 +569,20 @@ function renderModal() {
   if (modal === 'confirm-level' && pendingLevel !== null) contents = `<div class="intro-icon">${icon('arrow')}</div><div class="eyebrow">${S.chapter} 0${pendingLevel + 1}</div><h2>${S.levelBothTitle(S.levels[pendingLevel].name)}</h2><p>${S.levelBothBody}</p><button class="primary" data-action="confirm-level" data-testid="confirm-level">${S.levelBoth}${icon('arrow')}</button><div class="modal-actions"><button class="text-button" data-action="pause" data-testid="cancel-level">${S.cancel}</button></div>`;
   if (modal === 'warning') contents = `${close}<div class="eyebrow">${S.chapter} 0${state.level + 1} · ${S.levels[state.level].en}</div><h2>${S.warningTitle}</h2><p data-testid="warning-reason">${S.warningReasons[state.failure] || ''}</p><button class="primary" data-action="rewind-restart" data-testid="warning-restart">${S.warningRestart}${icon('restart')}</button>${onlineMode && !network.host ? `<p class="pause-note">${S.warningHostOnly}</p>` : ''}<div class="modal-actions"><button class="text-button" data-action="close" data-testid="warning-close">${S.keepTrying}</button></div>`;
   if (modal === 'confirm-restart') contents = `<div class="intro-icon">${icon('restart')}</div><div class="eyebrow">${S.restartLevel}</div><h2>${S.restartBothTitle}</h2><p>${S.restartBothBody}</p><button class="primary" data-action="confirm-restart" data-testid="confirm-restart">${S.restartBoth}${icon('restart')}</button><div class="modal-actions"><button class="text-button" data-action="pause" data-testid="cancel-restart">${S.cancel}</button></div>`;
+  if (modal === 'ending') {
+    const E = S.ending;
+    const credits = E.credits.map(([role, names]) => `<div class="credit-group"><div class="credit-role">${role}</div>${names.map(n => `<div class="credit-name">${n}</div>`).join('')}</div>`).join('');
+    contents = `<div class="intro-icon">${icon('moon')}</div><div class="eyebrow">${E.eyebrow}</div><h2>${E.title}</h2><p>${E.body}</p>`
+      + `<p class="ending-shards" data-testid="ending-shards">${E.shards(state.totalShards ?? 0, levelCount)}</p>`
+      + `<button class="primary" data-action="play-again" data-testid="play-again">${E.playAgain}${icon('restart')}</button>`
+      + `<div class="modal-actions"><button class="text-button" data-action="leave" data-testid="ending-leave">${onlineMode ? S.leaveRoom : E.mainMenu}</button></div>`
+      + (onlineMode && !network.host ? `<p class="pause-note">${E.hostNote}</p>` : '')
+      + `<section class="ending-credits" aria-label="${E.creditsTitle}"><div class="goal-heading">${icon('leaf')}<span>${E.creditsTitle}</span></div><div class="credit-roll">${credits}</div></section>`;
+    root.innerHTML = `<div class="modal-backdrop ending-backdrop"><section class="modal ending" role="dialog" aria-modal="true" aria-label="${E.title}" data-testid="ending">${contents}</section></div>`;
+    if (onlineMode && !network.host) root.querySelectorAll('[data-action="play-again"]').forEach(button => { button.disabled = true; button.title = E.hostNote; });
+    root.querySelector('button.primary:not(:disabled), button:not(:disabled)')?.focus({ preventScroll: true });
+    return;
+  }
   if (modal === 'intro') {
     root.innerHTML = `<section class="entry-screen" role="dialog" aria-modal="true" aria-labelledby="entry-title">
       <div class="entry-content">
@@ -625,6 +642,12 @@ document.addEventListener('click', event => {
   if (action === 'confirm-level') { if (!onlineMode || !network.host || pendingLevel === null) return; clearInputs(); dispatch({ type: 'level', level: pendingLevel }); pendingLevel = null; modal = null; renderModal(); canvas.focus({ preventScroll: true }); return; }
   if (action === 'confirm-restart') { if (!onlineMode || !network.host) return; requestRestart(); return; }
   if (action === 'rewind-restart') { if (onlineMode && !network.host) return; requestRestart(); return; }
+  if (action === 'play-again') {
+    if (modal !== 'ending') return;
+    if (onlineMode) { if (!network.host || nextPending) return; modal = 'advancing'; nextPending = dispatch({ type: 'next' }).valid; if (!nextPending) modal = 'ending'; renderModal(); return; }
+    clearInputs(); startFade(() => { dispatch({ type: 'next' }); persist(); revealCourtyard(); }, { arrive: true });
+    return;
+  }
   if (action === 'leave') { if (onlineMode) leaveOnline(); else returnToMenu(); return; }
   if (modal) return;
   canvas.focus({ preventScroll: true });
@@ -644,7 +667,7 @@ document.addEventListener('keydown', event => {
   if (stageBusy()) { event.preventDefault(); return; }
   if (code === 'Escape' && seedHold) { event.preventDefault(); clearSeedHold(); return; }
   if (code === 'Escape' && (skillAim || throwAim || mouseAim)) { event.preventDefault(); clearSkillAim(); clearThrowAim(); mouseAim = null; return; }
-  if (code === 'Escape') { event.preventDefault(); if (modal && !['intro', 'win'].includes(modal)) resume(); else if (!modal) setModal('pause'); return; }
+  if (code === 'Escape') { event.preventDefault(); if (modal && !['intro', 'win', 'ending'].includes(modal)) resume(); else if (!modal) setModal('pause'); return; }
   if (modal) {
     if (code === 'Tab') {
       const buttons = [...document.querySelectorAll('#modal-root button:not(:disabled)')];
