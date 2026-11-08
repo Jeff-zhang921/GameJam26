@@ -231,7 +231,7 @@ function pickable(state, p) {
 }
 
 function plantingPit(state, p) {
-  return state.pits.filter(t => t.plant === null && t.plantable !== false && Math.abs(t.x - p.x) <= meta.controls.pitReach && Math.abs(t.y - p.y) <= 30)
+  return state.pits.filter(t => t.plant === null && t.plantable !== false && !t.wall && Math.abs(t.x - p.x) <= meta.controls.pitReach && Math.abs(t.y - p.y) <= 30)
     .sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0];
 }
 
@@ -279,7 +279,7 @@ export function throwPath(state, actor, aim, maxTicks = 180) {
     o.frozen = state.freezeAreas.some(a => circleTouches(a, { x: o.x - half, y: o.y - half, w: half * 2, h: half * 2 }));
     const { landed, wall } = stepItem(state, o, all);
     points.push({ x: o.x, y: o.y });
-    if (landed || wall || o.y > 720 || o.x < 20 || o.x > state.width - 20) break;
+    if (landed || wall || (kind === 'seed' && seedPit(state, o)) || o.y > 720 || o.x < 20 || o.x > state.width - 20) break;
   }
   return points;
 }
@@ -419,25 +419,43 @@ function stepItem(state, o, all) {
   return { landed, wall };
 }
 
+// The empty pit a seed in flight has reached, if any: within 24 px of a ground pit's soil or a wall pit's face.
+const SEED_PIT_REACH = 24;
+function seedPit(state, o) {
+  return state.pits.find(t => t.plant === null && t.plantable !== false
+    && Math.hypot(o.x - (t.wall ? t.x + t.wall * 10 : t.x), o.y - (t.wall ? t.y : t.y - 10)) <= SEED_PIT_REACH);
+}
+
 // Moves loose items. Returns the ids of items that were reset to their spawn or lost, so riders are not carried
 // along with them.
 function moveItems(state) {
-  const all = surfaces(state), reset = new Set(), lost = new Set();
-  for (const o of state.objects) {
+  const all = surfaces(state), reset = new Set(), lost = new Set(), planted = new Set();
+  for (const o of [...state.objects]) {
     if (o.kind !== 'crate' && o.kind !== 'seed') continue;
     const crate = o.kind === 'crate', half = crate ? 27 : 10;
     // Carried items take no physics step; attachHeld places them after their carrier has moved.
     if (o.held !== null) continue;
     const { landed } = stepItem(state, o, all);
+    // A thrown seed that reaches an empty pit plants it; one that lands anywhere else just lies there.
+    if (o.kind === 'seed' && o.thrown) {
+      const pit = seedPit(state, o);
+      if (pit) {
+        planted.add(o.id);
+        state.objects.push(makePlant(`plant-${state.nextPlant++}`, pit));
+        event(state, 'plant', pit.x, pit.y - 10);
+        continue;
+      }
+      if (landed) o.thrown = false;
+    }
     if (landed && landed.speed > 1) event(state, crate ? 'crateLand' : 'seedLand', o.x, landed.y);
     if (o.y > 720 || o.x < 20 || o.x > state.width - 20) {
       reset.add(o.id);
       // Where crates do not respawn, a lost crate is gone for good. Seeds always return.
       if (crate && state.crateRespawn === false) { lost.add(o.id); event(state, 'crateLost', o.x, Math.min(o.y, state.height)); continue; }
-      o.x = respawnX(state, o, half); o.y = o.spawnY; o.vx = 0; o.vy = 0; event(state, 'return', o.x, o.y);
+      o.thrown = false; o.x = respawnX(state, o, half); o.y = o.spawnY; o.vx = 0; o.vy = 0; event(state, 'return', o.x, o.y);
     }
   }
-  if (lost.size) state.objects = state.objects.filter(o => !lost.has(o.id));
+  if (lost.size || planted.size) state.objects = state.objects.filter(o => !lost.has(o.id) && !planted.has(o.id));
   return reset;
 }
 

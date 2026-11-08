@@ -27,7 +27,6 @@ describe('vine length', () => {
   };
   test('a sleeping vine stays at length 0; woken it grows to maxLength, holds, withers back and vanishes', () => {
     let s = grownVine(), v = vineOf(s);
-    if (!v) return; // planting arrives in Task 4; this test turns on then
     expect(v.height).toBe(0);
     v.speed = 1;
     s = step(s, G / 2); expect(vineOf(s).height).toBeCloseTo(meta.vine.maxLength / 2, 0);
@@ -112,5 +111,56 @@ describe('taking a seed', () => {
     s = step(s, 1);
     expect(seed.id).toBe(s.objects.find(o => o.thrown).id);
     expect(s.objects.find(o => o.id === seed.id).x).toBeCloseTo(path[1].x, 6);
+  });
+});
+
+describe('throwing a seed into a pit', () => {
+  test('a seed in flight reaching the wall pit plants a sleeping vine there', () => {
+    let s = seedAtPit(vineArena());
+    s = step(s);
+    expect(s.objects.some(o => o.id === 'seed-x')).toBe(false);
+    expect(vineOf(s)).toMatchObject({ pit: 'pit-1', wall: -1, x: 760, base: 420, height: 0, speed: 0 });
+    expect(s.pits.find(p => p.id === 'pit-1').plant).toBe(vineOf(s).id);
+  });
+  test('a full throw from the ground at the wall plants it', () => {
+    let s = vineArena(); Object.assign(s.actors[1], { x: 600, facing: 1 });
+    s = action(s, { type: 'takeSeed', actor: 1 });
+    s = action(s, { type: 'grab', actor: 1 }); // the default throw: up and to the right, into the wall
+    s = step(s, 40);
+    expect(vineOf(s)).toBeDefined();
+    expect(s.seeds).toBe(0);
+  });
+  test('a seed resting near a pit does not plant it, and a missed throw can be picked up again', () => {
+    let s = vineArena();
+    s.objects.push({ kind: 'seed', id: 'seed-x', x: 752, y: 418, vx: 0, vy: 0, frozen: false, held: null, spawnX: 600, spawnY: 530 }); // not thrown
+    s = step(s);
+    expect(vineOf(s)).toBeUndefined();
+    s = vineArena(); Object.assign(s.actors[1], { x: 300, facing: -1 });
+    s = action(s, { type: 'takeSeed', actor: 1 });
+    s = action(s, { type: 'grab', actor: 1 }); // thrown away from every pit
+    s = step(s, 90);
+    const seed = s.objects.find(o => o.id === 'seed-taken-0');
+    expect(seed.thrown).toBeFalsy(); // it landed
+    s.actors[1].x = seed.x; s = step(s, 2);
+    expect(s.seeds).toBe(1);
+  });
+  test('inside a Freeze Area a growing vine lengthens at the frozen rate', () => {
+    let s = step(seedAtPit(vineArena())), id = vineOf(s).id;
+    s.objects.find(o => o.id === id).speed = 1;
+    s = step(s, 100); const free = vineOf(s).height;
+    s.freezeAreas.push({ id: 'freeze-x', owner: 'local', x: 700, y: 420, radius: meta.freeze.radius, ticksLeft: 1000, duration: 1000 });
+    s = step(s, 100);
+    expect(vineOf(s).height - free).toBeCloseTo(free / 100 * 100 * meta.time.frozenRate, 0);
+  });
+  test('the throw preview ends at the pit the seed would plant', () => {
+    let s = vineArena(); Object.assign(s.actors[1], { x: 600, facing: 1 });
+    s = action(s, { type: 'takeSeed', actor: 1 });
+    const end = throwPath(s, 1, null).at(-1);
+    expect(Math.hypot(end.x - 750, end.y - 420)).toBeLessThanOrEqual(24);
+  });
+  test('a short press beside a wall pit does not plant it by hand', () => {
+    const s = vineArena(); Object.assign(s.actors[1], { x: 745, y: 420 }); // right under the pit's face
+    expect(interactionFor(s, 1).kind).not.toBe('plant');
+    expect(validateAction(s, 'local', { type: 'grab', actor: 1 }).valid).toBe(false);
   });
 });
