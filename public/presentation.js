@@ -13,7 +13,7 @@ export function createCamera() {
       // (which would also leave bands above and below the world). Reduced motion holds a still view of it all.
       const fit = Math.min(width / Math.min(1280, worldWidth), height / worldHeight), whole = Math.min(width / worldWidth, height / worldHeight);
       // Never zoom out past the world's edges: screens taller than 2:1 (16:10, iPad) would otherwise show bands above and below.
-      let cover = Math.max(width / worldWidth, height / worldHeight);
+      const cover = Math.max(width / worldWidth, height / worldHeight);
       const actor = state.actors[state.active];
       let targetX = actor.x + actor.facing * 60, targetY = actor.y - 100, targetZoom = 1.2;
       const reset = !initialized || sceneKey !== previousScene || resetCamera;
@@ -24,10 +24,7 @@ export function createCamera() {
           top = Math.min(top, player.y - 52 - 120); bottom = Math.max(bottom, player.y + 120);
         }
         targetX = (left + right) / 2; targetY = (top + bottom) / 2;
-        const needed = Math.min(width / (right - left), height / (bottom - top));
-        targetZoom = clamp(needed / fit, 1, 1.2);
-        // Keeping both partners on screen matters more than filling it.
-        cover = Math.min(cover, needed);
+        targetZoom = clamp(Math.min(width / (right - left), height / (bottom - top)) / fit, 1, 1.2);
       }
       if (reduced) {
         camera.x = worldWidth / 2; camera.y = worldHeight / 2; zoom = 1;
