@@ -4,8 +4,8 @@ export default {
   theme: { ground: 'cobbleMoss', background: 'chamber3', music: 'deathKnell' },
   // Wide (3840): three sections left to right.
   width: 3840,
-  // Start ground; the high ledge (220 up: only a mushroom gets you there) with a pillar that stops the upper arrow
-  // lane before the canyon; the far cliff across the canyon; the exit ledge across the chasm; and a small step jutting
+  // Start ground; the high ledge (220 up: only a mushroom gets you there) with a capped pillar that stops the upper
+  // arrow lane before the canyon (travellers jump up onto its cap and drop off the far side); the far cliff across the canyon; the exit ledge across the chasm; and a small step jutting
   // out of the near cliff below its wall pit (platform-5), from which Bloom throws a seed up-left into the pit (then
   // climbs back up before waking it: a grown vine overhead stops a rising head). No floors in between.
   platforms: [
@@ -15,6 +15,11 @@ export default {
     { x: 2110, y: 200, w: 400, h: 440 },
     { x: 3410, y: 200, w: 430, h: 440 },
     { x: 1400, y: 440, w: 60, h: 30 },
+    // The pillar is drawn with a mossy cap much wider than the pillar (x 1144-1252, down to y 180) and stones under
+    // it (x 1168-1231, down to y 212). These two blocks are not drawn (`hidden`); they make that cap solid, so a
+    // head under its overhang stops there and the way over is up onto the cap.
+    { x: 1144, y: 160, w: 108, h: 20, hidden: true },
+    { x: 1168, y: 180, w: 63, h: 32, hidden: true },
   ],
   spawn: [{ x: 190, y: 520 }, { x: 265, y: 520 }],
   crates: [],

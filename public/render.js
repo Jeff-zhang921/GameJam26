@@ -166,7 +166,7 @@ export function createRenderer(canvas, S) {
   // closed instead: its fill runs on under the neighbour's inset, so no background shows through the seam.
   const FILL_INSET = 12;
   function closedSides(p, all = []) {
-    const against = side => all.some(q => q !== p && q.y <= p.y && q.y + q.h > p.y && Math.abs(side < 0 ? q.x + q.w - p.x : q.x - (p.x + p.w)) < 1);
+    const against = side => all.some(q => q !== p && !q.hidden && q.y <= p.y && q.y + q.h > p.y && Math.abs(side < 0 ? q.x + q.w - p.x : q.x - (p.x + p.w)) < 1);
     return { left: p.x > 0 && against(-1), right: p.x + p.w < worldWidth && against(1) };
   }
   function fillSpan(p, all) {
@@ -214,8 +214,10 @@ export function createRenderer(canvas, S) {
     for (let i = 0; i < courses; i++, y += course) row(l0, l1 - l0, y);
     row(l1, g.y + g.height - l1, y);
   }
-  // `all` is every platform of the courtyard, to find the ends that rest against a neighbour.
+  // `all` is every platform of the courtyard, to find the ends that rest against a neighbour. A `hidden` platform is
+  // never drawn: it only gives collision to art another platform draws wider than itself.
   function platform(p, all = []) {
+    if (p.hidden) return;
     const surface = art(theme.ground.surface.src);
     if (theme.ground.kind === 'bridge') {
       if (surface) bridge(p, surface);
@@ -550,6 +552,7 @@ export function createRenderer(canvas, S) {
       return;
     }
     for (const p of state.platforms) {
+      if (p.hidden) continue;
       const x0 = p.x <= 0 && left < 0 ? left : p.x, x1 = p.x + p.w >= W && right > W ? right : p.x + p.w;
       if (x0 !== p.x || x1 !== p.x + p.w) platform({ ...p, x: x0, w: x1 - x0 }, state.platforms);
       if (bottom > H && p.y + p.h >= H - 1) {
