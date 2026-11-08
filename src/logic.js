@@ -64,13 +64,17 @@ const vineStrip = o => ({ x: o.wall === 1 ? o.x : o.x - o.height, y: o.base, w: 
 const vineLengthAt = age => { const { growTicks, matureTicks } = meta.plant; return age > growTicks + matureTicks ? Math.max(0, 1 - witherProgress(age)) * meta.vine.maxLength : Math.min(age, growTicks) / growTicks * meta.vine.maxLength; };
 // A plant's size: a mushroom's height, or a vine's length (a vine is a plant in a wall pit).
 const sizeAt = (wall, age) => wall ? vineLengthAt(age) : heightAt(age);
+// A plant's size at an age: a mushroom's cap height (`wall` falsy) or a vine's length.
+export const plantSize = (wall, age) => sizeAt(wall, age);
 // The standable cap is as wide as the mushroom art drawn at this height.
 export const canopyWidth = plant => plant.height * (plant.withered ? dieFrame(witherProgress(plant.age)).ratio : growFrame(plant.height, meta.plant.maxHeight, meta.plant.springHeight).ratio);
 
-function makePlant(id, pit, grown = 0, barrier = false) {
+// A level plant may start at a `grown` fraction of grow + mature, or at an exact `age` in ticks (which wins).
+// Past maturity it starts withered. `ceiling: true` makes a vine stop rising heads.
+function makePlant(id, pit, { grown = 0, age, barrier = false, ceiling = false } = {}) {
   pit.plant = id;
-  const age = grown * (meta.plant.growTicks + meta.plant.matureTicks);
-  return { kind: 'plant', id, pit: pit.id, x: pit.x, base: pit.y, age, height: sizeAt(pit.wall, age), withered: false, speed: 0, frozen: false, barrier, ...(pit.wall && { wall: pit.wall }) };
+  const start = age ?? grown * (meta.plant.growTicks + meta.plant.matureTicks);
+  return { kind: 'plant', id, pit: pit.id, x: pit.x, base: pit.y, age: start, height: sizeAt(pit.wall, start), withered: start > meta.plant.growTicks + meta.plant.matureTicks, speed: 0, frozen: false, barrier, ...(ceiling && { ceiling: true }), ...(pit.wall && { wall: pit.wall }) };
 }
 
 // A seed lying in the courtyard; Bloom collects it by touch.
@@ -85,7 +89,7 @@ function makeLevel(index, players, unlocked, totalShards, collected = LEVELS.map
     ...level.crates.map((p, i) => ({ kind: 'crate', id: `crate-${i}`, x: p.x, y: p.y, vx: 0, vy: 0, frozen: false, held: null, spawnX: p.x, spawnY: p.y })),
     ...level.seeds.map((p, i) => makeSeed(`seed-${i}`, p.x, p.y)),
     ...level.movers.map((p, i) => ({ kind: 'mover', id: `mover-${i}`, x: p.x1, y: p.y, w: p.w, x1: p.x1, x2: p.x2, dir: 1, speed: 0, frozen: false })),
-    ...level.plants.map((p, i) => makePlant(`plant-${i}`, pits[p.pit], p.grown, p.barrier)),
+    ...level.plants.map((p, i) => makePlant(`plant-${i}`, pits[p.pit], p)),
     ...(level.enemies ?? []).map((e, i) => makeEnemy(e.kind, e, `${e.kind}-${i}`)),
   ];
   const state = {
@@ -102,6 +106,8 @@ function makeLevel(index, players, unlocked, totalShards, collected = LEVELS.map
     seeds: level.startSeeds ?? meta.seeds.start,
     // Whether a crate lost out of the courtyard returns to its spawn (false: it is gone for good).
     crateRespawn: level.crateRespawn ?? true,
+    // In a courtyard with `bloomReverses`, Bloom runs plant time backwards instead of forwards.
+    bloomReverses: level.bloomReverses ?? false,
     pickups: [
       ...(level.freezePickups ?? []).map((p, i) => ({ ...p, id: `frost-${i}`, kind: 'frost', taken: false })),
       ...level.bloomPickups.map((p, i) => ({ ...p, id: `bolt-${i}`, kind: 'bolt', taken: false })),

@@ -1,4 +1,4 @@
-import { setup } from '../src/logic.js';
+import { setup, meta, plantSize } from '../src/logic.js';
 
 // The original first courtyard, kept as a fixed test arena so mechanics tests do not depend on how level 1 is
 // laid out: a start ledge (x 0-435, y 520) with one crate at (350, 493), a broken bridge, and the far ledge
@@ -62,5 +62,16 @@ export function withtimeArena(options = {}) {
   s.pickups = [{ x: 470, y: 430, id: 'frost-0', kind: 'frost', taken: false }, { x: 345, y: 494, id: 'bolt-0', kind: 'bolt', taken: false }];
   s.exit = { x: 1160, y: 300 }; s.shards = [{ x: 400, y: 240, id: 0, taken: false }];
   s.needs = ['treeLifted', 'moverRide', 'frozenTouched']; s.freezeCharges = 2; s.seeds = 1; s.crateRespawn = true;
+  return s;
+}
+
+// rootriseArena where Bloom runs time backwards, with one sleeping plant already in pit-0 (x 600, ground 540) at
+// `age`. Bloom stands at x 520, within reach of it; Still at x 195.
+export function reverseArena({ age = 1200 } = {}) {
+  const s = rootriseArena();
+  s.bloomReverses = true;
+  s.objects = [{ kind: 'plant', id: 'plant-0', pit: 'pit-0', x: 600, base: 540, age, height: plantSize(0, age), withered: age > meta.plant.growTicks + meta.plant.matureTicks, speed: 0, frozen: false, barrier: false }];
+  s.pits[0].plant = 'plant-0'; s.nextPlant = 1; s.nextEnemy = 1;
+  s.actors[1].x = 520; // Bloom
   return s;
 }
