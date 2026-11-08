@@ -944,7 +944,8 @@ function updateTouchControls(view) {
   const actor = onlineMode ? network.actor : view.active;
   const charges = skillCharges(view, actor);
   const interaction = interactionFor(view, actor);
-  const next = `${actor}:${charges}:${interaction.kind}:${interaction.item ?? ''}:${interaction.available}`;
+  const available = interaction.available || canTakeSeed(view, actor);
+  const next = `${actor}:${charges}:${interaction.kind}:${interaction.item ?? ''}:${available}`;
   if (next === touchKey) return;
   touchKey = next;
   chargeBadge.textContent = charges;
@@ -956,7 +957,7 @@ function updateTouchControls(view) {
     abilityButton.dataset.actor = actor;
   }
   interactButton.classList.toggle('bloom', actor === 1);
-  interactButton.classList.toggle('unavailable', !interaction.available);
+  interactButton.classList.toggle('unavailable', !available);
   const art = interaction.kind === 'plant' || interaction.item === 'seed' ? 'seed' : 'crate', artKey = `${interaction.kind}:${art}`;
   if (interactButton.dataset.art !== artKey) {
     interactButton.dataset.kind = interaction.kind; interactButton.dataset.art = artKey;

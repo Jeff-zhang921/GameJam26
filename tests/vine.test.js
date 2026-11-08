@@ -2,6 +2,7 @@ import { describe, test, expect } from 'bun:test';
 import { validateAction, applyAction, meta, setup, objectBox, anchor, interactionFor, canTakeSeed, throwPath } from '../src/logic.js';
 import { LEVELS } from '../src/levels/index.js';
 import { vineArena } from './arena.js';
+import { makeEnemy } from '../src/enemies.js';
 
 function step(state, n = 1) { for (let i = 0; i < n; i++) state = applyAction(state, 'local', { type: 'tick' }); return state; }
 function action(state, value) { expect(validateAction(state, 'local', value)).toEqual({ valid: true }); return applyAction(state, 'local', value); }
@@ -93,6 +94,21 @@ describe('taking a seed', () => {
     s = step(s, 5);
     expect(s.actors[1].carrying).toBe(held.id); // a held seed is not collected back by touch
     expect(s.seeds).toBe(0);
+  });
+  test('Bloom hit while holding a seed drops it; walking over it collects it again', () => {
+    let s = vineArena(); s.actors[1].x = 600;
+    s = action(s, { type: 'takeSeed', actor: 1 });
+    const id = s.actors[1].carrying, bloom = s.actors[1];
+    s.objects.push(makeEnemy('dart', { x: bloom.x, y: bloom.y - 20, dir: [1, 0] }, 'dart-hit'));
+    s = step(s, 2);
+    expect(s.events.some(e => e.kind === 'hit' && e.actor === 1)).toBe(true);
+    expect(s.actors[1].carrying).toBeNull();
+    expect(s.objects.find(o => o.id === id)).toMatchObject({ kind: 'seed', held: null });
+    expect(s.seeds).toBe(0);
+    const seed = s.objects.find(o => o.id === id);
+    Object.assign(s.actors[1], { x: seed.x, y: seed.y + 10, invuln: 0 });
+    s = step(s, 3);
+    expect(s.seeds).toBe(1);
   });
   test('refused for Still, with no seeds, or with hands full', () => {
     const s = vineArena();

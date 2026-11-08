@@ -57,6 +57,13 @@ describe('shared tasks over the travellers', () => {
     s.actors[1].x = s.pits.find(p => p.plantable !== false).x;
     expect(hint(s, 1)).toContain('Plant the seed');
   });
+  test('Bloom holding a seed is told to throw it, not to reach the gate', () => {
+    const s = setup({ level: 0 }); onMiddle(s);
+    s.seeds = 0; s.objects = s.objects.filter(o => o.kind !== 'seed');
+    s.objects.push({ kind: 'seed', id: 'seed-h', held: 1, fromHand: true, x: 0, y: 0 });
+    s.actors[1].carrying = 'seed-h';
+    expect(hint(s, 1)).toBe('Throw the seed into the empty pit.');
+  });
   test('level two: fetch the seed, lure and freeze the snail, then climb off its shell', () => {
     const s = setup({ level: 1 });
     const snail = s.objects.find(o => o.kind === 'guard'), trench = s.platforms[3];

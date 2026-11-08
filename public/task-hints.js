@@ -13,11 +13,12 @@ export function taskHints(state) {
   const start = state.platforms[0];
   const gate = state.platforms.find(p => state.exit.x >= p.x && state.exit.x <= p.x + p.w && p.y === state.exit.y);
   const plants = state.objects.filter(o => o.kind === 'plant');
-  const plant = plants.find(o => !o.barrier && !o.withered);
+  const plant = plants.find(o => !o.barrier && !o.withered && !o.wall);
   const looseSeed = state.objects.some(o => o.kind === 'seed' && o.held == null);
   const carriesCrate = p => state.objects.find(o => o.id === p.carrying)?.kind === 'crate';
-  const pit = state.pits.find(p => p.plantable !== false && p.plant === null);
+  const pit = state.pits.find(p => p.plantable !== false && !p.wall && p.plant === null);
   const ancient = plants.find(o => o.barrier && !o.withered);
+  const carriesSeed = state.objects.some(o => o.kind === 'seed' && o.held === 1);
   const needsSeed = state.seeds <= 0 && !plant;
   const bank = state.platforms.filter(p => p.x >= start.x + start.w).sort((a, b) => a.x - b.x)[0];
   const crossing = state.level === 0 && bank && state.actors.some(p => p.x < bank.x);
@@ -53,6 +54,9 @@ export function taskHints(state) {
       else if (carriesCrate(p)) hints[actor] = 'Throw the crate across the gap.';
       else hints[actor] = actor === 0 ? 'Pick up a crate. Throw, then Freeze it.' : 'Pick up a crate; Still will slow it.';
     });
+  } else if (carriesSeed && !plant) {
+    hints[1] = 'Throw the seed into the empty pit.';
+    hints[0] = 'Let Bloom throw the seed.';
   } else if (needsSeed && looseSeed) {
     hints[1] = carriesCrate(bloom) ? 'Throw the crate, then collect the seed.' : 'Walk over the seed to collect it.';
     hints[0] = 'Let Bloom collect the seed.';
