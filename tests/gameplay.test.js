@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import { setup, applyAction, validateAction, meta, exitStatus, failureReason, assessFailure, freezeAreaAt, freezePoint } from '../src/logic.js';
-import { classicCourtyard, rootriseArena } from './arena.js';
+import { classicCourtyard, rootriseArena, afterbloomArena } from './arena.js';
 import { createCamera } from '../public/presentation.js';
 
 const act = (state, action) => applyAction(state, 'local', action);
@@ -323,7 +323,7 @@ describe('possible dead ends raise a warning; the game goes on', () => {
   });
 
   test('a wilting ancient mushroom still counts as hope until it is gone', () => {
-    const s = setup({ level: 2 });
+    const s = afterbloomArena();
     s.objects = s.objects.filter(o => o.kind !== 'seed'); s.seeds = 0;
     Object.assign(s.actors[STILL], { x: s.exit.x, y: s.exit.y, on: 'platform-1' });
     expect(failureReason(s)).toBe(null);
