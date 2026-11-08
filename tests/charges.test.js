@@ -68,12 +68,12 @@ test('every charge pickup stays overhead when standing and can be reached with a
 describe('starting Freeze charges are enough for every crossing that needs them', () => {
   test('courtyard 1: a crate and a cast per traveller cross the gap, the ancient mushroom is aged away, a new one lifts both to the gate', () => {
     let s = setup({ level: 0 });
-    expect(s).toMatchObject({ freezeCharges: 2, seeds: 0 });
+    expect(s).toMatchObject({ freezeCharges: 3, seeds: 0 });
     // Still throws the first crate and casts on it; Bloom (ready at the edge) crosses on it to the long ledge.
     s.actors[0].x = 300; s = send(s, 'grab', 0);
     expect(s.actors[0].carrying).toBe('crate-0');
     s.actors[0].x = 375; s.actors[1].x = 385;
-    s = send(s, 'grab', 0); s = tick(s, 6);
+    s = send(s, 'grab', 0); s = tick(s, 8);
     s = send(s, 'ability', 0, { x: crate(s).x, y: crate(s).y });
     // Take a few steps before jumping so the first leap catches the moving crate past the edge.
     s = hop(s, 1, 'platform-2', 4);
@@ -81,16 +81,16 @@ describe('starting Freeze charges are enough for every crossing that needs them'
     for (let i = 0; i < 700 && s.freezeAreas.length; i++) s = tick(s);
     s = walkTo(s, 0, 130); s = send(s, 'grab', 0);
     expect(s.actors[0].carrying).toBe('crate-1');
-    s = walkTo(s, 0, 375); s = send(s, 'grab', 0); s = tick(s, 6);
+    s = walkTo(s, 0, 375); s = send(s, 'grab', 0); s = tick(s, 8);
     s = send(s, 'ability', 0, { x: crate(s, 'crate-1').x, y: crate(s, 'crate-1').y });
     s = hop(s, 0, 'platform-2', 6);
-    expect(s.freezeCharges).toBe(0);
+    expect(s.freezeCharges).toBe(1);
     s = settle(tick(s, 300));
     // On the long ledge, Still jumps for the hourglass and Bloom collects the seed.
     s = walkTo(s, 0, 900);
     s = settle(tick(send(s, 'jump', 0)));
     s = send(s, 'jumpRelease', 0);
-    expect(s.freezeCharges).toBe(1);
+    expect(s.freezeCharges).toBe(2);
     s = walkTo(s, 1, 1000);
     expect(s.seeds).toBe(1);
     // The ancient mushroom blocks the way until Bloom ages it: it wilts at once and lets them pass.
@@ -144,10 +144,17 @@ describe('starting Freeze charges are enough for every crossing that needs them'
     expect(s.status === 'won' || s.actors[1].on === 'platform-1').toBe(true);
   });
 
-  test('every courtyard but the last starts with one or two charges; crystals add spares', () => {
-    const counts = [0, 1, 2, 3, 4].map(level => { const s = setup({ level }); return [s.freezeCharges, s.pickups.filter(c => c.kind === 'frost').length]; });
-    // Courtyard 4: one charge and one hourglass (Freeze is optional there).
-    // Courtyard 5 starts at zero, with an hourglass above the mushroom.
-    expect(counts).toEqual([[2, 1], [1, 2], [1, 2], [1, 1], [0, 1]]);
+  test('each traveller starts every courtyard with an extra charge, including after restart or level select', () => {
+    const budgets = [[3, 4], [2, 4], [2, 4], [2, 4], [2, 2]];
+    for (let level = 0; level < levelCount; level++) {
+      let s = setup({ level, unlocked: levelCount - 1 });
+      expect([s.freezeCharges, s.bloomCharges]).toEqual(budgets[level]);
+      s.freezeCharges = 0; s.bloomCharges = 0;
+      s = send(s, 'restart');
+      expect([s.freezeCharges, s.bloomCharges]).toEqual(budgets[level]);
+      const nextLevel = (level + 1) % levelCount;
+      s = send(s, 'level', 0, { level: nextLevel });
+      expect([s.freezeCharges, s.bloomCharges]).toEqual(budgets[nextLevel]);
+    }
   });
 });

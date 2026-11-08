@@ -16,7 +16,7 @@ async (page) => {
   const check = (condition, message) => { if (!condition) throw new Error(message); };
   try {
   await host.goto('http://127.0.0.1:4173/');
-  await host.evaluate(() => sessionStorage.setItem('moonclock-online', JSON.stringify({ code: '000000', playerId: 'expired', token: 'invalid' })));
+  await host.evaluate(() => sessionStorage.setItem('moonclock-online', JSON.stringify({ code: '00', playerId: 'expired', token: 'invalid' })));
   await host.reload();
   await host.locator('.online-error:not([hidden])').waitFor({ state: 'visible' });
   await host.getByRole('button', { name: 'Leave Room', exact: true }).click();
@@ -26,7 +26,7 @@ async (page) => {
   const code = await host.getByTestId('room-code').innerText();
   await guest.goto('http://127.0.0.1:4173/');
   await guest.getByTestId('join-room').click();
-  await guest.getByTestId('room-code-input').fill(code === '000000' ? '111111' : '000000');
+  await guest.getByTestId('room-code-input').fill(code === '00' ? '01' : '00');
   await guest.getByTestId('join-room-submit').click();
   await guest.locator('.online-error:not([hidden])').waitFor({ state: 'visible' });
   check(await guest.getByTestId('room-code-input').isEnabled(), 'Failed join must remain editable');

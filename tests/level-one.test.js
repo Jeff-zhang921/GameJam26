@@ -66,7 +66,7 @@ describe('courtyard 1 layout', () => {
     expect(ancient).toMatchObject({ barrier: true, withered: false, speed: 0, height: 235, pit: 'pit-0' });
     const open = s.pits.find(p => p.plantable !== false);
     expect([frost[0].x, seeds[0].x, ancient.x, open.x]).toEqual([...[frost[0].x, seeds[0].x, ancient.x, open.x]].sort((a, b) => a - b));
-    expect(s).toMatchObject({ freezeCharges: 2, seeds: 0, crateRespawn: false });
+    expect(s).toMatchObject({ freezeCharges: 3, seeds: 0, crateRespawn: false });
   });
 });
 

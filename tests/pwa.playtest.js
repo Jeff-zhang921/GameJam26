@@ -70,7 +70,7 @@ async (page) => {
     return game.actors[0].move === 1 && !game.actors[0].grounded && !game.freezeAreas.length;
   });
   await host.getByTestId('cancel-aim').waitFor();
-  if ((await snapshot(guest)).freezeCharges !== 2) throw new Error('Holding a skill spent a charge before release');
+  if ((await snapshot(guest)).freezeCharges !== 3) throw new Error('Holding a skill spent a charge before release');
   await touch('touchMove', at(0, 0), jumpFinger, abilityFinger);
   await guest.waitForFunction(() => window.__moonclock.snapshot().actors[0].grounded);
   const landing = (await snapshot(guest)).eventSeq;
@@ -100,7 +100,7 @@ async (page) => {
   await touch('touchMove', { x: cancel.x + cancel.width / 2, y: cancel.y + cancel.height / 2, id: 3 });
   await touch('touchEnd');
   await cancelButton.waitFor({ state: 'hidden' });
-  if ((await snapshot(guest)).freezeCharges !== 1) throw new Error('Dragging to × changed the charge count');
+  if ((await snapshot(guest)).freezeCharges !== 2) throw new Error('Dragging to × changed the charge count');
   await touch('touchStart', abilityFinger);
   await touch('touchMove', { ...abilityFinger, x: abilityFinger.x - 31 });
   await cancelButton.waitFor();
@@ -108,7 +108,7 @@ async (page) => {
   await touch('touchEnd');
   await guest.waitForFunction(() => window.__moonclock.snapshot().freezeAreas.length === 1);
   const aimed = await snapshot(guest);
-  if (aimed.freezeAreas[0].x >= aimed.actors[0].x - 35 || aimed.freezeCharges !== 0) throw new Error('Dragging left did not aim and spend one charge on release');
+  if (aimed.freezeAreas[0].x >= aimed.actors[0].x - 35 || aimed.freezeCharges !== 1) throw new Error('Dragging left did not aim and spend one charge on release');
   await endArea();
   await guest.waitForFunction(() => window.__moonclock.snapshot().actors[0].grounded);
   await touch('touchStart', moving, finger(interact, 4));
@@ -126,7 +126,7 @@ async (page) => {
   await clickWorld(350, 420);
   await otherGuest.waitForFunction(() => {
     const game = window.__moonclock.snapshot();
-    return !game.freezeAreas.length && !game.objects[0].frozen && game.freezeCharges === 1;
+    return !game.freezeAreas.length && !game.objects[0].frozen && game.freezeCharges === 2;
   });
   const id = await guest.evaluate(() => window.__moonclock.connection().playerId);
   await contexts[1].setOffline(true);

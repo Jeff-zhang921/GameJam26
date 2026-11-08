@@ -55,7 +55,7 @@ describe('courtyard 2 layout', () => {
     expect(s.pits).toHaveLength(0);
     expect(guard(s)).toMatchObject({ y: trench.y });
     expect(on(trench, guard(s).x)).toBe(true);
-    expect(s.freezeCharges + s.pickups.filter(p => p.kind === 'frost').length).toBe(3);
+    expect(s.freezeCharges + s.pickups.filter(p => p.kind === 'frost').length).toBe(4);
   });
 });
 

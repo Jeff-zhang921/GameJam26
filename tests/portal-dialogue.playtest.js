@@ -84,7 +84,7 @@ async function checkOnline(browser, engine) {
     const [host, guest] = await Promise.all(contexts.map(c => c.newPage()));
     for (const page of [host, guest]) { page.on('pageerror', e => errors.push(e.message)); await page.goto(server.url.href); }
     await host.getByTestId('create-room').tap();
-    await host.waitForFunction(() => /^[A-Z0-9]{6}$/.test(document.querySelector('[data-testid="room-code"]').textContent.trim()));
+    await host.waitForFunction(() => /^[0-9]{2}$/.test(document.querySelector('[data-testid="room-code"]').textContent.trim()));
     const code = await host.getByTestId('room-code').innerText();
     await guest.getByTestId('join-room').tap();
     await guest.getByTestId('room-code-input').fill(code);

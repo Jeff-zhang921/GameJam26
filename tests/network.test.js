@@ -18,7 +18,7 @@ test('offline requests wait for connectivity, retry only unsent intent, and canc
     };
     globalThis.setInterval = () => 0;
     const network = createNetwork({ onRoom() {}, onState() {}, onConnection: phase => phases.push(phase), onError: message => errors.push(message) });
-    network.create(); network.join('ABC123');
+    network.create(); network.join('07');
     expect(sockets).toHaveLength(0);
     expect(phases).toEqual(['connecting', 'offline', 'connecting', 'offline']);
     expect(errors).toHaveLength(2);
@@ -29,7 +29,7 @@ test('offline requests wait for connectivity, retry only unsent intent, and canc
     expect(sockets).toHaveLength(1);
     expect(sockets[0].url).toBe('wss://moonclock.example/ws');
     sockets[0].readyState = WebSocket.OPEN; sockets[0].dispatchEvent(new Event('open'));
-    expect(sent).toEqual([{ type: 'join', code: 'ABC123' }]);
+    expect(sent).toEqual([{ type: 'join', code: '07' }]);
     window.dispatchEvent(new Event('online'));
     expect(sockets).toHaveLength(1);
     network.leave();

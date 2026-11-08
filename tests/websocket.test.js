@@ -41,6 +41,8 @@ async function start(pair) {
   const a = await pair.host.next('snapshot', m => m.room.status === 'STARTING');
   const b = await pair.guest.next('snapshot', m => m.room.status === 'STARTING');
   expect(a.game).toEqual(b.game); expect(a.room.startAt).toBe(b.room.startAt);
+  expect(a.room.code).toMatch(/^[0-9]{2}$/);
+  expect(a.game).toMatchObject({ freezeCharges: 3, bloomCharges: 4 });
   await pair.host.next('snapshot', m => m.room.status === 'PLAYING');
   await pair.guest.next('snapshot', m => m.room.status === 'PLAYING');
 }
@@ -56,10 +58,10 @@ describe('real WebSocket multiplayer', () => {
     p.guest.send({ type: 'input', seq: 1, action: { type: 'jump' } });
 
     const collected = await p.host.next('snapshot', m => m.game.level === 4 && m.game.pickups[0].taken);
-    expect(collected.game.freezeCharges).toBe(1);
+    expect(collected.game.freezeCharges).toBe(3);
     expect(collected.game.objects.find(o => o.id === plant.id).height).toBe(plant.height);
     const partner = await p.guest.next('snapshot', m => m.game.level === 4 && m.game.tick === collected.game.tick);
-    expect(partner.game.freezeCharges).toBe(1);
+    expect(partner.game.freezeCharges).toBe(3);
     expect(partner.game.pickups[0].taken).toBe(true);
   });
 
@@ -73,7 +75,7 @@ describe('real WebSocket multiplayer', () => {
     p.host.send({ type: 'input', seq: 1, action: { type: 'ability', target: 'rope-0' } });
 
     const aging = await p.host.next('snapshot', m => m.game.level === 4 && m.game.objects.some(o => o.id === 'rope-0' && o.age > 0));
-    expect(aging.game.bloomCharges).toBe(0);
+    expect(aging.game.bloomCharges).toBe(1);
     expect((await p.guest.next('snapshot', m => m.game.level === 4 && m.game.tick === aging.game.tick)).game).toEqual(aging.game);
     const dropped = await p.host.next('snapshot', m => m.game.level === 4 && m.game.objects.some(o => o.id === 'crate-0' && !o.rope && o.vy > 0), 3500);
     expect(dropped.game.objects.some(o => o.id === 'rope-0')).toBe(false);
@@ -125,7 +127,7 @@ describe('real WebSocket multiplayer', () => {
     const woke = await p.host.next('snapshot', m => m.game.objects.some(o => o.id === 'plant-0' && o.speed === 1));
     expect((await p.guest.next('snapshot', m => m.game.tick === woke.game.tick)).game).toEqual(woke.game);
     expect(woke.game.actors[1].animation.name).toBe('cast');
-    expect(woke.game.bloomCharges).toBe(2);
+    expect(woke.game.bloomCharges).toBe(3);
     const later = await p.host.next('snapshot', m => m.game.tick > woke.game.tick && m.game.tick < woke.game.tick + 10);
     expect(later.game.actors[1].animation).toEqual(woke.game.actors[1].animation);
     p.host.send({ type: 'input', seq: 5, action: { type: 'ability', target: 'plant-0' } });
@@ -137,7 +139,7 @@ describe('real WebSocket multiplayer', () => {
     expect((await p.guest.next('snapshot', m => m.game.tick === frozen.game.tick)).game).toEqual(frozen.game);
     expect(frozen.game.objects.find(o => o.id === 'plant-0').age).toBeGreaterThan(0);
     expect(fast.game.objects.find(o => o.id === 'plant-0').speed).toBe(3);
-    expect(fast.game.bloomCharges).toBe(0);
+    expect(fast.game.bloomCharges).toBe(1);
     const [area] = frozen.game.freezeAreas;
     expect(area.owner).toBe(p.g.playerId);
     p.host.send({ type: 'input', seq: 7, action: { type: 'ability', area: area.id, owner: p.g.playerId } });

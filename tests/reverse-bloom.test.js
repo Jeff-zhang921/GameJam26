@@ -29,8 +29,8 @@ describe('plant size and starting age', () => {
 describe('rewinding Bloom: the cast', () => {
   test('each cast lowers the speed by one and costs a charge, down to −maxSpeed', () => {
     let s = reverseArena();
-    expect(s.bloomCharges).toBe(3);
-    s = rewind(s); expect(plant(s).speed).toBe(-1); expect(s.bloomCharges).toBe(2);
+    expect(s.bloomCharges).toBe(4);
+    s = rewind(s); expect(plant(s).speed).toBe(-1); expect(s.bloomCharges).toBe(3);
     expect(s.events.at(-1)).toMatchObject({ kind: 'wake', rewind: true, target: 'plant-0' });
     s = rewind(s); expect(plant(s).speed).toBe(-2);
     expect(s.events.at(-1)).toMatchObject({ kind: 'grow', rewind: true });

@@ -230,12 +230,12 @@ describe('role-specific resources', () => {
     touch(STILL, frost); touch(BLOOM, bolt);
     s = tick(s, 6);
     expect(s.pickups.every(c => c.taken)).toBe(true);
-    expect(s).toMatchObject({ freezeCharges: 3, bloomCharges: 4 });
+    expect(s).toMatchObject({ freezeCharges: 3, bloomCharges: 5 });
     const again = send(s, 'restart');
-    expect(again).toMatchObject({ freezeCharges: 2, bloomCharges: 3 });
+    expect(again).toMatchObject({ freezeCharges: 3, bloomCharges: 4 });
     expect(again.pickups.every(c => !c.taken)).toBe(true);
     const other = send(s, 'level', 0, { level: 1 });
-    expect(other).toMatchObject({ freezeCharges: 1, bloomCharges: 3 });
+    expect(other).toMatchObject({ freezeCharges: 2, bloomCharges: 4 });
     expect(other.pickups.filter(c => c.kind === 'frost')).toHaveLength(2);
   });
 
@@ -243,9 +243,9 @@ describe('role-specific resources', () => {
     for (let level = 0; level < 5; level++) {
       const s = setup({ level });
       expect(s.actors[BLOOM].carrying).toBe(level === 2 ? 'seed-taken-0' : null);
-      // Courtyard 5 has a single charge for the rope (see level-five.test.js).
-      if (level === 4) { expect(s.bloomCharges).toBe(1); continue; }
-      expect(s.bloomCharges).toBe(3);
+      // Courtyard 5 has a rope charge and a spare (see level-five.test.js).
+      if (level === 4) { expect(s.bloomCharges).toBe(2); continue; }
+      expect(s.bloomCharges).toBe(4);
       // Courtyard 4 has neither seeds nor a bolt: every cast there rewinds a plant (see level-four.test.js).
       if (level === 3) continue;
       // Courtyard 1 has a seed out in the courtyard, courtyard 2 uses a hanging crate, and courtyard 3 needs three
@@ -261,7 +261,7 @@ describe('role-specific resources', () => {
     s.actors[BLOOM].x = 510;
     expect(act(s, { type: 'ability', actor: BLOOM, target: 'missing' })).toBe(s);
     s = send(s, 'ability', BLOOM, { target: 'mover-0' });
-    expect(s.bloomCharges).toBe(2);
+    expect(s.bloomCharges).toBe(3);
     s.bloomCharges = 0;
     const cast = { type: 'ability', actor: BLOOM, target: 'mover-0' };
     expect(validateAction(s, 'local', cast).error).toBe('noBloomCharges');

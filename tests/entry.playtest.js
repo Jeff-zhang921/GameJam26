@@ -189,11 +189,11 @@ async function checkBloomAim(page, room) {
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [center] });
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...center, x: center.x - travel * 115 / 300 }] });
   await page.getByTestId('cancel-aim').waitFor();
-  assert.equal((await snapshot(page)).bloomCharges, 3);
+  assert.equal((await snapshot(page)).bloomCharges, 4);
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-  await page.waitForFunction(() => window.__moonclock.snapshot().bloomCharges === 2);
+  await page.waitForFunction(() => window.__moonclock.snapshot().bloomCharges === 3);
   const game = await snapshot(page);
   assert.equal(game.objects.find(o => o.id === 'left').speed, 1);
   assert.equal(game.objects.find(o => o.id === 'right').speed, 0);
-  await page.waitForFunction(() => document.querySelector('[data-testid="skill-charges"]').textContent === '2');
+  await page.waitForFunction(() => document.querySelector('[data-testid="skill-charges"]').textContent === '3');
 }

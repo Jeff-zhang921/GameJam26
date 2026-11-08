@@ -325,7 +325,7 @@ describe('courtyard 4 can be finished', () => {
     }
 
     // Still can save the unused Freeze for the cloud crossing.
-    expect(s.freezeCharges).toBe(1);
+    expect(s.freezeCharges).toBe(2);
     // Once a cloud has formed: Still walks to the crate's right end and jumps onto it, and Bloom follows as Still
     // lands (never both on it for long); each walks on to the cloud's right part and jumps to the gate's ledge.
     for (let i = 0; i < 2400 && !cloudSolid(get(s, 'cloud-0')); i++) s = tick(s);

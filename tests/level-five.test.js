@@ -29,11 +29,11 @@ function drive(s, who, id, end) {
 }
 
 describe('courtyard 5 layout', () => {
-  test('a walking-time courtyard with one Bloom charge for the hanging crate', () => {
+  test('a walking-time courtyard with two charges per traveller', () => {
     const s = setup({ level: 4 });
     expect(s.walkingTime).toBe(true);
-    expect(s.freezeCharges).toBe(0);
-    expect(s.bloomCharges).toBe(1);
+    expect(s.freezeCharges).toBe(2);
+    expect(s.bloomCharges).toBe(2);
     expect(abilityTargets(s, BLOOM)).toHaveLength(0);
     expect(s.objects.filter(o => o.walker === 0).map(o => o.id)).toEqual(['mover-0', 'mover-3']);
     expect(s.objects.filter(o => o.walker === 1).map(o => o.id)).toEqual(['mover-1', 'mover-2', 'plant-0']);
@@ -69,7 +69,7 @@ test('Bloom can aim at and age the rope, then the released crate falls and can b
   expect(bloomTargetAt(s, { x: rope.x, y: rope.bottom - 4 })?.id).toBe(rope.id);
   expect(abilityTargets(s, BLOOM).map(o => o.id)).toEqual([rope.id]);
   s = act(s, cast);
-  expect(s.bloomCharges).toBe(0);
+  expect(s.bloomCharges).toBe(1);
   s = tick(s, meta.rope.breakTicks - 1);
   expect(get(s, crate.id)).toMatchObject({ rope: rope.id });
   expect(get(s, crate.id).y).toBeGreaterThan(crate.y + 10);
@@ -87,7 +87,7 @@ test('Bloom can aim at and age the rope, then the released crate falls and can b
   const restarted = act(s, { type: 'restart' });
   expect(get(restarted, rope.id)).toEqual(rope);
   expect(get(restarted, crate.id)).toEqual(crate);
-  expect(restarted.bloomCharges).toBe(1);
+  expect(restarted.bloomCharges).toBe(2);
 });
 
 test('Still can spring from the starting sprout and collect the hourglass before it grows', () => {
@@ -99,13 +99,13 @@ test('Still can spring from the starting sprout and collect the hourglass before
   s = tick(s, 48);
   s = act(s, { type: 'jumpRelease', actor: STILL });
   expect(s.actors[STILL].on).toBe(plant.id);
-  expect(s.freezeCharges).toBe(0);
+  expect(s.freezeCharges).toBe(2);
   s = act(s, { type: 'jump', actor: STILL });
   for (let i = 0; i < 60 && !s.pickups[0].taken; i++) s = tick(s);
   expect(s.actors[STILL].grounded).toBe(false);
   expect(s.pickups[0].taken).toBe(true);
   expect(get(s, plant.id).height).toBe(plant.height);
-  expect(s.freezeCharges).toBe(1);
+  expect(s.freezeCharges).toBe(3);
 });
 
 test('touching the hourglass grants a charge to Still only and only once', () => {
@@ -118,7 +118,7 @@ test('touching the hourglass grants a charge to Still only and only once', () =>
   touch(STILL);
   s = tick(s, 3);
   expect(s.pickups[0].taken).toBe(true);
-  expect(s.freezeCharges).toBe(1);
+  expect(s.freezeCharges).toBe(3);
 });
 
 test('the guard patrols all the way to both ends of the ground under the gate', () => {
@@ -271,7 +271,7 @@ describe('courtyard 5 can be finished', () => {
     s = walkUntil(s, BLOOM, 1, s2 => get(s2, 'plant-0').height === meta.plant.maxHeight);
     expect(s.actors[STILL].on).toBe('plant-0');
     expect(s.shards[0].taken).toBe(true);
-    expect(s.freezeCharges).toBe(1);
+    expect(s.freezeCharges).toBe(3);
     expect(s.flags.treeLifted).toBe(true);
     // Back on the ground (placed), Still walks the teal ferry home, then Bloom hops on.
     stand(s, STILL, 250, 520, 'platform-0'); stand(s, BLOOM, 700, 520, 'platform-0');

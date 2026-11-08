@@ -12,7 +12,7 @@ function fixture(options = {}) {
   const host = socket(); send(host, { type: 'create' });
   const credentials = last(host, 'joined'), room = manager.rooms.get(credentials.room.code);
   const guest = socket();
-  function pair() { send(guest, { type: 'join', code: room.code.toLowerCase() }); return last(guest, 'joined'); }
+  function pair() { send(guest, { type: 'join', code: room.code }); return last(guest, 'joined'); }
   function ready() { pair(); send(host, { type: 'select', character: 'bloom' }); send(guest, { type: 'select', character: 'still' }); send(host, { type: 'ready', ready: true }); send(guest, { type: 'ready', ready: true }); }
   function start() { ready(); send(host, { type: 'start' }); advance(3001); }
   return { manager, host, guest, credentials, room, socket, send, last, advance, pair, ready, start };
@@ -73,9 +73,9 @@ describe('rooms and shared lobby', () => {
     expect(f.last(retry, 'joined').playerId).toBe(f.credentials.playerId);
     expect(f.room.players).toHaveLength(1);
   });
-  test('server creates unique six-character codes and keeps credentials private', () => {
+  test('server creates unique two-digit codes and keeps credentials private', () => {
     const f = fixture();
-    expect(f.room.code).toMatch(/^[A-Z0-9]{6}$/);
+    expect(f.room.code).toMatch(/^[0-9]{2}$/);
     const other = f.socket(); f.send(other, { type: 'create' });
     expect(f.last(other, 'joined').room.code).not.toBe(f.room.code);
     const guest = f.pair();
@@ -86,9 +86,40 @@ describe('rooms and shared lobby', () => {
   });
   test('invalid, nonexistent and full rooms are rejected', () => {
     const f = fixture(), third = f.socket();
-    f.send(third, { type: 'join', code: '!' }); expect(f.last(third, 'error').code).toBe('INVALID_CODE');
-    f.send(third, { type: 'join', code: '000000' }); expect(f.last(third, 'error').code).toBe('ROOM_NOT_FOUND');
+    for (const code of ['!', '7', '007', 'AB', '000000', 7]) {
+      f.send(third, { type: 'join', code }); expect(f.last(third, 'error').code).toBe('INVALID_CODE');
+    }
+    const missing = f.room.code === '00' ? '01' : '00';
+    f.send(third, { type: 'join', code: missing }); expect(f.last(third, 'error').code).toBe('ROOM_NOT_FOUND');
     f.pair(); f.send(third, { type: 'join', code: f.room.code }); expect(f.last(third, 'error').code).toBe('ROOM_FULL');
+  });
+  test('all 100 numeric codes stay unique, preserve leading zeros, and can be reused after leaving', () => {
+    const f = fixture({ maxRooms: 500 });
+    const hosts = new Map([[f.room.code, f.host]]);
+    for (let i = 1; i < 100; i++) {
+      const ws = f.socket(); f.send(ws, { type: 'create' });
+      const { code } = f.last(ws, 'joined').room;
+      expect(code).toMatch(/^[0-9]{2}$/);
+      expect(hosts.has(code)).toBe(false);
+      hosts.set(code, ws);
+    }
+    expect(hosts.size).toBe(100);
+    const extra = f.socket(); f.send(extra, { type: 'create' });
+    expect(f.last(extra, 'error').code).toBe('ROOM_LIMIT');
+    const guest = f.socket(); f.send(guest, { type: 'join', code: ' 07 ' });
+    expect(f.last(guest, 'joined').room.code).toBe('07');
+    f.send(guest, { type: 'leave' }); f.send(hosts.get('07'), { type: 'leave' });
+    f.send(extra, { type: 'create' });
+    expect(f.last(extra, 'joined').room.code).toBe('07');
+    f.manager.disconnect(extra);
+    const resume = f.socket(), credentials = f.last(extra, 'joined');
+    f.send(resume, { type: 'resume', code: '07', playerId: credentials.playerId, token: credentials.token });
+    expect(f.last(resume, 'joined').room.code).toBe('07');
+  });
+  test('a configured room limit below 100 is still respected', () => {
+    const f = fixture({ maxRooms: 1 }), extra = f.socket();
+    f.send(extra, { type: 'create' });
+    expect(f.last(extra, 'error').code).toBe('ROOM_LIMIT');
   });
   test('character selection is exclusive and changes clear Ready', () => {
     const f = fixture(); f.pair();
@@ -253,7 +284,7 @@ describe('host level select and shared failure', () => {
     expect(hostReplay.replay.duration).toBe(4000);
     expect(hostReplay.replay.end).toMatchObject({ level: 1, tick: 0, status: 'playing', failure: null });
     expect(hostReplay.replay.end.objects).toContainEqual(expect.objectContaining({ kind: 'crate', rope: 'rope-0' }));
-    expect(hostReplay.replay.end.bloomCharges).toBe(3);
+    expect(hostReplay.replay.end).toMatchObject({ freezeCharges: 2, bloomCharges: 4 });
     expect(hostReplay.room.rewinding.id).toBe(hostReplay.replay.id);
     // During the rewind: no inputs, no second restart, and the shared world holds still.
     f.send(f.guest, { type: 'input', seq: 1, action: { type: 'move', dir: 1 } });
@@ -271,7 +302,7 @@ describe('host level select and shared failure', () => {
       expect(snap.room.rewinding).toBe(null);
       expect(snap.game).toMatchObject({ level: 1, status: 'playing', failure: null });
       expect(snap.game.objects).toContainEqual(expect.objectContaining({ kind: 'crate', rope: 'rope-0' }));
-      expect(snap.game.bloomCharges).toBe(3);
+      expect(snap.game).toMatchObject({ freezeCharges: 2, bloomCharges: 4 });
     }
     expect(f.last(f.host, 'snapshot').game).toEqual(f.last(f.guest, 'snapshot').game);
     expect(f.room.players.map(p => p.character).sort()).toEqual(['bloom', 'still']);
