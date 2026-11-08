@@ -118,7 +118,7 @@ export function updateEnemies(state, { event, nextId, walkSpeed, tickRate }) {
   const fly = (o, spec) => {
     o.x += o.dx * spec.fly * pace(o); o.y += o.dy * spec.fly * pace(o);
     const box = enemyBox(o);
-    if (box.x > 1330 || box.x + box.w < -50 || box.y > 700 || box.y + box.h < -50 || blockers.some(b => b.id !== o.id && overlap(box, b))) {
+    if (box.x > state.width + 50 || box.x + box.w < -50 || box.y > 700 || box.y + box.h < -50 || blockers.some(b => b.id !== o.id && overlap(box, b))) {
       remove(o); event(state, 'pop', o.x, o.y - box.h / 2);
     }
   };
