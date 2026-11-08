@@ -49,7 +49,7 @@ export function enemyBox(o) {
 
 export function makeEnemy(kind, data, id) {
   const base = { kind, id, x: data.x, y: data.y, speed: 0, age: 0, frozen: false, timer: 0, attack: 0 };
-  if (kind === 'guard') return { ...base, minX: data.minX, maxX: data.maxX, dir: 1, chasing: false, target: null, targetLockUntil: 0, platformIndex: null };
+  if (kind === 'guard') return { ...base, minX: data.minX, maxX: data.maxX, dir: 1, chasing: false, target: null, targetLockUntil: 0, platformIndex: null, strikeSeq: 0 };
   if (kind === 'lantern') return { ...base, homeX: data.x, homeY: data.y, chasing: false, bob: 0 };
   if (kind === 'launcher') return { ...base, dx: data.dir[0], dy: data.dir[1], every: data.every ?? ENEMY.launcher.every, shot: data.shot ?? 'dart' };
   if (kind === 'nest') return { ...base, every: data.every ?? ENEMY.nest.every, max: data.max ?? ENEMY.nest.max, spawned: 0 };
@@ -138,8 +138,9 @@ export function updateEnemies(state, { event, nextId, walkSpeed, tickRate }) {
       o.attack += k;
       if (o.attack >= spec.attackEvery) {
         o.attack -= spec.attackEvery; strikes.push(o.id);
+        if (o.kind === 'guard') o.strikeSeq = (o.strikeSeq ?? 0) + 1;
         const b = enemyBox(o), cx = b.x + b.w / 2, cy = b.y + b.h / 2;
-        if (state.actors.some(p => Math.hypot(p.x - cx, p.y - 26 - cy) <= STRIKE_CUE_RANGE)) event(state, 'strike', cx, cy);
+        if (state.actors.some(p => Math.hypot(p.x - cx, p.y - 26 - cy) <= STRIKE_CUE_RANGE)) event(state, 'strike', cx, cy, { source: o.id, sourceKind: o.kind });
       }
     } else o.attack = 0;
     if (o.kind === 'guard') {

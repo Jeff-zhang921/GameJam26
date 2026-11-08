@@ -333,24 +333,12 @@ describe('possible dead ends raise a warning; the game goes on', () => {
 });
 
 describe('touch layout camera', () => {
-  const view = { width: 1180, height: 820, dt: 0, mode: 'coop', reduced: true };
-
-  test('without touch controls the world stays centred', () => {
-    const s = classicCourtyard();
-    const cam = createCamera().update(s, view);
-    const below = view.height - (cam.offsetY + s.height * cam.scale);
-    expect(Math.round(below)).toBe(Math.round(cam.offsetY));
-  });
-
-  test('with touch controls the band under the world shrinks, and the ground stays above the controls', () => {
-    const s = classicCourtyard();
-    const reserve = 190;
-    const cam = createCamera().update(s, { ...view, bottomInset: reserve });
-    const below = view.height - (cam.offsetY + s.height * cam.scale);
-    const centred = (view.height - s.height * cam.scale) / 2;
-    expect(below).toBeLessThan(centred);
-    expect(below).toBeGreaterThanOrEqual(0);
-    const ground = cam.offsetY + 520 * cam.scale;
-    expect(ground).toBeLessThanOrEqual(view.height - reserve);
+  test('touch controls do not change scale and the active traveller stays above them', () => {
+    const s = classicCourtyard(), view = { width: 1180, height: 820, dt: 0, reduced: true };
+    const normal = { ...createCamera().update(s, view) };
+    const camera = createCamera().update(s, { ...view, bottomInset: 190 });
+    expect(camera.scale).toBe(normal.scale);
+    expect(s.actors[s.active].y * camera.scale + camera.offsetY).toBeLessThanOrEqual(view.height - 190);
+    expect(camera.scale * s.width).toBeGreaterThanOrEqual(view.width);
   });
 });

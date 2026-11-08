@@ -135,6 +135,12 @@ export function playEffect(context, event) {
     oscillator.onended = () => { oscillator.disconnect(); envelope.disconnect(); };
     oscillator.start(start); oscillator.stop(start + duration + .01);
   }
+  if (kind === 'strike' && event.sourceKind === 'guard') {
+    tone(130, 48, .14, .035);
+    texture(.13, .045, 900, 150, 'lowpass');
+    tone(460, 210, .09, .012, .015);
+    return;
+  }
   if (kind === 'win') {
     // A quiet D-major/add9 coda beside the Satie background: 72 BPM,
     // rounded attacks, no pitch sweeps, percussion, or triumphant accent.

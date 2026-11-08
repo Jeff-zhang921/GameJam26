@@ -189,6 +189,7 @@ export function createRoomManager({ now = Date.now, countdownMs = 3000, reconnec
       if (room.status !== 'PLAYING' || room.suspended || room.rewind || typeof message.paused !== 'boolean') { error(ws, 'NOT_PLAYING', 'This game cannot be paused now.'); return; }
       room.manualPaused = message.paused;
       if ((room.game.status === 'paused') !== message.paused) room.game = applyAction(room.game, room.game.playerIds[0], { type: 'pause' });
+      updateAnimations(room);
       broadcast(room, 'snapshot'); return;
     }
     if (message.type === 'control') {
@@ -208,6 +209,8 @@ export function createRoomManager({ now = Date.now, countdownMs = 3000, reconnec
     const action = message.action;
     if (!action || typeof action !== 'object' || Array.isArray(action) || !inputTypes.has(action.type) || (action.actor !== undefined && action.actor !== actorOf(player))) { error(ws, 'INVALID_ACTION', 'You may control only your own character.', seq); return; }
     if (room.status !== 'PLAYING' || room.suspended || room.rewind) { error(ws, 'NOT_PLAYING', 'Wait until both players are playing.', seq); return; }
+    // Inputs already in flight when either player paused are acknowledged without moving the world.
+    if (room.game.status === 'paused') return;
     const authoritativeAction = { type: action.type, actor: actorOf(player), ...(action.type === 'move' ? { dir: action.dir } : {}) };
     if (action.type === 'ability') Object.assign(authoritativeAction, { target: action.target, x: action.x, y: action.y, area: action.area });
     if (action.type === 'grab' && action.aim !== undefined) authoritativeAction.aim = action.aim; // an aimed throw

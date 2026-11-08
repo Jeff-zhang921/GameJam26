@@ -6,29 +6,58 @@ const viewport = { width: 1280, height: 640, dt: 1 / 60, sceneKey: 0 };
 const event = (id, kind = 'freeze', tick = 0) => ({ id, kind, tick, x: 400, y: 300 });
 
 describe('camera', () => {
-  test('keeps the view inside map bounds and transforms points both ways', () => {
-    const s = state(), camera = createCamera();
-    for (const x of [22, 640, 1258]) {
-      s.actors[0].x = x;
-      const view = camera.update(s, { ...viewport, resetCamera: true });
-      expect(view.scale).toBeCloseTo(1.2);
-      expect(view.offsetX).toBeLessThanOrEqual(0);
-      expect(view.offsetX + 1280 * view.scale).toBeGreaterThanOrEqual(viewport.width);
-      const point = worldPoint(view, x * view.scale + view.offsetX, 300 * view.scale + view.offsetY);
-      expect(point.x).toBeCloseTo(x); expect(point.y).toBeCloseTo(300);
+  test('normal play fills the viewport and pointer coordinates round trip', () => {
+    for (const worldWidth of [1280, 1920, 2560]) for (const size of [{ width: 1280, height: 640 }, { width: 1194, height: 834 }, { width: 667, height: 375 }]) {
+      const s = { ...state(), width: worldWidth }, camera = createCamera();
+      const view = camera.update(s, { ...viewport, ...size });
+      expect(view.scale * worldWidth).toBeGreaterThanOrEqual(size.width);
+      expect(view.scale * 640).toBeGreaterThanOrEqual(size.height);
+      const point = worldPoint(view, 500 * view.scale + view.offsetX, 300 * view.scale + view.offsetY);
+      expect(point.x).toBeCloseTo(500); expect(point.y).toBeCloseTo(300);
     }
   });
-  test('centers the world on an axis wider than the map', () => {
-    const view = createCamera().update(state(), { ...viewport, width: 2000, height: 640 });
-    expect(view.x).toBe(640);
-    expect(view.offsetX).toBeCloseTo((2000 - 1280 * view.scale) / 2);
+  test('the partner cannot change the view, including touch and reduced motion', () => {
+    for (const active of [0, 1]) for (const reduced of [false, true]) {
+      const s = state(); s.active = active;
+      const camera = createCamera(), view = { ...viewport, reduced, bottomInset: 150 };
+      const initial = { ...camera.update(s, view) };
+      for (const y of [-400, -120, 50, 400, 720]) {
+        Object.assign(s.actors[1 - active], { x: 1250, y });
+        expect(camera.update(s, { ...view, resetCamera: true })).toEqual(initial);
+      }
+    }
+  });
+  test('jumping moves the view without changing the scale or clipping the sprite', () => {
+    for (const size of [{ width: 1280, height: 640 }, { width: 1024, height: 768 }, { width: 667, height: 375 }]) for (const reduced of [false, true]) {
+      const s = state(), camera = createCamera(), view = { ...viewport, ...size, reduced, bottomInset: 130 };
+      const initial = { ...camera.update(s, view) };
+      let high;
+      for (const y of [400, 180, 50, -120, -220, -120, 50, 180, 400, 520]) {
+        s.actors[0].y = y;
+        const cam = camera.update(s, view);
+        expect(cam.scale).toBe(initial.scale);
+        expect((y - 84) * cam.scale + cam.offsetY).toBeGreaterThanOrEqual(39.999);
+        expect(y * cam.scale + cam.offsetY).toBeLessThanOrEqual(size.height - 19.999);
+        if (y === -220) high = { ...cam };
+      }
+      expect(high.offsetY).toBeGreaterThan(initial.offsetY);
+      expect(camera.update(s, { ...view, resetCamera: true })).toEqual(initial);
+    }
+  });
+  test('pause freezes an elevated camera and a return reset follows its own traveller', () => {
+    const s = state(), camera = createCamera(); s.actors[0].y = -180;
+    const high = { ...camera.update(s, viewport) };
+    expect(camera.update(s, { ...viewport, paused: true })).toEqual(high);
+    Object.assign(s.actors[0], { x: 1200, y: 520 });
+    const returned = camera.update(s, { ...viewport, resetCamera: true });
+    expect(returned.scale).toBe(high.scale); expect(returned.x).toBeGreaterThan(high.x);
+    expect(returned.y).toBeGreaterThan(high.y);
   });
   test('stays still within the deadzone', () => {
-    const s = state(); s.actors[0].x = 600; s.actors[0].y = 420;
+    const s = state(); Object.assign(s.actors[0], { x: 600, y: 420 });
     const camera = createCamera(), initial = { ...camera.update(s, viewport) };
     s.actors[0].x += 40; s.actors[0].y += 20;
-    const view = camera.update(s, { ...viewport, dt: 1 });
-    expect(view.x).toBe(initial.x); expect(view.y).toBe(initial.y);
+    expect(camera.update(s, { ...viewport, dt: 1 })).toEqual(initial);
   });
   test('smoothing is independent of frame rate for a stationary target', () => {
     const s = state(); s.actors[0].x = 500;
@@ -38,69 +67,11 @@ describe('camera', () => {
     let many; for (let i = 0; i < 10; i++) many = b.update(s, { ...viewport, dt: .01 });
     expect(many.x).toBeCloseTo(one.x, 8); expect(many.y).toBeCloseTo(one.y, 8);
   });
-  test('fits both partners and widens immediately when they separate', () => {
-    const s = state(), camera = createCamera(); camera.update(s, { ...viewport, mode: 'coop' });
-    s.actors[0].x = 22; s.actors[1].x = 1258;
-    const view = camera.update(s, { ...viewport, mode: 'coop' });
-    expect(view.scale).toBe(1);
-    for (const actor of s.actors) {
-      expect(actor.x * view.scale + view.offsetX).toBeGreaterThanOrEqual(0);
-      expect(actor.x * view.scale + view.offsetX).toBeLessThanOrEqual(viewport.width);
-    }
-  });
-  test('pause freezes tracking and a reset snaps to a returned actor', () => {
-    const s = state(), camera = createCamera(), old = { ...camera.update(s, viewport) };
-    s.actors[0].x = 1200;
-    const paused = camera.update(s, { ...viewport, dt: 1, paused: true });
-    expect(paused.x).toBe(old.x);
-    const reset = camera.update(s, { ...viewport, resetCamera: true });
-    expect(reset.x).toBeGreaterThan(old.x);
-  });
-  test('a wider courtyard scrolls at the usual zoom instead of shrinking, leaving no bands above or below', () => {
-    for (const width of [1920, 2560]) for (const view of [{ width: 1280, height: 720 }, { width: 1920, height: 1080 }, { width: 2560, height: 1080 }]) {
-      const s = { ...state(), width }, camera = createCamera().update(s, { ...viewport, ...view });
-      const normal = createCamera().update(state(), { ...viewport, ...view });
-      expect(camera.scale).toBeCloseTo(normal.scale, 6);
-      expect(640 * camera.scale).toBeGreaterThanOrEqual(view.height - 1e-6);
-    }
-  });
-
-  test('taller screens (16:10, iPad 4:3) fill the frame with the world instead of showing bands', () => {
-    for (const view of [{ width: 1440, height: 900 }, { width: 1194, height: 834 }, { width: 1024, height: 768 }, { width: 1280, height: 720, mode: 'coop' }, { width: 1366, height: 1024, mode: 'coop', bottomInset: 150 }]) {
-      const s = state(); s.actors[1].x = 900; // partners apart, as on a touch iPad
-      const cam = createCamera().update(s, { ...viewport, ...view });
-      expect(cam.offsetY).toBeLessThanOrEqual(1e-6);
-      expect(cam.offsetY + 640 * cam.scale).toBeGreaterThanOrEqual(view.height - 1e-6);
-      expect(cam.offsetX).toBeLessThanOrEqual(1e-6);
-      expect(cam.offsetX + 1280 * cam.scale).toBeGreaterThanOrEqual(view.width - 1e-6);
-    }
-  });
-
-  test('reduced motion always shows the whole level without tracking', () => {
-    const s = state(), camera = createCamera();
-    const initial = { ...camera.update(s, { ...viewport, reduced: true }) };
-    s.actors[0].x = 1200;
-    expect(camera.update(s, { ...viewport, reduced: true })).toEqual(initial);
-    expect(initial).toMatchObject({ scale: 1, x: 640, y: 320, offsetX: 0, offsetY: 0 });
-  });
-
-  test('high jumps stay visible above the map and tracking returns to the ground', () => {
-    for (const size of [{ width: 1280, height: 640 }, { width: 1024, height: 768 }, { width: 667, height: 375 }]) {
-      for (const mode of ['solo', 'coop']) for (const reduced of [false, true]) {
-        const s = state(), camera = createCamera(), view = { ...viewport, ...size, mode, reduced };
-        const initial = { ...camera.update(s, view) };
-        for (const y of [400, 180, 50, -120, -220, -120, 50, 180, 400, 520]) {
-          s.actors[0].y = y;
-          const cam = camera.update(s, view);
-          for (const actor of mode === 'coop' ? s.actors : [s.actors[0]]) {
-            expect((actor.y - 52) * cam.scale + cam.offsetY).toBeGreaterThanOrEqual(-1e-6);
-            expect(actor.y * cam.scale + cam.offsetY).toBeLessThanOrEqual(size.height + 1e-6);
-          }
-        }
-        const landed = camera.update(s, { ...view, resetCamera: true });
-        expect(landed).toEqual(initial);
-      }
-    }
+  test('only viewport changes recalculate normal-play scale', () => {
+    const s = state(), camera = createCamera(), before = { ...camera.update(s, viewport) };
+    const resized = camera.update(s, { ...viewport, width: 1920, height: 1080 });
+    expect(resized.scale).toBeGreaterThan(before.scale);
+    expect(resized.scale * s.height).toBeGreaterThanOrEqual(1080);
   });
 });
 

@@ -4,6 +4,8 @@ import { enemyBox, lifeFraction, miteStage, isEnemy, attackCharge } from '../src
 import { createCamera, createParticles, worldPoint } from './presentation.js';
 import { themeFor } from './themes.js';
 import { portalFrame, arrivalFrame, GATE_DURATION, ARRIVAL_DURATION } from './portal.js';
+import { measureCharacterFrames, characterPlacement } from './character-sprites.js';
+import { guardAttackFrame } from './guard-animation.js';
 
 export function createRenderer(canvas, S) {
   const ctx = canvas.getContext('2d');
@@ -51,6 +53,17 @@ export function createRenderer(canvas, S) {
   // Each character's sheet is 8 columns x 2 rows (idle, run), art facing right. feetX is where the boots sit
   // within a frame; hands are where spells leave from in the idle and run rows, relative to the feet when facing right.
   const CHARACTERS = [{ sheet: 'still', feetX: .6, hands: [[12, -28], [15, -34]] }, { sheet: 'mage', feetX: .58, hands: [[17, -24], [13, -29]] }];
+  const characterFrames = new Map();
+  function framesFor(look) {
+    if (!characterFrames.has(look.sheet)) {
+      const img = sprites[look.sheet], surface = document.createElement('canvas');
+      surface.width = img.naturalWidth; surface.height = img.naturalHeight;
+      const context = surface.getContext('2d', { willReadFrequently: true });
+      context.drawImage(img, 0, 0);
+      characterFrames.set(look.sheet, measureCharacterFrames(context.getImageData(0, 0, surface.width, surface.height)));
+    }
+    return characterFrames.get(look.sheet);
+  }
   const handOf = (p, which) => { const [x, y] = CHARACTERS[which].hands[p.grounded && !p.move ? 0 : 1]; return [p.x + p.facing * x, p.y + y]; };
   const smooth = p => p * p * (3 - 2 * p);
   function line(c, points, color, width = 1) { c.beginPath(); c.moveTo(points[0][0], points[0][1]); for (let i = 1; i < points.length; i++) c.lineTo(points[i][0], points[i][1]); c.strokeStyle = color; c.lineWidth = width; c.stroke(); }
@@ -109,8 +122,8 @@ export function createRenderer(canvas, S) {
     const { width, height } = canvas.getBoundingClientRect();
     frameWidth = Math.max(1, width); frameHeight = Math.max(1, height);
     currentDpr = Math.min(window.devicePixelRatio || 1, renderLevels[budget.level]);
-    if (canvas.width !== Math.round(width * currentDpr) || canvas.height !== Math.round(height * currentDpr)) {
-      canvas.width = Math.round(width * currentDpr); canvas.height = Math.round(height * currentDpr);
+    if (canvas.width !== Math.ceil(width * currentDpr) || canvas.height !== Math.ceil(height * currentDpr)) {
+      canvas.width = Math.ceil(width * currentDpr); canvas.height = Math.ceil(height * currentDpr);
     }
   }
   // A platform's top is capped with the theme's ground strip (see GROUNDS in themes.js): left end, wall tiles on
@@ -214,25 +227,19 @@ export function createRenderer(canvas, S) {
     if (p.animation) t = Math.max(0, t - p.animation.startTick * 1000 / 60);
     const color = which === 0 ? cyan : gold;
     ctx.save(); ctx.translate(p.x, p.y); ctx.globalAlpha *= ghost ? .32 : 1;
-    if (p.push) { ctx.translate(p.pushSide * p.push * 4, 0); ctx.rotate(p.pushSide * p.push * .10); }
     if (!ghost && p.grounded) { ellipse(ctx, 0, 2, 23, 5, 0, '#001f2780'); if (active) { ellipse(ctx, 0, 2, 25, 7, 0, which === 0 ? '#a1e3e51b' : '#e1c68a1b'); ctx.beginPath(); ctx.ellipse(0, 2, 25, 7, 0, 0, Math.PI * 2); ctx.strokeStyle = color + '80'; ctx.lineWidth = 1; ctx.stroke(); } }
     const side = p.facing;
     const cast = p.animation?.name === 'cast' ? Math.sin(Math.min(1, t / 300) * Math.PI) : 0;
     const look = CHARACTERS[which];
     if (loaded(look.sheet)) {
-      const img = sprites[look.sheet], fw = img.naturalWidth / 8, fh = img.naturalHeight / 2, h = 72, w = h * fw / fh, feetX = look.feetX;
+      const img = sprites[look.sheet];
       const running = p.grounded && p.move, row = running || !p.grounded ? 1 : 0;
       const frame = p.grounded ? Math.floor(t * (running ? .014 : .008)) % 8 : 3;
+      const crop = framesFor(look)[row * 8 + frame], place = characterPlacement(crop, look.feetX);
       ctx.save(); ctx.scale(side, 1); ctx.translate(0, -cast * 4);
-      ctx.drawImage(img, frame * fw, row * fh, fw, fh, -w * feetX, 2 - h, w, h);
+      ctx.drawImage(img, crop.x, crop.y, crop.w, crop.h, place.x, place.y, place.w, place.h);
       ctx.restore();
       if (cast) circle(ctx, ...handOf({ ...p, x: 0, y: -cast * 4 }, which), 9 + cast * 13, null, color, 1.5);
-      if (p.push > .05) {
-        const reach = p.pushSide;
-        line(ctx, [[reach * 7, -42], [reach * 22, -37], [reach * 35, -43]], which === 0 ? '#46639c' : '#a18a52', 6);
-        line(ctx, [[reach * 35, -48], [reach * 35, -40]], '#f0dfb5', 4);
-        line(ctx, [[-reach * 13, 0], [-reach * 19, 1]], '#2c3540', 5);
-      }
 
       if (active && !ghost) { ctx.globalAlpha *= .8; star(ctx, 0, -84 + Math.sin(t * .003) * 2, 4, color); }
       return ctx.restore();
@@ -380,11 +387,10 @@ export function createRenderer(canvas, S) {
   // The guard is a clock-shelled snail: a 4x2 sheet of 300px walking frames facing right. The art (rows 76-244 of
   // each cell) is scaled to the collision box's height, so its shell top is where travellers stand, with the shell
   // (centred at x=128 of the cell) over the box and the head reaching out ahead. It steps through its frames as it
-  // travels, so it stands still when it stops and crawls when slowed. About to strike, it flushes red; slowed, it
-  // takes on the Freeze tint.
+  // travels. The head retracts behind the shell to wind up; the shell springs back on its local strike clock.
   const SNAIL = { cell: 300, top: 76, bottom: 244, shellX: 128 };
   let snailTint;
-  function snail(o, b, charge) {
+  function snail(o, b, pose) {
     const img = sprites.snail, k = b.h / (SNAIL.bottom - SNAIL.top), size = Math.ceil(SNAIL.cell * k);
     const frame = Math.floor(Math.abs(o.x) / 6) % 8, sx = frame % 4 * SNAIL.cell, sy = Math.floor(frame / 4) * SNAIL.cell;
     snailTint ??= document.createElement('canvas');
@@ -392,11 +398,15 @@ export function createRenderer(canvas, S) {
     const t = snailTint.getContext('2d');
     t.globalCompositeOperation = 'source-over'; t.clearRect(0, 0, size, size);
     t.drawImage(img, sx, sy, SNAIL.cell, SNAIL.cell, 0, 0, size, size);
-    const tint = charge > 0 ? `rgba(235, 35, 25, ${.8 * charge})` : o.frozen ? 'rgba(188, 238, 240, .35)' : null;
+    const tint = o.frozen ? 'rgba(188, 238, 240, .35)' : null;
     if (tint) { t.globalCompositeOperation = 'source-atop'; t.fillStyle = tint; t.fillRect(0, 0, size, size); }
     const dir = o.dir < 0 ? -1 : 1;
-    ctx.save(); ctx.translate(b.x + b.w / 2, b.y - SNAIL.top * k); ctx.scale(dir, 1);
-    ctx.drawImage(snailTint, -SNAIL.shellX * k, 0);
+    ctx.save(); ctx.translate(b.x + b.w / 2, o.y);
+    ctx.scale(dir * (1 + pose.charge * .05 + pose.recoil * .06), 1 - pose.charge * .12 + pose.recoil * .06);
+    ctx.translate(-SNAIL.shellX * k, -SNAIL.bottom * k);
+    const head = Math.min(size - 1, Math.round(198 * k));
+    ctx.drawImage(snailTint, head, 0, size - head, size, head - 40 * k * pose.retract, 0, (size - head) * (1 - .85 * pose.retract), size);
+    ctx.drawImage(snailTint, 0, 0, head, size, 0, 0, head, size);
     ctx.restore();
   }
   function enemy(o, targeted, t, reduced) {
@@ -404,15 +414,27 @@ export function createRenderer(canvas, S) {
     ctx.save(); ctx.globalAlpha = f > .9 ? 1 - (f - .9) / .1 * .6 : 1;
     timeRing(cx, cy, Math.max(b.w, b.h) / 2 + 12, o, t);
     const charge = attackCharge(o);
-    // The snail shows its wind-up on its own body (it flushes red); other creatures glow red.
-    const flush = o.kind === 'guard' && loaded('snail');
-    if (charge > 0) { if (!flush) glow(ctx, cx, cy, Math.max(b.w, b.h) * (.9 + charge * .8), `rgba(255, 50, 35, ${.3 + .5 * charge})`); if (!reduced) ctx.translate(Math.sin(t * .08) * 2.5 * charge, 0); }
-    if (flush) snail(o, b, charge);
-    else if (o.kind === 'guard') {
-      // About to strike, its body flushes red.
-      ctx.fillStyle = `rgb(${61 + 159 * charge}, ${79 - 39 * charge}, ${88 - 53 * charge})`; ctx.beginPath(); ctx.roundRect(b.x, b.y + 6, b.w, b.h - 6, 8); ctx.fill();
-      for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.moveTo(b.x + 8 + i * 12, b.y + 7); ctx.lineTo(b.x + 12 + i * 12, b.y); ctx.lineTo(b.x + 16 + i * 12, b.y + 7); ctx.fill(); }
-      const eye = cx + o.dir * 9; if (!o.frozen) glow(ctx, eye, b.y + 20, o.chasing ? 22 : 14, '#ef8a5a55'); circle(ctx, eye, b.y + 20, 4, o.frozen ? '#9fc8c8' : o.chasing ? '#ffb27a' : '#e8875a');
+    // The guard retracts into its shell; the other creatures keep their own warning glow.
+    if (o.kind !== 'guard' && charge > 0) {
+      glow(ctx, cx, cy, Math.max(b.w, b.h) * (.9 + charge * .8), `rgba(255, 50, 35, ${.3 + .5 * charge})`);
+      if (!reduced) ctx.translate(Math.sin(t * .08) * 2.5 * charge, 0);
+    }
+    if (o.kind === 'guard') {
+      const pose = guardAttackFrame(o), artPose = reduced ? { ...pose, recoil: 0, charge: 0, retract: 0 } : pose;
+      if (loaded('snail')) snail(o, b, artPose);
+      else {
+        ellipse(ctx, cx, cy + pose.charge * 3, b.w / 2, b.h / 2 * (1 - artPose.charge * .12), 0, o.frozen ? '#adcac5' : '#8d9b79');
+        circle(ctx, cx, cy, 15, null, '#d8c495', 2);
+        circle(ctx, cx + o.dir * (20 - artPose.retract * 14), cy + 8, 6, '#b6bf96');
+      }
+      if (pose.charge > 0) ellipse(ctx, cx, o.y + 2, 28 + pose.charge * 4, 5, 0, '#c8b48255');
+      if (pose.wave !== null) {
+        ctx.save(); ctx.globalAlpha *= 1 - pose.wave;
+        ctx.strokeStyle = '#d8c495'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.ellipse(cx, o.y + 2, reduced ? 32 : 26 + pose.wave * 22, 6 + pose.wave * 3, 0, 0, Math.PI * 2); ctx.stroke();
+        for (let i = 0; i < 6; i++) circle(ctx, cx + (i - 2.5) * (8 + pose.wave * 4), o.y - Math.sin(i + .5) ** 2 * 15 * pose.wave, 1.5, '#d8c495');
+        ctx.restore();
+      }
     }
     if (o.kind === 'lantern') {
       line(ctx, [[cx, b.y - 8], [cx, b.y + 2]], '#8a7a52', 1.5); if (!o.frozen) glow(ctx, cx, cy, 40, '#f2c46a44');
@@ -481,7 +503,7 @@ export function createRenderer(canvas, S) {
         // The fill below the world lines up with the fill above it, inset like it at ends that are not open.
         const f0 = p.x <= 0 ? x0 : p.x + 12, f1 = p.x + p.w >= W ? x1 : p.x + p.w - 12;
         if (art(theme.ground.fill.src)) groundFill(f0, H - 2, f1 - f0, bottom - H + 2, p.y + FILL_TOP); // the same gradient, continued
-        else { ctx.fillStyle = '#123239'; ctx.fillRect(f0, H - 2, f1 - f0, bottom - H + 2); }
+        // While the ground texture loads, the mirrored scene behind it already covers the viewport.
       }
     }
   }
@@ -703,7 +725,7 @@ export function createRenderer(canvas, S) {
     lastTime = time;
     if (!options.paused && !options.reduced) visualTime += dt * 1000;
     const t = options.reduced ? 0 : visualTime + (options.celebration?.progress ?? 0) * GATE_DURATION + (options.arrival?.progress ?? 0) * ARRIVAL_DURATION;
-    transform = camera.update(state, { width: frameWidth, height: frameHeight, dt, mode: options.mode, reduced: options.reduced, paused: options.paused, sceneKey: options.sceneKey, resetCamera: lastReset !== options.cameraReset, bottomInset: options.bottomInset || 0 });
+    transform = camera.update(state, { width: frameWidth, height: frameHeight, dt, reduced: options.reduced, paused: options.paused, sceneKey: options.sceneKey, resetCamera: lastReset !== options.cameraReset, bottomInset: options.bottomInset || 0 });
     const departure = options.celebration && portalFrame(options.celebration.progress, options.reduced);
     portalView = departure;
     if (departure) {
@@ -768,9 +790,9 @@ export function createRenderer(canvas, S) {
         traveller = { ...actorState,
           x: approachX + (state.exit.x + side * 13 - approachX) * departure.walk,
           y: actorState.y + (state.exit.y - actorState.y) * departure.approach - departure.walk * 30,
-          facing: -side, grounded: true, push: departure.push, pushSide: -side,
+          facing: -side, grounded: true,
           animation: null,
-          move: departure.push > .05 ? 0 : departure.walk > 0 || departure.approach < 1 ? 1 : 0,
+          move: departure.walk > 0 || departure.approach < 1 ? 1 : 0,
         };
         ctx.globalAlpha *= 1 - departure.fade;
         const size = 1 - departure.walk * .38;
@@ -779,7 +801,10 @@ export function createRenderer(canvas, S) {
       actor(traveller, actorState.id, !departure && actorState.id === state.active, !departure && actorState.animation && !options.reduced ? state.tick * 1000 / 60 : t);
       ctx.restore(); ctx.globalAlpha = 1;
     }
-    for (const o of state.objects) if (!departure && o.held !== undefined && o.held !== null) o.kind === 'crate' ? crate(o, false, t) : seed(o, t);
+    for (const o of state.objects) if (!departure && o.held != null) {
+      const held = { ...o, ...heldPosition(o, state.actors[o.held]) };
+      o.kind === 'crate' ? crate(held, false, t) : seed(held, t);
+    }
     for (const o of state.objects) if (isEnemy(o) && flying(o)) enemy(o, marked(o), t, options.reduced);
     for (const o of state.objects) if (o.frozen && (o.held === null || o.held === undefined)) frostMark(o, t);
     // While time rewinds, faint afterimages trail the travellers.
@@ -800,7 +825,7 @@ export function createRenderer(canvas, S) {
       ctx.fill();
     }
     if (options.reduced) for (const e of state.events) {
-      if (state.tick - e.tick < 12 && ['unfreeze', 'wake', 'grow', 'plant', 'shard', 'win', 'hit', 'checkpoint', 'strike'].includes(e.kind)) circle(ctx, e.x, e.y, 22, null, e.kind === 'hit' ? '#ffb3a1' : e.kind === 'strike' ? '#ff8a6a' : e.kind === 'unfreeze' ? cyan : gold, 2);
+      if (state.tick - e.tick < 12 && ['unfreeze', 'wake', 'grow', 'plant', 'shard', 'win', 'hit', 'checkpoint', 'strike'].includes(e.kind)) circle(ctx, e.x, e.y, 22, null, e.kind === 'hit' ? '#ffb3a1' : e.kind === 'strike' ? e.sourceKind === 'guard' ? '#d8c495' : '#ff8a6a' : e.kind === 'unfreeze' ? cyan : gold, 2);
     }
     // Touch feedback: a pulse on the tapped object; an out-of-reach tap also shows the reach ring.
     if (options.tap && options.tap.age < 1) {

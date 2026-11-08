@@ -6,12 +6,11 @@ export function portalFrame(progress, reduced = false) {
   const p = clamp(progress);
   return {
     approach: ease(p / .18),
-    push: ease((p - .12) / .12) * (1 - ease((p - .58) / .10)),
-    opening: ease((p - .28) / .40),
-    walk: ease((p - .68) / .23),
+    opening: ease((p - .18) / .27),
+    walk: ease((p - .35) / .53),
     fade: ease((p - .87) / .12),
     focus: reduced ? 0 : ease(p / .24),
-    zoom: reduced ? 0 : .16 * ease(p / .25) + .84 * ease((p - .69) / .31),
+    zoom: reduced ? 0 : .16 * ease(p / .25) + .84 * ease((p - .35) / .65),
   };
 }
 export function arrivalFrame(progress, actors, leftEdge = 0, reduced = false) {
