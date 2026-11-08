@@ -7,6 +7,8 @@ import { themeFor } from './themes.js';
 export function createRenderer(canvas, S) {
   const ctx = canvas.getContext('2d');
   const background = document.createElement('canvas'); background.width = 1280; background.height = 640;
+  // World width of the courtyard being drawn (1280 unless a level is wider); the backdrop is built at this width.
+  let worldWidth = 1280;
   const b = background.getContext('2d');
   let currentDpr = 1, frameWidth = 1, frameHeight = 1, lastTime = null, visualTime = 0, lastReset = -1;
   const renderLevels = [1.75, 1.5, 1.25, 1];
@@ -59,19 +61,21 @@ export function createRenderer(canvas, S) {
   function glow(c, x, y, r, color) { const g = c.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, color); g.addColorStop(1, '#a4dfdf00'); c.fillStyle = g; c.fillRect(x - r, y - r, r * 2, r * 2); }
   // The backdrop canvas is rebuilt when the courtyard's background changes (or its image finishes loading).
   function updateBackground() {
-    const look = theme.background, img = look.image ? art(look.image) : null;
-    const key = `${theme.names.background}:${!!img}`;
+    const look = theme.background, img = look.image ? art(look.image) : null, W = worldWidth;
+    const key = `${theme.names.background}:${!!img}:${W}`;
     if (key === backgroundKey) return;
     backgroundKey = key;
-    if (!look.image) buildBackground();
+    if (background.width !== W) background.width = W;
+    // The painted greenhouse is drawn for 1280 and stretched; an image covers the whole world, centred.
+    if (!look.image) { b.save(); b.scale(W / 1280, 1); buildBackground(); b.restore(); }
     else {
-      b.fillStyle = '#86b4b0'; b.fillRect(0, 0, 1280, 640);
-      if (img) { const k = Math.max(1280 / img.naturalWidth, 640 / img.naturalHeight), w = img.naturalWidth * k, h = img.naturalHeight * k; b.drawImage(img, (1280 - w) / 2, (640 - h) / 2, w, h); }
+      b.fillStyle = '#86b4b0'; b.fillRect(0, 0, W, 640);
+      if (img) { const k = Math.max(W / img.naturalWidth, 640 / img.naturalHeight), w = img.naturalWidth * k, h = img.naturalHeight * k; b.drawImage(img, (W - w) / 2, (640 - h) / 2, w, h); }
     }
     edge = { top: averageRow(0), bottom: averageRow(636) };
   }
   function averageRow(y) {
-    const data = b.getImageData(0, y, 1280, 4).data; let r = 0, g = 0, bl = 0;
+    const data = b.getImageData(0, y, background.width, 4).data; let r = 0, g = 0, bl = 0;
     for (let i = 0; i < data.length; i += 4) { r += data[i]; g += data[i + 1]; bl += data[i + 2]; }
     const n = data.length / 4; return `rgb(${Math.round(r / n)},${Math.round(g / n)},${Math.round(bl / n)})`;
   }
@@ -125,7 +129,7 @@ export function createRenderer(canvas, S) {
       const count = Math.max(1, Math.round(span / width(src))), tile = span / count;
       for (let i = 0; i < count; i++) piece(src, x0 + i * tile, tile + .5, (fromRight ? count - 1 - i : i) % 2 === 1);
     };
-    const openLeft = p.x <= 0, openRight = p.x + p.w >= 1280;
+    const openLeft = p.x <= 0, openRight = p.x + p.w >= worldWidth;
     const L = openLeft ? 0 : width(GROUND.left), R = openRight ? 0 : width(GROUND.right);
     const x0 = p.x + L, x1 = p.x + p.w - R, E = GROUND.emblem ? width(GROUND.emblem) : 0;
     if (GROUND.emblem && x1 - x0 >= E + width(GROUND.fillR)) {
@@ -152,21 +156,44 @@ export function createRenderer(canvas, S) {
     ctx.fillStyle = g; ctx.fillRect(x, y, w, h);
   }
 
+  // The bridge span is drawn at one scale on every ledge, so its arches and stones match from ledge to ledge (a
+  // theme without `scale` stretches it to each ledge's width instead). A narrower ledge shows the part that fits,
+  // keeping the end that faces the open side: the span's right end on a ledge starting at the world's left edge,
+  // its left end on one reaching the right edge, its middle otherwise. A wider ledge repeats the span. The piers
+  // grow longer to reach the ledge's foot: one stone course of their shafts (`legs`) repeats above their bases. A
+  // ledge standing on the world's floor carries its legs on below it, for screens that show more than the world.
+  function bridge(p, img) {
+    const g = theme.ground.surface, k = g.scale ?? p.w / g.width, span = g.width * k, top = p.y - g.walk * k;
+    // One horizontal band of source rows sy..sy+sh at world y (bands overlap by half a unit, so no seam shows).
+    const row = (sy, sh, y) => {
+      const piece = (sx, sw, x) => ctx.drawImage(img, g.x + sx, sy, sw, sh, x, y, sw * k, sh * k + .5);
+      if (p.w <= span + .5) {
+        const sw = Math.min(g.width, p.w / k), atLeft = p.x <= 0, atRight = p.x + p.w >= worldWidth;
+        return piece(atLeft && !atRight ? g.width - sw : atRight && !atLeft ? 0 : (g.width - sw) / 2, sw, p.x);
+      }
+      for (let x = p.x; x < p.x + p.w - .5; x += span) piece(0, Math.min(g.width, (p.x + p.w - x) / k), x);
+    };
+    if (!g.scale || !g.base || !g.legs) return row(g.y, g.height, top);
+    const [l0, l1] = g.legs, course = (l1 - l0) * k;
+    const foot = p.y + p.h + (p.y + p.h >= 639 ? 300 : 0), natural = top + (g.base - g.y) * k;
+    const courses = 1 + Math.max(0, Math.ceil((foot - natural) / course));
+    row(g.y, l0 - g.y, top);
+    let y = top + (l0 - g.y) * k;
+    for (let i = 0; i < courses; i++, y += course) row(l0, l1 - l0, y);
+    row(l1, g.y + g.height - l1, y);
+  }
   function platform(p) {
     const surface = art(theme.ground.surface.src);
     if (theme.ground.kind === 'bridge') {
-      if (surface) {
-        const ground = theme.ground.surface, scale = p.w / ground.width;
-        ctx.drawImage(surface, ground.x, ground.y, ground.width, ground.height, p.x, p.y - ground.walk * scale, p.w, ground.height * scale);
-      }
+      if (surface) bridge(p, surface);
       return;
     }
     if (surface && art(theme.ground.fill.src)) {
       // The fill sits a little inside the ledge's ends, which step inward below the moss.
-      const x0 = p.x <= 0 ? p.x : p.x + 12, x1 = p.x + p.w >= 1280 ? p.x + p.w : p.x + p.w - 12;
+      const x0 = p.x <= 0 ? p.x : p.x + 12, x1 = p.x + p.w >= worldWidth ? p.x + p.w : p.x + p.w - 12;
       groundFill(x0, p.y + FILL_TOP, x1 - x0, p.h - FILL_TOP);
       if (p.x > 0) line(ctx, [[x0 + 1, p.y + 40], [x0 + 1, p.y + p.h]], '#15141c80', 2);
-      if (p.x + p.w < 1280) line(ctx, [[x1 - 1, p.y + 40], [x1 - 1, p.y + p.h]], '#15141c80', 2);
+      if (p.x + p.w < worldWidth) line(ctx, [[x1 - 1, p.y + 40], [x1 - 1, p.y + p.h]], '#15141c80', 2);
       return groundCap(p, surface);
     }
     const g = ctx.createLinearGradient(0, p.y, 0, 650); g.addColorStop(0, '#35534c'); g.addColorStop(1, '#123239'); ctx.fillStyle = g; ctx.fillRect(p.x, p.y, p.w, p.h);
@@ -233,6 +260,7 @@ export function createRenderer(canvas, S) {
     ctx.save(); ctx.translate(x, y); ctx.rotate(t * .0012 * o.speed); ctx.setLineDash([6, 9]); circle(ctx, 0, 0, r, null, '#e1c68a88', 1.5); ctx.restore();
   }
   function pit(p) {
+    if (!p.plant && p.plantable === false) return;
     ellipse(ctx, p.x, p.y - 1, 30, 7, 0, '#2a3d33'); ellipse(ctx, p.x, p.y - 3, 24, 4, 0, p.plant ? '#4d5a41' : '#1b2a25');
     if (!p.plant) for (let i = 0; i < 4; i++) circle(ctx, p.x - 15 + i * 10, p.y - 6 - (i % 2) * 2, 1.5, '#6f7d5a');
   }
@@ -339,7 +367,7 @@ export function createRenderer(canvas, S) {
     ctx.restore();
     if (targeted) { const a = Math.max(b.w, b.h) / 2 + 8; ctx.strokeStyle = cyan; ctx.lineWidth = 1.5; for (const [x, y] of [[-a, -a], [a, -a], [-a, a], [a, a]]) line(ctx, [[cx + x, cy + y - Math.sign(y) * 8], [cx + x, cy + y], [cx + x - Math.sign(x) * 8, cy + y]], gold); }
   }
-  // Outside the 1280x640 world (letterbox areas on iPad-shaped or very wide screens): stretch the sky and
+  // Outside the world (1280x640 unless a level is wider; letterbox areas on iPad-shaped or very wide screens): stretch the sky and
   // side edges of the backdrop outward and carry the ground and its stone columns down to the screen edge.
   // Purely visual; the world, its coordinates and collisions are unchanged.
   function surroundings(state) {
@@ -588,13 +616,13 @@ export function createRenderer(canvas, S) {
   function draw(state, time, options = {}) {
     sampleFrame(time, state, options);
     resize();
-    theme = themeFor(state.level); updateBackground();
+    theme = themeFor(state.level); worldWidth = state.width ?? 1280; updateBackground();
     const dt = lastTime === null ? 0 : Math.min(.05, Math.max(0, (time - lastTime) / 1000));
     lastTime = time;
     if (!options.paused && !options.reduced) visualTime += dt * 1000;
     const t = options.reduced ? 0 : visualTime;
     transform = camera.update(state, { width: frameWidth, height: frameHeight, dt, mode: options.mode, reduced: options.reduced, paused: options.paused, sceneKey: options.sceneKey, resetCamera: lastReset !== options.cameraReset, bottomInset: options.bottomInset || 0 });
-    const coda = state.level === 0 && options.celebration?.tower ? options.celebration : null;
+    const coda = options.shoreCaption;
     const codaProgress = coda?.progress ?? 0;
     lastReset = options.cameraReset;
     effects.update(state, { dt, reduced: options.reduced, paused: options.paused && state.status !== 'won', sceneKey: options.sceneKey });
@@ -622,7 +650,7 @@ export function createRenderer(canvas, S) {
     door(state, t);
     for (const shard of state.shards) if (!shard.taken) { const yy = shard.y + Math.sin(t * .002 + shard.id) * 5; glow(ctx, shard.x, yy, 40, '#e7d2a51b'); ctx.save(); ctx.translate(shard.x, yy); ctx.rotate(Math.PI / 4); ctx.fillStyle = '#e2d194'; ctx.fillRect(-5, -5, 10, 10); ctx.strokeStyle = '#f4e7b477'; ctx.strokeRect(-10, -10, 20, 20); ctx.restore(); }
     for (const c of state.pickups ?? []) if (!c.taken) (c.kind === 'bolt' ? lightningCrystal : frostCrystal)(c, t);
-    for (const o of state.objects) if (o.kind === 'crate' && o.held === null) crate(o, options.tappable ? marked(o) : o.id === target && state.active === 0, t);
+    for (const o of state.objects) if (o.kind === 'crate' && o.held === null) crate(o,options.tappable ? marked(o) : o.id === target && state.active === 0, t);
     for (const o of state.objects) if (o.kind === 'seed' && o.held === null) seed(o, t);
     const flying = o => !o.frozen && ['dart', 'orb', 'lantern'].includes(o.kind);
     for (const o of state.objects) if (isEnemy(o) && !flying(o)) enemy(o, marked(o), t, options.reduced);
@@ -665,7 +693,7 @@ export function createRenderer(canvas, S) {
       if (carrier) { ctx.setLineDash([12, 9]); circle(ctx, carrier.x, carrier.y - (options.tap.area ? 30 : 0), options.tap.ringRadius ?? meta.controls.range, '#f4e7b40c', '#f4e7b4c0', 2); ctx.setLineDash([]); }
       ctx.restore();
     }
-    if (options.celebration && !coda) celebrateGate(state, options.celebration, options.reduced);
+    if (options.celebration) celebrateGate(state, options.celebration, options.reduced);
     if (options.preview) freezePreview(options.preview);
     if (options.aim) aimedCast(options.aim);
     if (options.throwArc) throwArc(options.throwArc);
@@ -681,11 +709,7 @@ export function createRenderer(canvas, S) {
     ctx.restore();
     if (coda) {
       ctx.save(); ctx.setTransform(currentDpr, 0, 0, currentDpr, 0, 0);
-      const framing = smooth(Math.min(1, codaProgress / .14)) * (1 - smooth(Math.max(0, (codaProgress - .9) / .1)));
-      ctx.fillStyle = '#102420'; ctx.globalAlpha = framing;
-      const bar = frameHeight * .065;
-      ctx.fillRect(0, 0, frameWidth, bar); ctx.fillRect(0, frameHeight - bar, frameWidth, bar);
-      ctx.globalAlpha = Math.max(0, Math.min(1, (codaProgress - .48) / .09)) * (1 - smooth(Math.max(0, (codaProgress - .88) / .12)));
+      ctx.globalAlpha = smooth(Math.min(1, codaProgress / .12)) * (1 - smooth(Math.max(0, (codaProgress - .85) / .15)));
       const gradient = ctx.createLinearGradient(0, frameHeight * .55, 0, frameHeight);
       gradient.addColorStop(0, '#10292500'); gradient.addColorStop(1, '#102925ed');
       ctx.fillStyle = gradient; ctx.fillRect(0, frameHeight * .55, frameWidth, frameHeight * .45);
@@ -694,7 +718,7 @@ export function createRenderer(canvas, S) {
       ctx.font = `${fontSize}px Georgia, serif`;
       ctx.shadowColor = '#061d18'; ctx.shadowBlur = 8;
       ctx.fillText('The world stopped.', frameWidth / 2, frameHeight * .77);
-      ctx.globalAlpha *= Math.max(0, Math.min(1, (codaProgress - .58) / .08));
+      ctx.globalAlpha *= Math.max(0, Math.min(1, (codaProgress - .16) / .12));
       ctx.fillText('But something is still counting.', frameWidth / 2, frameHeight * .77 + fontSize * 1.6);
       ctx.restore();
     }

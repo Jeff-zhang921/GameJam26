@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import { setup, applyAction, validateAction, heldPosition, interactionFor, aimedThrowVelocity, throwPath, meta } from '../src/logic.js';
+import { classicCourtyard } from './arena.js';
 import { attachCarried } from '../public/network.js';
 
 const send = (state, type, actor = 0, extra = {}) => {
@@ -15,7 +16,7 @@ const onCarrier = (state, actor = 0) => {
 };
 // Level 0: ground platform y=520 from x=0 to 435, crate resting at (350, 493).
 function carrying() {
-  let state = setup({ level: 0 });
+  let state = classicCourtyard();
   state.actors[0].x = 300;
   return send(state, 'grab');
 }
@@ -49,7 +50,7 @@ describe('carried box follows its carrier', () => {
 
   test('the carried box never pushes or lifts its carrier', () => {
     // Same walk with the crate removed from the world entirely.
-    let free = setup({ level: 0 });
+    let free = classicCourtyard();
     free.objects = free.objects.filter(o => o.id !== 'crate-0'); free.actors[0].x = 300;
     let held = carrying();
     free = send(free, 'move', 0, { dir: 1 }); held = send(held, 'move', 0, { dir: 1 });
@@ -77,7 +78,7 @@ describe('carried box follows its carrier', () => {
 
 describe('contextual interaction label', () => {
   test('pick up only when something is in reach, throw while holding a crate', () => {
-    let state = setup({ level: 0 });
+    let state = classicCourtyard();
     expect(interactionFor(state, 0)).toEqual({ kind: 'pickup', available: false });
     state.actors[0].x = 300;
     expect(interactionFor(state, 0)).toEqual({ kind: 'pickup', available: true });
@@ -99,7 +100,7 @@ describe('contextual interaction label', () => {
 
 describe('online rendering of carried boxes', () => {
   const view = () => {
-    const state = setup({ level: 0, players: ['a', 'b'] });
+    const state = classicCourtyard({ players: ['a', 'b'] });
     Object.assign(state.actors[1], { x: 500, facing: -1 });
     return state;
   };
@@ -190,7 +191,7 @@ describe('aimed throws', () => {
   test('the server refuses an aim that is too strong, malformed, or with nothing to throw', () => {
     const state = carrying();
     for (const aim of [{ vx: 9, vy: -9 }, { vx: NaN, vy: 1 }, { vx: '3', vy: 1 }, null, 4]) expect(validateAction(state, 'local', { type: 'grab', actor: 0, aim }).valid).toBe(false);
-    const empty = setup({ level: 0 });
+    const empty = classicCourtyard();
     expect(validateAction(empty, 'local', { type: 'grab', actor: 0, aim: { vx: 3, vy: -3 } }).valid).toBe(false);
   });
 

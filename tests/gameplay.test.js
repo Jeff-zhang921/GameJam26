@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import { setup, applyAction, validateAction, meta, exitStatus, failureReason, assessFailure, freezeAreaAt, freezePoint } from '../src/logic.js';
+import { classicCourtyard } from './arena.js';
 import { createCamera } from '../public/presentation.js';
 
 const act = (state, action) => applyAction(state, 'local', action);
@@ -13,7 +14,7 @@ const get = (state, id) => state.objects.find(o => o.id === id);
 const STILL = 0, BLOOM = 1;
 
 describe('both timekeepers must reach the moon gate', () => {
-  const ready = () => { const s = setup({ level: 0 }); s.flags.frozenTouched = true; return s; };
+  const ready = () => { const s = classicCourtyard(); s.flags.frozenTouched = true; return s; };
 
   test('one at the open gate waits for the other; both together complete the courtyard', () => {
     let s = ready();
@@ -27,7 +28,7 @@ describe('both timekeepers must reach the moon gate', () => {
   });
 
   test('the checklist is only a suggestion: both at the gate complete it, and nobody is left waiting', () => {
-    let s = setup({ level: 0 });
+    let s = classicCourtyard();
     expect(exitStatus(s).waiting).toBe(null);
     for (const p of s.actors) Object.assign(p, { x: s.exit.x, y: s.exit.y, on: 'platform-1' });
     s = tick(s);
@@ -37,7 +38,7 @@ describe('both timekeepers must reach the moon gate', () => {
 
 describe('characters and loose crates part cleanly', () => {
   test('riding a falling crate: you fall together, cannot jump off mid-air, and are not dragged when it resets', () => {
-    let s = setup({ level: 0 });
+    let s = classicCourtyard();
     Object.assign(get(s, 'crate-0'), { x: 480, y: 493, vx: 0, vy: 0 });
     Object.assign(s.actors[STILL], { x: 480, y: 466, on: 'crate-0', grounded: true });
     s = tick(s, 4);
@@ -59,7 +60,7 @@ describe('characters and loose crates part cleanly', () => {
   });
 
   test('a crate inside a Freeze Area is solid ground to stand and jump on, even while drifting', () => {
-    let s = setup({ level: 0 });
+    let s = classicCourtyard();
     Object.assign(get(s, 'crate-0'), { x: 560, y: 420, vy: 2 });
     Object.assign(s.actors[STILL], { x: 560, y: 393, on: 'crate-0', grounded: true });
     s.freezeAreas.push({ id: 'test', x: 560, y: 420, radius: 130, ticksLeft: 1e6, duration: 1e6 });
@@ -70,7 +71,7 @@ describe('characters and loose crates part cleanly', () => {
   });
 
   test('a returning crate never appears inside someone standing at its spawn', () => {
-    let s = setup({ level: 0 });
+    let s = classicCourtyard();
     Object.assign(s.actors[BLOOM], { x: 350, y: 520 });
     Object.assign(get(s, 'crate-0'), { x: 600, y: 700, vy: 5 });
     for (let i = 0; i < 10 && !s.events.some(e => e.kind === 'return' && e.actor === undefined); i++) s = tick(s);
@@ -82,8 +83,26 @@ describe('characters and loose crates part cleanly', () => {
     expect(get(s, 'crate-0').y).toBe(493);
   });
 
+  test('a crate whose centre is past a ledge\'s edge slides off and falls; one centred on the ledge stays', () => {
+    let s = classicCourtyard(); // the start ledge ends at x 435
+    Object.assign(get(s, 'crate-0'), { x: 440, y: 493, vx: 0, vy: 0 }); // 22 of its 54 px still on the ledge
+    let fell = false, biggestStep = 0;
+    for (let i = 0; i < 120 && !fell; i++) {
+      const x = get(s, 'crate-0').x;
+      s = tick(s);
+      biggestStep = Math.max(biggestStep, Math.abs(get(s, 'crate-0').x - x));
+      fell = get(s, 'crate-0').y > 520;
+    }
+    expect(fell).toBe(true);
+    expect(biggestStep).toBeLessThanOrEqual(2); // it slides off; it never jumps sideways
+    s = classicCourtyard();
+    Object.assign(get(s, 'crate-0'), { x: 430, y: 493, vx: 0, vy: 0 }); // 32 px over the gap, but centred on the ledge
+    s = tick(s, 60);
+    expect(get(s, 'crate-0')).toMatchObject({ x: 430, y: 493 });
+  });
+
   test('carrying is unchanged: a carried crate stays with its carrier through a fall and respawn', () => {
-    let s = setup({ level: 0 });
+    let s = classicCourtyard();
     s.actors[STILL].x = 300; s = send(s, 'grab');
     s = send(s, 'move', STILL, { dir: 1 });
     for (let i = 0; i < 90 && !s.events.some(e => e.kind === 'return' && e.actor === STILL); i++) s = tick(s);
@@ -94,7 +113,7 @@ describe('characters and loose crates part cleanly', () => {
 
 describe('Freeze Areas', () => {
   test('a cast at a chosen point slows every object it touches, never a traveller, and costs one charge', () => {
-    let s = setup({ level: 0 });
+    let s = classicCourtyard();
     s.actors[STILL].x = 300;
     expect(s.freezeCharges).toBe(2);
     s = send(s, 'ability', STILL, { x: 330, y: 480 });
@@ -111,7 +130,7 @@ describe('Freeze Areas', () => {
   });
 
   test('objects slow on entering an area and recover on leaving it', () => {
-    let s = setup({ level: 0 });
+    let s = classicCourtyard();
     s.actors[STILL].x = 300; s = send(s, 'grab'); s.actors[STILL].x = 418; s = send(s, 'grab'); // throw
     const c0 = get(s, 'crate-0');
     s = send(s, 'ability', STILL, { x: c0.x + 165, y: c0.y });
@@ -129,7 +148,7 @@ describe('Freeze Areas', () => {
   });
 
   test('an area fades after its duration and leaves nothing slowed behind', () => {
-    let s = setup({ level: 0 });
+    let s = classicCourtyard();
     s.actors[STILL].x = 300;
     s = send(s, 'ability', STILL, { x: 350, y: 480 });
     s = tick(s, meta.freeze.duration - 1);
@@ -141,7 +160,7 @@ describe('Freeze Areas', () => {
   });
 
   test('cancelling a selected area preserves other coverage and never changes charges', () => {
-    let s = setup({ level: 0 });
+    let s = classicCourtyard();
     const first = { x: 290, y: 493 };
     s = send(s, 'ability', STILL, first);
     const [older] = s.freezeAreas;
@@ -169,7 +188,7 @@ describe('Freeze Areas', () => {
   });
 
   test('refused casts (no charges, too far, off the world) cost nothing', () => {
-    let s = setup({ level: 0 });
+    let s = classicCourtyard();
     s.actors[STILL].x = 300;
     expect(validateAction(s, 'local', { type: 'ability', actor: STILL, x: 300 + meta.freeze.range + 50, y: 490 }).error).toBe('freezeRange');
     expect(validateAction(s, 'local', { type: 'ability', actor: STILL, x: 300, y: -40 }).error).toBe('freezeRange');
@@ -179,7 +198,7 @@ describe('Freeze Areas', () => {
   });
 
   test('a cast without an aimed point has no centre and is refused', () => {
-    const s = setup({ level: 0 });
+    const s = classicCourtyard();
     s.actors[STILL].x = 300;
     expect(freezePoint(s)).toBe(null);
     expect(freezePoint(s, { target: 'crate-0' })).toEqual({ x: 350, y: 493 }); // a named object is an aim too
@@ -202,7 +221,7 @@ describe('Freeze Areas', () => {
 
 describe('role-specific resources', () => {
   test('only the matching role collects each crystal once, and restart restores both budgets', () => {
-    let s = setup({ level: 0 });
+    let s = classicCourtyard();
     const [frost, bolt] = s.pickups;
     const touch = (actor, c) => Object.assign(s.actors[actor], { x: c.x, y: c.y + 26, grounded: false, vy: 0 });
     touch(STILL, bolt); touch(BLOOM, frost);
@@ -224,7 +243,9 @@ describe('role-specific resources', () => {
     for (let level = 0; level < 5; level++) {
       const s = setup({ level });
       expect(s.actors[BLOOM].carrying).toBe(null);
-      expect(s.seeds).toBe(1);
+      // Courtyard 1 is the exception: its only seed lies on the low ledge.
+      expect(s.seeds).toBe(level === 0 ? 0 : 1);
+      if (level === 0) expect(s.objects.filter(o => o.kind === 'seed')).toHaveLength(1);
       expect(s.bloomCharges).toBe(3);
       expect(s.pickups.some(c => c.kind === 'bolt')).toBe(true);
     }
@@ -273,10 +294,11 @@ describe('possible dead ends raise a warning; the game goes on', () => {
   });
 
   test('a crossing that needs Freeze warns only when charges, crystals and active areas are all gone', () => {
+    // Courtyard 4: the crossing is needed by anyone below the gate's ledge (no `crossingFrom`).
     const lost = () => {
-      const s = setup({ level: 0 });
+      const s = setup({ level: 3 });
       s.freezeCharges = 0; s.pickups.forEach(c => { c.taken = true; });
-      Object.assign(s.actors[STILL], { x: 1100, y: 430, on: 'platform-1' });
+      Object.assign(s.actors[STILL], { x: 1100, y: 300, on: 'platform-1' });
       return s;
     };
     expect(failureReason(lost())).toBe('freeze');
@@ -288,7 +310,7 @@ describe('possible dead ends raise a warning; the game goes on', () => {
     expect(failureReason(charge)).toBe(null);
     const area = lost(); area.freezeAreas.push({ id: 'a', x: 600, y: 400, radius: 130, ticksLeft: 100, duration: 600 });
     expect(failureReason(area)).toBe(null);
-    const across = lost(); Object.assign(across.actors[BLOOM], { x: 1000, y: 430, on: 'platform-1' });
+    const across = lost(); Object.assign(across.actors[BLOOM], { x: 1120, y: 300, on: 'platform-1' });
     expect(failureReason(across)).toBe(null);
   });
 
@@ -314,14 +336,14 @@ describe('touch layout camera', () => {
   const view = { width: 1180, height: 820, dt: 0, mode: 'coop', reduced: true };
 
   test('without touch controls the world stays centred', () => {
-    const s = setup({ level: 0 });
+    const s = classicCourtyard();
     const cam = createCamera().update(s, view);
     const below = view.height - (cam.offsetY + s.height * cam.scale);
     expect(Math.round(below)).toBe(Math.round(cam.offsetY));
   });
 
   test('with touch controls the band under the world shrinks, and the ground stays above the controls', () => {
-    const s = setup({ level: 0 });
+    const s = classicCourtyard();
     const reserve = 190;
     const cam = createCamera().update(s, { ...view, bottomInset: reserve });
     const below = view.height - (cam.offsetY + s.height * cam.scale);

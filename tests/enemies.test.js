@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import { setup, validateAction, applyAction, meta } from '../src/logic.js';
+import { classicCourtyard } from './arena.js';
 import { ENEMY, makeEnemy, enemyBox, isHazard, miteStage, canStrike, attackCharge } from '../src/enemies.js';
 
 function step(state, n = 1) { for (let i = 0; i < n; i++) state = applyAction(state, 'local', { type: 'tick' }); return state; }
@@ -9,7 +10,7 @@ const ofKind = (state, kind) => state.objects.filter(o => o.kind === kind);
 
 // A flat test courtyard: one floor at y=540, the given enemies, and actors parked far away.
 function arena(enemies, actors = [{ x: 60 }, { x: 1220 }]) {
-  const s = setup({ level: 0 });
+  const s = classicCourtyard();
   s.platforms = [{ x: 0, y: 540, w: 1280, h: 120 }];
   s.objects = enemies.map((e, i) => makeEnemy(e.kind, e, e.id ?? `${e.kind}-${i}`));
   s.nextEnemy = 100;
@@ -242,7 +243,7 @@ describe('checkpoints and hits', () => {
   });
 
   test('a hit drops what the actor was carrying and grants a moment of invulnerability', () => {
-    let s = setup({ level: 0 });
+    let s = classicCourtyard();
     s.actors[0].x = 330;
     s = action(s, { type: 'grab', actor: 0 });
     s.objects.push(makeEnemy('dart', { x: 330, y: 520, dx: 1, dy: 0 }, 'd'));

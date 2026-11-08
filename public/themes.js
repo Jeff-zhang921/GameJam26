@@ -8,9 +8,14 @@ import { LEVELS } from '../src/levels/index.js';
 // `scale` is world units per source px. A platform is capped with `left`, tiles of `fillL` / `fillR` either side
 // of `emblem` (alternately mirrored), then `right`; with no `emblem` the middle is all `fillR` tiles. fill: a texture that tiles both ways, drawn at `scale`.
 export const GROUNDS = {
+  // One bridge span (`x`, `y`, `width`, `height` in source px; feet rest `walk` px below its top), drawn at the same
+  // `scale` (world units per source px) on every ledge: 830 / 2103 shows it exactly once on courtyard 1's 830-wide
+  // middle ledge. Narrower ledges show the part of it that fits. `base` is the source y where the piers end and
+  // `legs` one stone course of the pier shafts (source rows, mortar line to mortar line): on a tall ledge that
+  // course repeats so the piers reach the ledge's foot at the same scale (see `bridge` in public/render.js).
   bridge: {
     kind: 'bridge',
-    surface: { src: '/sprites/bridge-arches.png', x: 35, y: 16, width: 2103, height: 708, walk: 72 },
+    surface: { src: '/sprites/bridge-arches.png', x: 35, y: 16, width: 2103, height: 708, walk: 72, scale: 830 / 2103, base: 668, legs: [484, 522] },
     fill: { src: '/sprites/ground-fill.png', scale: .6 },
   },
   mossy: {

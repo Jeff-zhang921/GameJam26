@@ -2,6 +2,7 @@ import { describe, test, expect } from 'bun:test';
 import { LEVELS } from '../src/levels/index.js';
 import { ENEMY } from '../src/enemies.js';
 import { setup, validateAction, applyAction, isGameOver, viewFor, hintLevel, meta, abilityTarget, levelCount } from '../src/logic.js';
+import { classicCourtyard } from './arena.js';
 
 function step(state, n = 1) { for (let i = 0; i < n; i++) state = applyAction(state, 'local', { type: 'tick' }); return state; }
 function action(state, value) { expect(validateAction(state, 'local', value).valid).toBe(true); return applyAction(state, 'local', value); }
@@ -57,7 +58,7 @@ describe('seeds and pits', () => {
     let s = setup({ level: 1 });
     s.actors[1].x = 380;
     expect(validateAction(s, 'local', { type: 'ability', actor: 1, target: 'seed-1' }).error).toBe('bloomRange');
-    s = setup({ level: 0 });
+    s = classicCourtyard();
     s.actors[1].x = 350;
     expect(validateAction(s, 'local', { type: 'ability', actor: 1, target: 'crate-0' }).error).toBe('bloomRange');
   });
@@ -196,7 +197,7 @@ describe('time flow', () => {
 
 describe('still', () => {
   test('freezing a thrown crate slows it to a crawl along its arc, keeping its momentum', () => {
-    let s = setup();
+    let s = classicCourtyard();
     s.actors[0].x = 350;
     s = action(s, { type: 'grab', actor: 0 });
     s = action(s, { type: 'grab', actor: 0 });
@@ -216,7 +217,7 @@ describe('still', () => {
   });
 
   test('a crate flies on at full speed once its Freeze Area fades (Bloom cannot hasten crates)', () => {
-    let s = setup();
+    let s = classicCourtyard();
     s.actors[0].x = 350;
     s = action(s, { type: 'grab', actor: 0 });
     s = action(s, { type: 'grab', actor: 0 });
@@ -232,7 +233,7 @@ describe('still', () => {
   });
 
   test('bloom cannot touch a crate that is not frozen', () => {
-    const s = setup();
+    const s = classicCourtyard();
     s.actors[1].x = 350;
     expect(validateAction(s, 'local', { type: 'ability', actor: 1, target: 'crate-0' }).error).toBe('bloomRange');
   });
@@ -278,13 +279,13 @@ describe('aiming is always the player\'s', () => {
 
 describe('crate collision', () => {
   test('a crate thrown into a cliff face stops against it instead of passing through', () => {
-    let s = setup(), wall = s.platforms[1];
+    let s = classicCourtyard(), wall = s.platforms[1];
     Object.assign(get(s, 'crate-0'), { x: wall.x - 60, y: wall.y + 40, vx: 8, vy: 0 });
     for (let i = 0; i < 20; i++) { s = step(s); expect(get(s, 'crate-0').x).toBeLessThanOrEqual(wall.x - 27); }
     expect(get(s, 'crate-0').vx).toBe(0);
   });
   test('an actor walking into a resting crate stops at its side', () => {
-    let s = setup();
+    let s = classicCourtyard();
     const crate = get(s, 'crate-0');
     s = action(s, { type: 'move', actor: 1, dir: 1 });
     s = step(s, 40);
@@ -293,7 +294,7 @@ describe('crate collision', () => {
   });
 
   test('jumping up into a frozen crate bumps the head', () => {
-    let s = setup();
+    let s = classicCourtyard();
     Object.assign(get(s, 'crate-0'), { x: 250, y: 400, frozen: true });
     s = action(s, { type: 'jump', actor: 1 });
     let top = s.actors[1].y;
@@ -303,7 +304,7 @@ describe('crate collision', () => {
   });
 
   test('an actor already overlapping a crate can still walk out of it', () => {
-    let s = setup();
+    let s = classicCourtyard();
     s.actors[1].x = 340;
     s = action(s, { type: 'move', actor: 1, dir: -1 });
     s = step(s, 10);
@@ -311,7 +312,7 @@ describe('crate collision', () => {
   });
 
   test('a carried crate is not solid to the other actor', () => {
-    let s = setup();
+    let s = classicCourtyard();
     s.actors[0].x = 330;
     s = action(s, { type: 'grab', actor: 0 });
     s.actors[1].x = 300;
@@ -395,7 +396,7 @@ describe('assists', () => {
 
 describe('room rules', () => {
   test('boundaries reject malformed, unauthorized and out-of-range actions', () => {
-    const s = setup({ players: ['one', 'two'] });
+    const s = classicCourtyard({ players: ['one', 'two'] });
     expect(validateAction(s, 'one', { type: 'move', actor: 1, dir: 1 }).valid).toBe(false);
     expect(validateAction(s, 'two', { type: 'tick' }).valid).toBe(false);
     expect(validateAction(s, 'one', { type: 'ability', actor: 0, target: 'plant-9' }).valid).toBe(false);
@@ -406,21 +407,21 @@ describe('room rules', () => {
   });
 
   test('any chamber can be chosen directly, without unlocking it first', () => {
-    const s = setup();
+    const s = classicCourtyard();
     expect(s.unlocked).toBe(0);
     for (let level = 1; level < levelCount; level++) expect(action(s, { type: 'level', level }).level).toBe(level);
     for (const level of [-1, levelCount, 1.5, '2']) expect(validateAction(s, 'local', { type: 'level', level }).error).toBe('invalid');
   });
 
   test('needs are optional, but both travelers must stand in the moon gate', () => {
-    let s = setup(); Object.assign(s.actors[0], { x: s.exit.x, y: s.exit.y });
+    let s = classicCourtyard(); Object.assign(s.actors[0], { x: s.exit.x, y: s.exit.y });
     s = step(s); expect(s.status).toBe('playing');
     Object.assign(s.actors[1], { x: s.exit.x, y: s.exit.y });
     s = step(s); expect(s.status).toBe('won'); expect(s.needsDone).toBe(0);
   });
 
   test('replaying a chamber never farms duplicate collectibles', () => {
-    let s = setup(); s.flags.frozenTouched = true; s.shards[0].taken = true; for (const p of s.actors) Object.assign(p, { x: s.exit.x, y: s.exit.y });
+    let s = classicCourtyard(); s.flags.frozenTouched = true; s.shards[0].taken = true; for (const p of s.actors) Object.assign(p, { x: s.exit.x, y: s.exit.y });
     s = step(s); expect(s.totalShards).toBe(1);
     s = action(s, { type: 'restart' }); s.flags.frozenTouched = true; s.shards[0].taken = true; for (const p of s.actors) Object.assign(p, { x: s.exit.x, y: s.exit.y });
     s = step(s); expect(s.totalShards).toBe(1); expect(s.collected).toEqual(Array.from({ length: levelCount }, (_, i) => i === 0));
@@ -441,7 +442,7 @@ describe('review fixes', () => {
   });
 
   test('a seed falling onto a crate rests on it', () => {
-    let s = setup();
+    let s = classicCourtyard();
     s.objects.push({ kind: 'seed', id: 'seed-9', x: 350, y: 380, vx: 0, vy: 0, frozen: false, held: null, spawnX: 100, spawnY: 100 });
     s = step(s, 40);
     const seed = get(s, 'seed-9'), crate = get(s, 'crate-0');
@@ -450,7 +451,7 @@ describe('review fixes', () => {
   });
 
   test('the clock starts on a first grab', () => {
-    let s = setup({ level: 0 });
+    let s = classicCourtyard();
     s = step(s, 5); expect(s.elapsed).toBe(0);
     s.actors[0].x = 300; s = action(s, { type: 'grab', actor: 0 });
     s = step(s, 5); expect(s.elapsed).toBe(5);
@@ -481,7 +482,7 @@ describe('carried riders', () => {
   const stand = (s, id) => { Object.assign(s.actors[0], { x: 350, y: 466, on: id, grounded: true }); return s; };
 
   test('grabbing the crate you stand on does not lift you with it', () => {
-    let s = stand(setup({ level: 0 }), 'crate-0');
+    let s = stand(classicCourtyard(), 'crate-0');
     s = action(s, { type: 'grab', actor: 0 });
     s = step(s, 1);
     expect(s.actors[0].y).toBeGreaterThanOrEqual(466 - 1);
@@ -489,7 +490,7 @@ describe('carried riders', () => {
   });
 
   test('a rider is not teleported when its crate is reset to spawn', () => {
-    let s = setup({ level: 0 });
+    let s = classicCourtyard();
     Object.assign(get(s, 'crate-0'), { x: 1255, y: 300, vx: 10 });
     Object.assign(s.actors[0], { x: 1255, y: 273, on: 'crate-0', grounded: true });
     s = step(s, 1);
@@ -499,7 +500,7 @@ describe('carried riders', () => {
   });
 
   test('a frozen crate keeps sliding at the slowed friction', () => {
-    let s = setup({ level: 0 });
+    let s = classicCourtyard();
     Object.assign(get(s, 'crate-0'), { vx: 4 });
     s.freezeAreas.push({ id: 'test', x: 350, y: 493, radius: 130, ticksLeft: 1e6, duration: 1e6 });
     s = step(s, 20);

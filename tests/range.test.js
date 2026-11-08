@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'bun:test';
-import { setup, applyAction, validateAction, meta, abilityCheck, abilityTargets, timeObjectAt, anchor } from '../src/logic.js';
+import { setup, applyAction, validateAction, meta, abilityCheck, abilityTargets, timeObjectAt, bloomTargetAt, bloomSupport, anchor } from '../src/logic.js';
+import { classicCourtyard } from './arena.js';
 
 const send = (state, type, actor = 0, extra = {}) => {
   const action = { type, actor, ...extra };
@@ -14,7 +15,7 @@ describe('ability reach of 300 keeps every courtyard route open', () => {
   test('reach is 300 world units', () => expect(meta.controls.range).toBe(300));
 
   test('courtyard 1: a thrown crate can be frozen for over half a second after the throw', () => {
-    let state = setup({ level: 0 });
+    let state = classicCourtyard();
     state.actors[STILL].x = 300;
     state = send(state, 'grab');
     state.actors[STILL].x = 418;
@@ -65,8 +66,48 @@ describe('ability reach of 300 keeps every courtyard route open', () => {
 });
 
 describe('tapping time objects', () => {
+  test('Speed selects the platform under Bloom even when their body or a crate hides it', () => {
+    const state = setup({ level: 3 }), mover = get(state, 'mover-0');
+    Object.assign(state.actors[BLOOM], { x: mover.x + 60, y: mover.y, grounded: true, on: mover.id });
+    Object.assign(get(state, 'crate-0'), { x: mover.x + 60, y: mover.y - 27 });
+    expect(bloomSupport(state)?.id).toBe(mover.id);
+    expect(bloomTargetAt(state, { x: mover.x + 60, y: mover.y - 30 }, 44)?.id).toBe(mover.id);
+    expect(bloomTargetAt(state, { x: mover.x + 20, y: mover.y - 35 }, 44)?.id).toBe(mover.id);
+    const action = { type: 'ability', actor: BLOOM, target: mover.id };
+    expect(validateAction(state, 'local', action).valid).toBe(true);
+    const faster = applyAction(state, 'local', action);
+    expect(get(faster, mover.id).speed).toBe(1);
+    expect(faster.bloomCharges).toBe(state.bloomCharges - 1);
+  });
+
+  test('underfoot Speed covers mushroom caps but never chooses ordinary ground or an airborne support', () => {
+    const state = setup({ level: 1 });
+    const mushroom = { kind: 'plant', id: 'test-mushroom', x: 400, base: 520, height: 180, age: 700, speed: 1, frozen: false, withered: false };
+    state.objects.push(mushroom);
+    Object.assign(state.actors[BLOOM], { x: 400, y: 340, grounded: true, on: mushroom.id });
+    expect(bloomTargetAt(state, { x: 400, y: 310 }, 44)?.id).toBe(mushroom.id);
+    state.actors[BLOOM].grounded = false;
+    expect(bloomSupport(state)).toBeNull();
+    Object.assign(state.actors[BLOOM], { grounded: true, on: 'platform-0' });
+    expect(bloomSupport(state)).toBeNull();
+    expect(bloomTargetAt(state, { x: 1200, y: 50 }, 44)).toBeNull();
+  });
+
+  test('easier targeting retains maximum speed, charge and range restrictions', () => {
+    const state = setup({ level: 3 }), mover = get(state, 'mover-0');
+    Object.assign(state.actors[BLOOM], { x: mover.x + 60, y: mover.y, grounded: true, on: mover.id });
+    mover.speed = meta.time.maxSpeed;
+    const target = bloomTargetAt(state, { x: mover.x + 60, y: mover.y });
+    expect(abilityCheck(state, BLOOM, target.id)).toBe('maxSpeed');
+    mover.speed = 1; state.bloomCharges = 0;
+    expect(validateAction(state, 'local', { type: 'ability', actor: BLOOM, target: target.id }).valid).toBe(false);
+    state.bloomCharges = 3; state.actors[BLOOM].x = 100;
+    expect(bloomSupport(state)).toBeNull();
+    expect(abilityCheck(state, BLOOM, target.id)).toBe('range');
+  });
+
   test('finds the object under a finger, with tolerance, and nothing on empty space', () => {
-    const state = setup({ level: 0 });
+    const state = classicCourtyard();
     expect(timeObjectAt(state, { x: 350, y: 493 })?.id).toBe('crate-0');
     expect(timeObjectAt(state, { x: 350 + 27 + 10, y: 493 })).toBe(null);
     expect(timeObjectAt(state, { x: 350 + 27 + 10, y: 493 }, 12)?.id).toBe('crate-0');
@@ -79,14 +120,14 @@ describe('tapping time objects', () => {
     Object.assign(get(state, 'crate-0'), { x: mover.x + 60, y: mover.y - 27 });
     expect(timeObjectAt(state, { x: mover.x + 60, y: mover.y - 1 }, 20)?.id).toBe('crate-0');
     expect(timeObjectAt(state, { x: mover.x + 10, y: mover.y + 10 }, 20)?.id).toBe('mover-0');
-    let carried = setup({ level: 0 });
+    let carried = classicCourtyard();
     carried.actors[STILL].x = 300; carried = send(carried, 'grab');
     const held = get(carried, 'crate-0');
     expect(timeObjectAt(carried, { x: held.x, y: held.y }, 20)).toBe(null);
   });
 
   test('explains why a tap cannot act: out of reach, wrong ability, or already at full speed', () => {
-    const state = setup({ level: 0 });
+    const state = classicCourtyard();
     expect(abilityCheck(state, STILL, 'crate-0')).toBe('ok');
     expect(abilityCheck(state, BLOOM, 'crate-0')).toBe('unsupported');
     get(state, 'crate-0').frozen = true; // Bloom never hastens crates, frozen or not
@@ -101,7 +142,7 @@ describe('tapping time objects', () => {
   });
 
   test('a tapped target is the same Ability action the server validates', () => {
-    let state = setup({ level: 0 });
+    let state = classicCourtyard();
     expect(abilityTargets(state, STILL).map(o => o.id)).toContain('crate-0');
     state = send(state, 'ability', STILL, { target: 'crate-0' });
     expect(get(state, 'crate-0').frozen).toBe(true);

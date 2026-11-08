@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import { setup, applyAction, validateAction, meta, atExit } from '../src/logic.js';
+import { classicCourtyard } from './arena.js';
 
 const send = (state, type, actor = 0, extra = {}) => applyAction(state, 'local', { type, actor, ...extra });
 const step = (state, count = 1) => { for (let i = 0; i < count; i++) state = send(state, 'tick'); return state; };
@@ -71,7 +72,7 @@ describe('jump feel', () => {
   });
 
   test('coyote time accepts the seventh airborne tick but not the eighth', () => {
-    let state = setup();
+    let state = classicCourtyard();
     state.objects = [];
     state.actors[0].x = 449;
     state = step(send(state, 'move', 0, { dir: 1 }));
@@ -107,7 +108,7 @@ describe('jump feel', () => {
     let state = send(send(flat(), 'jump', 0), 'jump', 1);
     state = step(send(state, 'jumpRelease', 0));
     expect(state.actors[0].vy).toBeGreaterThan(state.actors[1].vy);
-    const room = setup({ players: ['one', 'two'] });
+    const room = classicCourtyard({ players: ['one', 'two'] });
     expect(validateAction(room, 'one', { type: 'jumpRelease', actor: 1 }).valid).toBe(false);
     expect(validateAction(room, 'two', { type: 'jumpRelease', actor: 1 }).valid).toBe(true);
   });
@@ -154,7 +155,7 @@ describe('courtyard jump routes', () => {
   }
 
   test('the broken bridge remains crossable using a thrown and frozen crate', () => {
-    let state = send(setup(), 'move', 0, { dir: 1 });
+    let state = send(classicCourtyard(), 'move', 0, { dir: 1 });
     state = step(state, 40);
     state = send(state, 'grab');
     state = step(state, 20);

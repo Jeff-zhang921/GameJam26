@@ -100,6 +100,18 @@ async function checkLocal(url, { reducedMotion = 'no-preference', finale = false
   assert.equal(waiting.actors[0].x, waiting.exit.x);
   assert.equal(waiting.status, 'playing');
   await page.keyboard.press('Tab'); // switch to Bloom, who waits beside the gate
+  if (!finale) {
+    await watchReveal(page);
+    await page.keyboard.down('ArrowRight');
+    await page.waitForFunction(() => window.__moonclock.snapshot().phase === 'advancing');
+    await page.keyboard.up('ArrowRight');
+    assert.equal(await page.getByTestId('next').count(), 0, 'First courtyard must advance without results');
+    await ready(page);
+    assert.equal((await snapshot(page)).level, 1);
+    assert.equal(await page.evaluate(() => window.swapOpacity), 1, 'First courtyard changed before the fade covered it');
+    await page.close();
+    return;
+  }
   await page.keyboard.down('ArrowRight');
   await stage(page, 'celebration');
   const began = Date.now();
@@ -151,6 +163,14 @@ async function checkOnline(server) {
   await host.waitForFunction(() => window.__moonclock.snapshot().actors[0].x === window.__moonclock.snapshot().exit.x);
   assert.equal((await snapshot(host)).status, 'playing');
   enterGate(1);
+  await Promise.all([host.waitForFunction(() => window.__moonclock.snapshot().level === 1), guest.waitForFunction(() => window.__moonclock.snapshot().level === 1)]);
+  await Promise.all([ready(host), ready(guest)]);
+  assert.equal(await host.getByTestId('next').count(), 0, 'First courtyard needs no Next click');
+  assert.equal(await guest.evaluate(() => window.celebrations), 0, 'First courtyard replayed the removed cutscene');
+  await checkBloomAim(guest, room);
+
+  // Later courtyards retain their explicit results and host-controlled Next.
+  enterGate(0); enterGate(1);
   await Promise.all([stage(host, 'celebration'), stage(guest, 'celebration')]);
   await Promise.all([stage(host, 'win'), stage(guest, 'win')]);
   assert.equal(await guest.evaluate(() => window.celebrations), 1, 'Repeated winning snapshots restarted the animation');
@@ -164,9 +184,8 @@ async function checkOnline(server) {
   await host.getByTestId('next').click();
   await Promise.all([host.locator('.scene-veil').waitFor({ state: 'visible' }), guest.locator('.scene-veil').waitFor({ state: 'visible' })]);
   await Promise.all([ready(host), ready(guest)]);
-  assert.equal((await snapshot(host)).level, 1);
-  assert.equal((await snapshot(guest)).level, 1);
-  await checkBloomAim(guest, room);
+  assert.equal((await snapshot(host)).level, 2);
+  assert.equal((await snapshot(guest)).level, 2);
   await host.close(); await guest.close();
 }
 

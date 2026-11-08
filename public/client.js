@@ -1,7 +1,7 @@
 import { playEffect, createGrowthAudio, createRewindAudio } from './sfx.js';
 import { createMusic } from './music.js';
 import { themeFor, MENU_MUSIC } from './themes.js';
-import { setup, applyAction, validateAction, viewFor, hintLevel, levelCount, interactionFor, aimedThrowVelocity, throwPath, abilityCheck, abilityTargets, timeObjectAt, anchor, exitStatus, freezeAreaAt, freezeCheck, meta } from '../src/logic.js';
+import { setup, applyAction, validateAction, viewFor, hintLevel, levelCount, interactionFor, aimedThrowVelocity, throwPath, abilityCheck, abilityTargets, bloomTargetAt, bloomSupport, anchor, exitStatus, freezeAreaAt, freezeCheck, meta } from '../src/logic.js';
 import { createHistory, compactFrame, rewindFrame, REWIND } from './rewind.js';
 import { S } from './strings.js';
 import { createRenderer } from './render.js';
@@ -11,11 +11,13 @@ import { createLobby } from './lobby.js';
 import { createEntrance } from './entrance.js';
 import { createPWA } from './pwa.js';
 import { createViewport } from './viewport.js';
+import { createShoreCaption } from './shore-caption.js';
 
 // One music player: menus play MENU_MUSIC, a courtyard plays the track its theme names (themes.js).
 const music = createMusic();
 const growthAudio = createGrowthAudio();
 const rewindAudio = createRewindAudio();
+const shoreCaption = createShoreCaption();
 const icons = {
   moon: '<path d="M19 15.5A8 8 0 0 1 8.5 5a8.5 8.5 0 1 0 10.5 10.5Z"/><path d="m17 3 .5 2.5L20 6l-2.5.5L17 9l-.5-2.5L14 6l2.5-.5Z"/>',
   leaf: '<path d="M19 4C7 3 3 10 7 16c6 4 13 0 12-12Z"/><path d="M5 21 17 7M10 15l-1-5m5 1 4 1"/>',
@@ -128,12 +130,6 @@ const shell = document.querySelector('.shell');
 const modalRoot = document.querySelector('#modal-root');
 const veil = document.querySelector('.scene-veil');
 let sceneFade = null, celebration = null, nextPending = false;
-let firstShoreSeen = false;
-function checkFirstShore() {
-  if (state.level !== 0 || state.status !== 'playing' || firstShoreSeen || stageBusy() || modal || rewind) return;
-  const bank = state.platforms.find(p => p.x > state.width / 2);
-  if (bank && state.actors.every(a => a.grounded && a.x >= bank.x + 16 && a.y <= bank.y + 2)) startCelebration();
-}
 let awaitingOnlineState = true;
 const stageBusy = () => !!(sceneFade || celebration || entrance.active);
 const canvas = document.querySelector('#game');
@@ -164,7 +160,6 @@ const network = createNetwork({
       const from = live && !rewind && previous.status === 'won' && game.status === 'playing' && previous.level !== game.level
         ? { state: previous, sceneKey, cameraReset } : null;
       networkEpoch = info.epoch; sceneKey++; cameraReset++; seenEvent = state.eventSeq;
-      firstShoreSeen = false;
       shownHint = 0; uiChapter = ''; resetTouchState(); history.reset(game);
       if (rewind) rewind.arrived = true; // the server has installed the courtyard's start
       nextPending = false;
@@ -177,7 +172,11 @@ const network = createNetwork({
       if (e.kind === 'return' && e.actor === network.actor) cameraReset++; seenEvent = e.id;
     }
     if (game.status === 'won' && !rewind && !network.room.canReturnLobby) {
-      if (live && !info.changedScene && previous.status === 'playing' && !celebration) startCelebration();
+      if (game.level === 0) {
+        modal = 'advancing';
+        if (network.host && !nextPending) nextPending = dispatch({ type: 'next' }).valid;
+      }
+      else if (live && !info.changedScene && previous.status === 'playing' && !celebration) startCelebration();
       else if (!celebration) modal = 'win';
     }
     else if (game.status === 'paused' && (!modal || modal === 'online')) modal = 'pause';
@@ -195,13 +194,13 @@ const network = createNetwork({
     if (stageBusy() || nextPending) {
       const wasTransitioning = stageBusy();
       clearStage();
-      if (wasTransitioning) modal = state.status === 'won' ? 'win' : null;
+      if (wasTransitioning || modal === 'advancing') modal = state.status === 'won' ? 'win' : null;
       renderModal();
     }
     resetTouchState();
   },
   onError(message, code) {
-    if (nextPending) { nextPending = false; renderModal(); }
+    if (nextPending) { nextPending = false; if (modal === 'advancing') modal = 'win'; renderModal(); }
     lobby.setError(message); toast(S.errors[code] ?? message);
   },
 });
@@ -299,14 +298,18 @@ function dispatch(action, quiet = false) {
   state = applyAction(state, 'local', action);
   if (action.type === 'switch') chime({ kind: 'switch' });
   if (state.level !== oldLevel || ['restart', 'level', 'next'].includes(action.type)) {
-    firstShoreSeen = false;
     seenEvent = state.eventSeq; sceneKey++; cameraReset++; shownHint = 0;
     history.reset(state);
   }
   const seenBefore = seenEvent;
   for (const e of state.events) if (e.id > seenEvent) { if (!(e.kind === 'return' && state.events.some(h => h.kind === 'hit' && h.actor === e.actor && h.id > seenBefore))) chime(e); if (e.kind === 'return' && e.actor !== undefined) cameraReset++; seenEvent = e.id; }
   if (state.status === 'won' && oldStatus !== 'won') {
-    best[state.level] = Math.min(best[state.level] ?? Infinity, state.elapsed); persist(); startCelebration();
+    best[state.level] = Math.min(best[state.level] ?? Infinity, state.elapsed); persist();
+    if (state.level === 0) {
+      modal = 'advancing';
+      startFade(() => { dispatch({ type: 'next' }); persist(); revealCourtyard(); });
+      renderModal();
+    } else startCelebration();
   }
   if (action.type !== 'tick' || state.status !== oldStatus) updateUI();
   return { valid: true };
@@ -431,9 +434,7 @@ function startCelebration() {
   resetTouchState(); freezePreview = tapEffect = null;
   document.querySelector('#toast').classList.remove('show');
   const finale = state.level === levelCount - 1;
-  const tower = state.level === 0 && !firstShoreSeen;
-  if (tower) firstShoreSeen = true;
-  celebration = { start: performance.now(), duration: tower ? 8200 : reduced ? 350 : finale ? 2500 : 1600, finale, tower };
+  celebration = { start: performance.now(), duration: reduced ? 350 : finale ? 2500 : 1600, finale };
   modal = 'celebration'; syncStage(); renderModal();
 }
 function advanceStage(time) {
@@ -503,7 +504,7 @@ function renderModal() {
   const root = modalRoot;
   root.dataset.phase = String(modal);
   shell.classList.toggle('at-entry', modal === 'intro');
-  if (!modal || modal === 'online' || modal === 'celebration') { root.innerHTML = ''; return; }
+  if (!modal || ['online', 'celebration', 'advancing'].includes(modal)) { root.innerHTML = ''; return; }
   let contents = '';
   const close = `<button class="iconbutton close" data-action="close" aria-label="${S.close}">${icon('close')}</button>`;
   if (modal === 'help') contents = `${close}<div class="intro-icon">${icon('help')}</div><h2>${S.helpTitle}</h2><p>${S.helpBody}</p><div class="help-grid">${(touchLayout() ? S.touchKeys : S.keys).map(([k, v]) => `${key(k)}<span>${v}</span>`).join('')}</div><button class="primary" data-action="close">${S.continue}${icon('arrow')}</button>`;
@@ -598,7 +599,7 @@ document.addEventListener('click', event => {
   if (modal) return;
   canvas.focus({ preventScroll: true });
   if (action === 'switch') { clearInputs(); dispatch({ type: 'switch' }); return; }
-  if (action === 'ability') { toast(S.aimMouse); return; }
+  if (action === 'ability') { if (touchActor() !== 1 || !castUnderfoot(lastView)) toast(S.aimMouse); return; }
   dispatch({ type: action });
 });
 function movement() {
@@ -702,6 +703,10 @@ function touchAction(type) {
     return;
   }
   const actor = touchActor();
+  if (type === 'ability') {
+    if (actor !== 1 || !castUnderfoot(lastView)) toast(actor === 1 ? S.speedUnderfoot : S.aimTouch);
+    return;
+  }
   if (type === 'jump') {
     touchJumpActor = actor;
     if (!keyboardJumpHeld() && canJumpNow(actor)) dispatch({ type, actor }, true);
@@ -751,11 +756,12 @@ function skillPreview(view, actor, point) {
     const reason = check !== 'ok' ? check : freezeAreaAt(view, point) ? 'freezeCovered' : 'ok';
     return { actor, origin, range, point, radius: meta.freeze.radius, reason };
   }
-  const target = timeObjectAt(view, point, 30, abilityTargets(view, actor)) ?? timeObjectAt(view, point, 30);
+  const target = bloomTargetAt(view, point, bloomHitSlop());
   const reason = !target ? 'bloomRange' : skillCharges(view, actor) <= 0 ? 'noBloomCharges' : abilityCheck(view, actor, target.id);
   return { actor, origin, range, point: target ? anchor(target) : point, target: target?.id, reason };
 }
 const mouseWorld = () => mouseClient && renderer.worldPoint(mouseClient.x, mouseClient.y);
+const bloomHitSlop = () => Math.min(100, Math.max(20, 44 / (renderer.inspect().camera?.scale ?? 1)));
 
 function aimPreview(view) {
   if (view?.status !== 'playing') return null;
@@ -765,6 +771,10 @@ function aimPreview(view) {
   if (!player) return null;
   const still = actor === 0, range = still ? meta.freeze.range : meta.controls.range;
   const offset = skillAimOffset(x - startX, y - startY, travel, range);
+  if (!still && !offset) {
+    const support = bloomSupport(view);
+    if (support) return { actor, origin: { x: player.x, y: player.y }, range, point: anchor(support), target: support.id, reason: abilityCheck(view, actor, support.id) };
+  }
   const point = offset && { x: Math.max(0, Math.min(view.width, player.x + offset.x)), y: Math.max(0, Math.min(view.height, player.y - (still ? 30 : 0) + offset.y)) };
   return skillPreview(view, actor, point);
 }
@@ -782,15 +792,25 @@ function castSkill(preview) {
   document.querySelector('#toast').classList.remove('show');
   dispatch(preview.actor === 0 ? { type: 'ability', actor: 0, x: Math.round(preview.point.x), y: Math.round(preview.point.y) } : { type: 'ability', actor: preview.actor, target: preview.target });
 }
+function castUnderfoot(view) {
+  const support = view && bloomSupport(view);
+  if (!support) return false;
+  castSkill({ actor: 1, target: support.id, reason: abilityCheck(view, 1, support.id) });
+  return true;
+}
 
 function finishSkillAim(event, released) {
   if (skillAim?.pointer !== event.pointerId) return;
   updateSkillAim(event);
-  const { actor, active, overCancel } = skillAim;
+  const { actor, active, overCancel, x, y, startX, startY } = skillAim;
+  const aimed = active && Math.hypot(x - startX, y - startY) >= 8;
   const preview = aimPreview(lastView);
   clearSkillAim();
   if (!released || overCancel || viewport.blocked || modal || stageBusy() || rewind || actor !== touchActor()) return;
-  if (!active) { toast(S.aimTouch); return; } // a tap alone picks nothing: drag to aim
+  if (!aimed) {
+    if (actor !== 1 || !castUnderfoot(lastView)) toast(actor === 1 ? S.speedUnderfoot : S.aimTouch);
+    return;
+  }
   castSkill(preview);
 }
 
@@ -856,7 +876,11 @@ function finishMouseAim() {
   const aim = mouseAim, view = lastView; mouseAim = null;
   if (!aim || !view || viewport.blocked || modal || stageBusy() || rewind || view.status !== 'playing') return;
   if (aim.actor !== (onlineMode ? network.actor : state.active)) return; // switched character mid-aim
-  if (aim.kind === 'skill') { castSkill(skillPreview(view, aim.actor, mouseWorld())); return; }
+  if (aim.kind === 'skill') {
+    const preview = skillPreview(view, aim.actor, mouseWorld());
+    if (aim.actor === 1 && !preview?.target && castUnderfoot(view)) return;
+    castSkill(preview); return;
+  }
   if (view.actors[aim.actor]?.carrying === null) return;
   const point = mouseWorld(), velocity = point && throwToward(view, aim.actor, point);
   dispatch(velocity ? { type: 'grab', actor: aim.actor, aim: velocity } : { type: 'grab', actor: aim.actor });
@@ -953,7 +977,7 @@ function tapWorld(clientX, clientY) {
   const point = renderer.worldPoint(clientX, clientY);
   if (!point) return { result: 'idle' };
   if (touchActor() === 0) return toggleFreeze(view, point);
-  const hit = timeObjectAt(view, point, Math.max(12, 30 / camera.scale));
+  const hit = bloomTargetAt(view, point, bloomHitSlop());
   if (!hit) return { result: 'empty' };
   const actor = touchActor();
   const result = abilityCheck(view, actor, hit.id), at = anchor(hit);
@@ -962,20 +986,20 @@ function tapWorld(clientX, clientY) {
   else toast(result === 'range' ? S.tapTooFar : result === 'unsupported' ? S.tapUnsupported[actor] : S.errors[result] ?? S.errors.invalid);
   return { result, target: hit.id };
 }
-// With a mouse (no touch layout), clicking the world places Still's Freeze Area; Bloom keeps F / L.
-// Locally that is always Still's power; online only the Still player's clicks cast.
-const mouseCasts = () => !document.body.classList.contains('touch-layout') && (!onlineMode || network.actor === 0);
+// A click casts the current traveller's skill, just like a direct touch.
+const mouseCasts = () => !document.body.classList.contains('touch-layout');
 canvas.addEventListener('pointerdown', event => {
   if (viewport.blocked) return;
   canvas.focus({ preventScroll: true });
   if (modal || stageBusy() || rewind || skillAim || mouseAim || event.button !== 0) return;
   if (document.body.classList.contains('touch-layout')) { event.preventDefault(); initAudio(); tapWorld(event.clientX, event.clientY); return; }
   if (event.pointerType !== 'mouse' || !mouseCasts()) return;
+  if (touchActor() === 1) { event.preventDefault(); initAudio(); tapWorld(event.clientX, event.clientY); return; }
   const point = renderer.worldPoint(event.clientX, event.clientY);
   if (point && lastView?.status === 'playing') { initAudio(); toggleFreeze(lastView, point); }
 });
 canvas.addEventListener('pointermove', event => {
-  freezePreview = !viewport.blocked && event.pointerType === 'mouse' && mouseCasts() && !mouseAim && !modal && !stageBusy() && !rewind ? renderer.worldPoint(event.clientX, event.clientY) : null;
+  freezePreview = !viewport.blocked && touchActor() === 0 && event.pointerType === 'mouse' && mouseCasts() && !mouseAim && !modal && !stageBusy() && !rewind ? renderer.worldPoint(event.clientX, event.clientY) : null;
 });
 window.addEventListener('pointermove', event => { if (event.pointerType === 'mouse') mouseClient = { x: event.clientX, y: event.clientY }; });
 canvas.addEventListener('pointerleave', () => { freezePreview = null; });
@@ -1037,7 +1061,6 @@ function runFrame(time) {
   accumulator += Math.min(100, time - lastTime); lastTime = time;
   entrance.advance(time);
   advanceStage(time);
-  checkFirstShore();
   const step = 1000 / 60;
   if (!onlineMode && !viewport.blocked && !modal && !stageBusy() && !rewind && state.status === 'playing') {
     while (accumulator >= step && !celebration) { previousTick = state; dispatch({ type: 'tick' }, true); history.record(state); accumulator -= step; }
@@ -1074,7 +1097,8 @@ function runFrame(time) {
     renderer.draw(displayState, time, {
       reduced, mode: touch ? 'coop' : 'solo', paused: worldPaused && !rewindInfo,
       sceneKey: outgoing?.sceneKey ?? sceneKey, cameraReset: outgoing?.cameraReset ?? cameraReset,
-      celebration: celebration && { progress: Math.max(0, Math.min(1, (time - celebration.start) / celebration.duration)), finale: celebration.finale, tower: celebration.tower },
+      celebration: celebration && { progress: Math.max(0, Math.min(1, (time - celebration.start) / celebration.duration)), finale: celebration.finale },
+      shoreCaption: shoreCaption.update(state, { sceneKey, enabled: !worldPaused && !rewind }),
       target: aim?.target ?? null,
       touch, tappable: !aim && touch && viewActor === 1 && displayState.status === 'playing' ? new Set(abilityTargets(displayState, viewActor).map(o => o.id)) : null,
       rewind: rewindInfo,
