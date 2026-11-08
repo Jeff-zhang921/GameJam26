@@ -3,6 +3,7 @@ import { GROW, DIE, growFrame, dieFrame } from '../src/mushroom.js';
 import { enemyBox, lifeFraction, miteStage, isEnemy, attackCharge } from '../src/enemies.js';
 import { createCamera, createParticles, worldPoint } from './presentation.js';
 import { themeFor } from './themes.js';
+import { portalFrame, landingFrame } from './portal.js';
 
 export function createRenderer(canvas, S) {
   const ctx = canvas.getContext('2d');
@@ -175,7 +176,9 @@ export function createRenderer(canvas, S) {
     };
     if (!g.scale || !g.base || !g.legs) return row(g.y, g.height, top);
     const [l0, l1] = g.legs, course = (l1 - l0) * k;
-    const foot = p.y + p.h + (p.y + p.h >= 639 ? 300 : 0), natural = top + (g.base - g.y) * k;
+    const viewportBottom = (frameHeight - transform.offsetY) / transform.scale;
+    const foot = p.y + p.h >= background.height - 1 ? Math.max(p.y + p.h, viewportBottom) : p.y + p.h;
+    const natural = top + (g.base - g.y) * k;
     const courses = 1 + Math.max(0, Math.ceil((foot - natural) / course));
     row(g.y, l0 - g.y, top);
     let y = top + (l0 - g.y) * k;
@@ -211,7 +214,7 @@ export function createRenderer(canvas, S) {
     if (p.animation) t = Math.max(0, t - p.animation.startTick * 1000 / 60);
     const color = which === 0 ? cyan : gold;
     ctx.save(); ctx.translate(p.x, p.y); ctx.globalAlpha *= ghost ? .32 : 1;
-    if (!ghost) { ellipse(ctx, 0, 2, 23, 5, 0, '#001f2780'); if (active) { ellipse(ctx, 0, 2, 25, 7, 0, which === 0 ? '#a1e3e51b' : '#e1c68a1b'); ctx.beginPath(); ctx.ellipse(0, 2, 25, 7, 0, 0, Math.PI * 2); ctx.strokeStyle = color + '80'; ctx.lineWidth = 1; ctx.stroke(); } }
+    if (!ghost && p.grounded) { ellipse(ctx, 0, 2, 23, 5, 0, '#001f2780'); if (active) { ellipse(ctx, 0, 2, 25, 7, 0, which === 0 ? '#a1e3e51b' : '#e1c68a1b'); ctx.beginPath(); ctx.ellipse(0, 2, 25, 7, 0, 0, Math.PI * 2); ctx.strokeStyle = color + '80'; ctx.lineWidth = 1; ctx.stroke(); } }
     const side = p.facing;
     const cast = p.animation?.name === 'cast' ? Math.sin(Math.min(1, t / 300) * Math.PI) : 0;
     const look = CHARACTERS[which];
@@ -369,21 +372,28 @@ export function createRenderer(canvas, S) {
     ctx.restore();
     if (targeted) { const a = Math.max(b.w, b.h) / 2 + 8; ctx.strokeStyle = cyan; ctx.lineWidth = 1.5; for (const [x, y] of [[-a, -a], [a, -a], [-a, a], [a, a]]) line(ctx, [[cx + x, cy + y - Math.sign(y) * 8], [cx + x, cy + y], [cx + x - Math.sign(x) * 8, cy + y]], gold); }
   }
-  // Outside the world (1280x640 unless a level is wider; letterbox areas on iPad-shaped or very wide screens): stretch the sky and
-  // side edges of the backdrop outward and carry the ground and its stone columns down to the screen edge.
+  // Outside the world: mirror the artwork and continue the ground columns
+  // to the screen edge, including wide courtyards and tall tablet viewports.
   // Purely visual; the world, its coordinates and collisions are unchanged.
   function surroundings(state) {
     const W = state.width, H = state.height, scale = transform.scale;
     const left = -transform.offsetX / scale, top = -transform.offsetY / scale;
     const right = (frameWidth - transform.offsetX) / scale, bottom = (frameHeight - transform.offsetY) / scale;
-    // Above: the backdrop's top colour. Beside: the backdrop mirrored, so it carries on without streaks. Below:
-    // its bottom colour sinking into shadow. Each overlaps the world by a little, so no seam shows at its edges.
-    if (top < 0) { ctx.fillStyle = edge.top; ctx.fillRect(left, top, right - left, 2 - top); }
-    if (left < 0) { ctx.save(); ctx.scale(-1, 1); ctx.drawImage(background, -1, 0); ctx.restore(); }
-    if (right > W) { ctx.save(); ctx.translate(2 * W - 1, 0); ctx.scale(-1, 1); ctx.drawImage(background, 0, 0); ctx.restore(); }
+    // Mirror each neighbouring tile across the shared edge, including corners.
+    // The central world is painted below; this adds no collision geometry.
+    for (let row = Math.floor(top / H); row < Math.ceil(bottom / H); row++) {
+      for (let col = Math.floor(left / W); col < Math.ceil(right / W); col++) {
+        if (row === 0 && col === 0) continue;
+        const flipX = Math.abs(col % 2) === 1, flipY = Math.abs(row % 2) === 1;
+        ctx.save(); ctx.translate((col + Number(flipX)) * W, (row + Number(flipY)) * H);
+        ctx.scale(flipX ? -1 : 1, flipY ? -1 : 1);
+        const overlap = 1 / scale;
+        ctx.drawImage(background, -overlap, -overlap, W + overlap * 2, H + overlap * 2); ctx.restore();
+      }
+    }
     if (bottom > H) {
-      const deep = ctx.createLinearGradient(0, H, 0, Math.max(H + 1, bottom)); deep.addColorStop(0, edge.bottom); deep.addColorStop(1, '#16131f');
-      ctx.fillStyle = deep; ctx.fillRect(left, H - 2, right - left, bottom - H + 2);
+      const deep = ctx.createLinearGradient(0, H, 0, Math.max(H + 1, bottom)); deep.addColorStop(0, '#16131f00'); deep.addColorStop(1, '#16131f66');
+      ctx.fillStyle = deep; ctx.fillRect(left, H, right - left, bottom - H);
     }
     if (theme.ground.kind === 'bridge') {
       if (bottom > H) {
@@ -540,51 +550,52 @@ export function createRenderer(canvas, S) {
     ctx.restore();
   }
   function door(state, t) {
-    const x = state.exit.x, y = state.exit.y; const ready = state.actors.some(p => atExit(state, p));
-    glow(ctx, x, y - 60, 110, ready ? '#dce2b73c' : '#a7c4ba11'); arch(ctx, x - 38, y - 107, 76, 107, '#d2c89c', 7); arch(ctx, x - 30, y - 99, 60, 99, '#a8b6a281', 1); line(ctx, [[x - 43, y], [x + 43, y]], '#e7d8a8', 3);
-    ctx.save(); ctx.beginPath(); ctx.moveTo(x - 30, y); ctx.lineTo(x - 30, y - 69); ctx.arc(x, y - 69, 30, Math.PI, 0); ctx.lineTo(x + 30, y); ctx.clip(); const g = ctx.createLinearGradient(x, y - 100, x, y); g.addColorStop(0, ready ? '#d5dfbd99' : '#497c7d33'); g.addColorStop(1, '#9ccac511'); ctx.fillStyle = g; ctx.fillRect(x - 30, y - 110, 60, 115);
-    for (let i = 0; i < 9; i++) { const yy = y - ((t * .015 + i * 13) % 110); star(ctx, x + Math.sin(i * 2.2) * 19, yy, ready ? 2 : 1, ready ? '#f1e5b3bb' : '#b7d4ba44'); }
-    ctx.restore(); circle(ctx, x, y - 67, 19, null, ready ? '#e4dbaf' : '#8aa89b88'); circle(ctx, x + 8, y - 73, 16, '#2c5b5c');
+    const { x, y } = state.exit, open = state.status === 'won' || state.actors.some(p => atExit(state, p));
+    ctx.save(); ctx.translate(x, y);
+    glow(ctx, 0, -65, 105, open ? '#e8d49838' : '#b8d8d31c');
+    // A carved astronomical doorway, with bronze ribs and a deep, luminous interior.
+    const stone = ctx.createLinearGradient(-50, 0, 50, 0);
+    stone.addColorStop(0, '#294843'); stone.addColorStop(.35, '#698277'); stone.addColorStop(.65, '#526e63'); stone.addColorStop(1, '#243d39');
+    ctx.fillStyle = '#203f38'; ctx.fillRect(-54, -4, 108, 8);
+    arch(ctx, -43, -134, 86, 134, '#223d35', 13);
+    arch(ctx, -43, -134, 86, 134, stone, 9);
+    arch(ctx, -38, -129, 76, 129, '#b19c66', 1.5);
+    arch(ctx, -33, -123, 66, 123, '#e6d5a48c', .8);
+    for (const side of [-1, 1]) {
+      ctx.fillStyle = stone; ctx.fillRect(side * 44 - 6, -85, 12, 84);
+      for (const yy of [-84, -34, -8]) { ctx.fillStyle = '#b3a276'; ctx.fillRect(side * 44 - 8, yy, 16, 3); }
+      line(ctx, [[side * 44, -73], [side * 44, -44]], '#d6c38a66', 1);
+    }
+    ctx.save(); ctx.beginPath(); ctx.moveTo(-31, 0); ctx.lineTo(-31, -90);
+    ctx.arc(0, -90, 31, Math.PI, 0); ctx.lineTo(31, 0); ctx.closePath(); ctx.clip();
+    const night = ctx.createLinearGradient(0, -122, 0, 0);
+    night.addColorStop(0, '#102f37'); night.addColorStop(.55, '#345d5e'); night.addColorStop(1, open ? '#c4cbae' : '#668e82');
+    ctx.fillStyle = night; ctx.fillRect(-32, -124, 64, 125);
+    for (let i = 0; i < 18; i++) {
+      const yy = -((t * .008 + i * 19.7) % 120), xx = Math.sin(i * 7.2) * 28;
+      circle(ctx, xx, yy, i % 4 ? .65 : 1.3, '#e7e3bd99');
+    }
+    glow(ctx, 0, -49, 39, open ? '#f9e9b35c' : '#b0d6cf27');
+    circle(ctx, 0, -70, 19, null, '#d4c38bc0', .9);
+    circle(ctx, 0, -70, 23, null, '#d4c38b44', .6);
+    ctx.save(); ctx.translate(0, -70); ctx.rotate(t * .00012);
+    for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; line(ctx, [[Math.cos(a) * 25, Math.sin(a) * 25], [Math.cos(a) * 28, Math.sin(a) * 28]], '#e5d4a2', 1); }
+    ctx.restore();
+    star(ctx, 0, -70, 9, '#f1e1ad');
+    line(ctx, [[-30, -1], [30, -1]], '#fff1b7', 2);
+    ctx.restore();
+    star(ctx, 0, -133, 6, '#d8c595');
     if (state.status !== 'won') {
-      ctx.font = '9px "Segoe UI",sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = ready ? gold : '#9fb8a6'; const waiting = ready ? exitStatus(state).waiting : null;
-      ctx.fillText(waiting !== null ? S.gateWaiting[waiting] : ready ? S.gateOpen : S.gateClosed, x, y - 126);
+      const waiting = exitStatus(state).waiting;
+      ctx.textAlign = 'center'; ctx.font = '9px Georgia'; ctx.fillStyle = '#efe6c6';
+      ctx.fillText(waiting !== null ? S.gateWaiting[waiting] : 'THE MOON GATE', 0, -153);
     }
+    ctx.restore();
   }
-  function celebrateGate(state, { progress, finale }, reduced) {
-    const { x, y: ground } = state.exit, y = ground - 66;
-    const ramp = (start, end) => smooth(Math.max(0, Math.min(1, (progress - start) / (end - start))));
-    const light = reduced ? .85 : ramp(0, .48);
-    ctx.save(); ctx.globalAlpha = light;
-    glow(ctx, x, y, 137, '#ffe4a55c');
-    arch(ctx, x - 38, ground - 107, 76, 107, '#fff0b9', 3);
-    circle(ctx, x, y, 19, '#f7e8b56b', '#fff7d7', 1.5);
-    if (reduced) { ctx.restore(); return; }
-    const arrival = ramp(.08, .63);
-    state.actors.forEach((actor, i) => {
-      const side = i === 0 ? -1 : 1, color = i === 0 ? '#b5f4ff' : '#ffdb8a';
-      const at = u => [actor.x + side * 13 + (x - actor.x - side * 13) * u + side * Math.sin(u * Math.PI) * 47,
-        actor.y - 28 + (y - actor.y + 28) * u - Math.sin(u * Math.PI) * 23];
-      ctx.globalAlpha = light * (1 - ramp(.63, .85));
-      line(ctx, Array.from({ length: 12 }, (_, j) => at(Math.max(0, arrival - (11 - j) * .024))), color, 2.25);
-      const [px, py] = at(arrival);
-      glow(ctx, px, py, 19, `${color}9c`); star(ctx, px, py, 5, color);
-    });
-    const joined = ramp(.51, .76), radius = 24 + joined * (finale ? 62 : 31);
-    ctx.globalAlpha = joined * (1 - ramp(.88, 1) * .5);
-    circle(ctx, x, y, radius, null, '#fff2c3c9', 1.6);
-    if (finale) {
-      const orbit = ramp(.63, .91), phaseRadius = radius + 13 * orbit;
-      ctx.globalAlpha *= orbit;
-      circle(ctx, x, y, phaseRadius, null, '#bde6e3a8', 1);
-      for (let i = 0; i < 8; i++) {
-        const angle = i * Math.PI / 4 - Math.PI / 2 + (1 - orbit) * .4;
-        const px = x + Math.cos(angle) * phaseRadius, py = y + Math.sin(angle) * phaseRadius;
-        circle(ctx, px, py, 6, '#243f4d', '#e6deb1', 1);
-        const phase = Math.cos(i * Math.PI / 4);
-        if (i === 0) circle(ctx, px, py, 4, '#fff0bf');
-        else if (i !== 4) ellipse(ctx, px + Math.sign(Math.sin(i * Math.PI / 4)) * (1 - phase), py, 1.3 + (phase + 1), 4, 0, '#fff0bf');
-      }
-    }
+  function celebrateGate(state, { progress }, reduced) {
+    const opening = portalFrame(progress, reduced);
+    ctx.save(); ctx.globalAlpha = opening.fade * .8;
+    glow(ctx, state.exit.x, state.exit.y - 63, 65 + opening.fade * 24, '#f1e5b575');
     ctx.restore();
   }
   // An orb flies from the caster's hand to what they targeted (following it if it moves), then bursts on arrival.
@@ -622,8 +633,18 @@ export function createRenderer(canvas, S) {
     const dt = lastTime === null ? 0 : Math.min(.05, Math.max(0, (time - lastTime) / 1000));
     lastTime = time;
     if (!options.paused && !options.reduced) visualTime += dt * 1000;
-    const t = options.reduced ? 0 : visualTime;
+    const t = options.reduced ? 0 : visualTime + (options.celebration?.progress ?? 0) * 2400;
     transform = camera.update(state, { width: frameWidth, height: frameHeight, dt, mode: options.mode, reduced: options.reduced, paused: options.paused, sceneKey: options.sceneKey, resetCamera: lastReset !== options.cameraReset, bottomInset: options.bottomInset || 0 });
+    const departure = options.celebration && portalFrame(options.celebration.progress, options.reduced);
+    if (departure) {
+      const scale = Math.max(transform.scale, Math.min(frameWidth / 200, frameHeight / 165));
+      transform = { ...transform,
+        scale: transform.scale + (scale - transform.scale) * departure.zoom,
+        offsetX: transform.offsetX + (frameWidth / 2 - state.exit.x * scale - transform.offsetX) * departure.zoom,
+        offsetY: transform.offsetY + (frameHeight * .52 - (state.exit.y - 67) * scale - transform.offsetY) * departure.zoom,
+      };
+    }
+    const landing = options.arrival && landingFrame(options.arrival.progress, options.reduced);
     const coda = options.shoreCaption;
     const codaProgress = coda?.progress ?? 0;
     lastReset = options.cameraReset;
@@ -661,9 +682,22 @@ export function createRenderer(canvas, S) {
       const inv = actorState.invuln > 0;
       if (inv && !options.reduced && !options.paused && Math.floor(state.tick / 4) % 2) continue;
       if (inv && options.reduced) ctx.globalAlpha = .5;
-      actor(actorState, actorState.id, actorState.id === state.active, actorState.animation && !options.reduced ? state.tick * 1000 / 60 : t); ctx.globalAlpha = 1;
+      ctx.save();
+      let traveller = actorState;
+      if (departure) {
+        traveller = { ...actorState, x: actorState.x + (state.exit.x - actorState.x) * departure.walk,
+          y: actorState.y + (state.exit.y - actorState.y) * departure.walk, facing: actorState.x > state.exit.x ? -1 : 1, move: departure.walk < 1 ? 1 : 0 };
+        ctx.globalAlpha *= 1 - departure.fade;
+        const size = 1 - departure.fade * .45;
+        ctx.translate(traveller.x, traveller.y); ctx.scale(size, size); ctx.translate(-traveller.x, -traveller.y);
+      } else if (landing) {
+        ellipse(ctx, actorState.x, actorState.y + 2, 19, 4, 0, '#102c3544');
+        traveller = { ...actorState, y: actorState.y - landing.drop, grounded: landing.landed };
+      }
+      actor(traveller, actorState.id, !departure && actorState.id === state.active, actorState.animation && !options.reduced ? state.tick * 1000 / 60 : t);
+      ctx.restore(); ctx.globalAlpha = 1;
     }
-    for (const o of state.objects) if (o.held !== undefined && o.held !== null) o.kind === 'crate' ? crate(o, false, t) : seed(o, t);
+    for (const o of state.objects) if (!departure && o.held !== undefined && o.held !== null) o.kind === 'crate' ? crate(o, false, t) : seed(o, t);
     for (const o of state.objects) if (isEnemy(o) && flying(o)) enemy(o, marked(o), t, options.reduced);
     for (const o of state.objects) if (o.frozen && (o.held === null || o.held === undefined)) frostMark(o, t);
     // While time rewinds, faint afterimages trail the travellers.

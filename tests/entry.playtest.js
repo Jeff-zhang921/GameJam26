@@ -10,7 +10,7 @@ const errors = [];
 const art = '/art/moonlit-conservatory.svg';
 const snapshot = page => page.evaluate(() => window.__moonclock.snapshot());
 const stage = (page, phase) => page.waitForFunction(value => document.querySelector('#modal-root')?.dataset.phase === value, phase);
-const ready = page => page.waitForFunction(() => window.__moonclock.snapshot()?.phase === 'playing' && document.querySelector('.scene-veil').hidden);
+const ready = page => page.waitForFunction(() => window.__moonclock.snapshot()?.phase === 'playing' && document.querySelector('.scene-veil').hidden && !window.__moonclock.transition().phase);
 const watchReveal = page => page.evaluate(() => {
   window.swapOpacity = null;
   const root = document.querySelector('#modal-root');
@@ -121,14 +121,8 @@ async function checkLocal(url, { reducedMotion = 'no-preference', finale = false
     await page.waitForTimeout(1800);
     await page.screenshot({ path: '.audit/win-finale.png' });
   }
-  await stage(page, 'win');
-  assert.ok(Date.now() - began >= (reducedMotion === 'reduce' ? 200 : finale ? 2200 : 1350), 'Celebration ended early');
-  if (finale) assert.match(await page.getByTestId('next').innerText(), /Play Again/);
-  await watchReveal(page);
-  await page.getByTestId('next').click();
-  await page.locator('.scene-veil').waitFor({ state: 'visible' });
   await ready(page);
-  assert.equal(await page.evaluate(() => window.swapOpacity), 1, 'The next courtyard replaced the results before the screen was covered');
+  assert.equal(await page.getByTestId('next').count(), 0, 'Gate passage must not show results');
   assert.equal((await snapshot(page)).level, (level + 1) % 5);
   await page.close();
 }
@@ -166,24 +160,18 @@ async function checkOnline(server) {
   await Promise.all([host.waitForFunction(() => window.__moonclock.snapshot().level === 1), guest.waitForFunction(() => window.__moonclock.snapshot().level === 1)]);
   await Promise.all([ready(host), ready(guest)]);
   assert.equal(await host.getByTestId('next').count(), 0, 'First courtyard needs no Next click');
-  assert.equal(await guest.evaluate(() => window.celebrations), 0, 'First courtyard replayed the removed cutscene');
+  assert.equal(await guest.evaluate(() => window.celebrations), 1, 'First courtyard must enter the gate once');
   await checkBloomAim(guest, room);
 
-  // Later courtyards retain their explicit results and host-controlled Next.
+  // Every courtyard now enters its gate and advances automatically.
   enterGate(0); enterGate(1);
-  await Promise.all([stage(host, 'celebration'), stage(guest, 'celebration')]);
-  await Promise.all([stage(host, 'win'), stage(guest, 'win')]);
-  assert.equal(await guest.evaluate(() => window.celebrations), 1, 'Repeated winning snapshots restarted the animation');
-  assert.equal(await guest.getByTestId('next').isDisabled(), true);
-
+  await Promise.all([host.waitForFunction(() => window.__moonclock.snapshot().level === 2), guest.waitForFunction(() => window.__moonclock.snapshot().level === 2)]);
+  await Promise.all([ready(host), ready(guest)]);
   const playerId = await guest.evaluate(() => window.__moonclock.connection().playerId);
   await guest.reload();
-  await stage(guest, 'win');
-  assert.equal(await guest.evaluate(() => window.celebrations), 0, 'Reconnect replayed the animation');
+  await ready(guest);
+  assert.equal(await guest.evaluate(() => window.celebrations), 0, 'Reconnect replayed an old gate animation');
   assert.equal(await guest.evaluate(() => window.__moonclock.connection().playerId), playerId);
-  await host.getByTestId('next').click();
-  await Promise.all([host.locator('.scene-veil').waitFor({ state: 'visible' }), guest.locator('.scene-veil').waitFor({ state: 'visible' })]);
-  await Promise.all([ready(host), ready(guest)]);
   assert.equal((await snapshot(host)).level, 2);
   assert.equal((await snapshot(guest)).level, 2);
   await host.close(); await guest.close();
