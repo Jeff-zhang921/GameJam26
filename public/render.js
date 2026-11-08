@@ -33,7 +33,7 @@ export function createRenderer(canvas, S) {
   const camera = createCamera(), effects = createParticles();
   let transform, portalView = null, arrivalView = null;
   const cyan = '#a1e3e5', gold = '#e1c68a', muted = '#8aa89b';
-  const sprites = Object.fromEntries(['crate', 'seed', 'mushroom-grow', 'mushroom-die', 'still', 'mage', 'snail', 'pit', 'vine', 'crossbow'].map(name => { const img = new Image(); img.src = `/sprites/${name}.png`; return [name, img]; }));
+  const sprites = Object.fromEntries(['crate', 'seed', 'mushroom-grow', 'mushroom-die', 'still', 'mage', 'snail', 'pit', 'vine', 'crossbow', 'arrow'].map(name => { const img = new Image(); img.src = `/sprites/${name}.png`; return [name, img]; }));
   const loaded = (...names) => names.every(name => sprites[name].complete && sprites[name].naturalWidth > 0);
   // Theme art (ground, background images) is loaded on first use, by path. `theme` is the current courtyard's.
   const artCache = new Map();
@@ -464,7 +464,15 @@ export function createRenderer(canvas, S) {
       ctx.fillStyle = '#56656a'; ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, 6); ctx.fill(); circle(ctx, cx, cy, 13, null, '#b8ac7188', 1.5);
       circle(ctx, cx + o.dx * 12, cy + o.dy * 12, 6, '#1c2b2c'); circle(ctx, cx, cy, 3, o.speed ? gold : '#8aa89b');
     }
-    if (o.kind === 'dart') {
+    // A dart is the arrow sprite (pointing right, its shaft in [82, 258, 2006, 192]) turned along its flight; slowed,
+    // it carries a cold glow.
+    if (o.kind === 'dart' && loaded('arrow')) {
+      const length = 46, k = length / 2006;
+      if (o.frozen) glow(ctx, cx, cy, 26, '#bceef088');
+      ctx.save(); ctx.translate(cx, cy); ctx.rotate(Math.atan2(o.dy, o.dx));
+      ctx.drawImage(sprites.arrow, 82, 258, 2006, 192, -length / 2, -96 * k, length, 192 * k);
+      ctx.restore();
+    } else if (o.kind === 'dart') {
       const len = 18, hx = cx + o.dx * len, hy = cy + o.dy * len, tx = cx - o.dx * len, ty = cy - o.dy * len;
       line(ctx, [[tx, ty], [hx, hy]], o.frozen ? '#bceef0' : '#d9c27a', 3);
       ctx.fillStyle = o.frozen ? '#bceef0' : '#f0dc96'; ctx.beginPath(); ctx.moveTo(hx + o.dx * 6, hy + o.dy * 6); ctx.lineTo(hx - o.dy * 5, hy + o.dx * 5); ctx.lineTo(hx + o.dy * 5, hy - o.dx * 5); ctx.fill();
