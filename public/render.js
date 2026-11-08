@@ -291,6 +291,34 @@ export function createRenderer(canvas, S) {
     if (targeted) { const a = 32; ctx.strokeStyle = cyan; ctx.lineWidth = 1.5; for (const [x, y] of [[-a, -a], [a, -a], [-a, a], [a, a]]) line(ctx, [[x, y - Math.sign(y) * 8], [x, y], [x - Math.sign(x) * 8, y]], cyan); }
     ctx.restore();
   }
+  function rope(o, targeted) {
+    const { x, y, top } = o, bottom = 2 * y - top;
+    const wear = Math.min(1, o.age / meta.rope.breakTicks);
+    const split = top + (bottom - top) * .64;
+    const strand = (points, color) => {
+      line(ctx, points, '#33262a', 4);
+      line(ctx, points, o.frozen ? cyan : color, 2.2);
+    };
+    ctx.save(); ctx.lineCap = 'round';
+    const [first, second] = meta.rope.frayAt;
+    for (const [side, limit, color] of [[-1, first, '#d2a372'], [1, second, '#bb8e60'], [0, 1, '#f4ca83']]) {
+      const offset = side * (2 + wear * 3);
+      const upper = [x + side * 2, top + 2], lower = [x + side * 2, bottom - 2];
+      if (wear >= limit) {
+        const gap = 6 + (wear - limit) * 28, loose = x + offset + side * (6 + wear * 9);
+        strand([upper, [x + offset, split - gap - 10], [loose, split - gap]], color);
+        strand([[loose, split + gap], [x + offset, split + gap + 10], lower], color);
+      } else {
+        strand([upper, [x + offset, split], lower], color);
+      }
+    }
+    if (targeted) {
+      circle(ctx, x, y, 13, null, '#32262a', 4);
+      circle(ctx, x, y, 13, null, gold, 1.7);
+    }
+    for (const yy of [top + 2, bottom - 2]) circle(ctx, x, yy, 5, '#26373b', '#d0ad75', 1.5);
+    ctx.restore();
+  }
   // Something keeping a traveller's pace wears their colour (Still teal, Bloom gold): a ring that turns with its own
   // clock, so it spins one way while its walker walks right, back while they walk left, and rests while they stand.
   const walkerColor = o => o.walker === 0 ? cyan : gold;
@@ -840,6 +868,7 @@ export function createRenderer(canvas, S) {
     ctx.setTransform(k, 0, 0, k, ox, oy);
     for (const shard of state.shards) if (!shard.taken) { const yy = shard.y + Math.sin(t * .002 + shard.id) * 5; glow(ctx, shard.x, yy, 40, '#e7d2a51b'); ctx.save(); ctx.translate(shard.x, yy); ctx.rotate(Math.PI / 4); ctx.fillStyle = '#e2d194'; ctx.fillRect(-5, -5, 10, 10); ctx.strokeStyle = '#f4e7b477'; ctx.strokeRect(-10, -10, 20, 20); ctx.restore(); }
     for (const c of state.pickups ?? []) if (!c.taken) (c.kind === 'bolt' ? lightningCrystal : frostCrystal)(c, t);
+    for (const o of state.objects) if (o.kind === 'rope') rope(o, marked(o));
     for (const o of state.objects) if (o.kind === 'crate' && o.held === null) crate(o,options.tappable ? marked(o) : o.id === target && state.active === 0, t);
     for (const o of state.objects) if (o.kind === 'seed' && o.held === null) seed(o, t);
     const flying = o => !o.frozen && ['dart', 'orb', 'lantern'].includes(o.kind);
@@ -914,6 +943,7 @@ export function createRenderer(canvas, S) {
       const words = options.touch ? S.tapLabels : { freeze: S.targetFreeze, wake: S.targetWake, hasten: S.targetHasten, max: S.targetMax, rewind: S.targetRewind };
       if (state.active === 0) label(x, top, words.freeze);
       else if (Math.abs(selected.speed) >= meta.time.maxSpeed) label(x, top, words.max, muted);
+      else if (selected.kind === 'rope') label(x, selected.y - 26, S.targetRope, gold);
       else label(x, top, state.bloomReverses ? words.rewind : selected.speed ? words.hasten : words.wake, gold);
     }
     ctx.restore();
