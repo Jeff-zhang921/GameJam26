@@ -11,7 +11,6 @@ import { createLobby } from './lobby.js';
 import { createEntrance } from './entrance.js';
 import { createPWA } from './pwa.js';
 import { createViewport } from './viewport.js';
-import { createShoreCaption } from './shore-caption.js';
 import { createDialogue } from './dialogue.js';
 import { createTaskHints } from './task-hints.js';
 
@@ -19,7 +18,6 @@ import { createTaskHints } from './task-hints.js';
 const music = createMusic();
 const growthAudio = createGrowthAudio();
 const rewindAudio = createRewindAudio();
-const shoreCaption = createShoreCaption();
 const icons = {
   moon: '<path d="M19 15.5A8 8 0 0 1 8.5 5a8.5 8.5 0 1 0 10.5 10.5Z"/><path d="m17 3 .5 2.5L20 6l-2.5.5L17 9l-.5-2.5L14 6l2.5-.5Z"/>',
   leaf: '<path d="M19 4C7 3 3 10 7 16c6 4 13 0 12-12Z"/><path d="M5 21 17 7M10 15l-1-5m5 1 4 1"/>',
@@ -1086,7 +1084,6 @@ function runFrame(time) {
       sceneKey: outgoing?.sceneKey ?? sceneKey, cameraReset: outgoing?.cameraReset ?? cameraReset,
       celebration: celebration && { progress: Math.max(0, Math.min(1, (time - celebration.start) / celebration.duration)), finale: celebration.finale },
       arrival: arrival ? { progress: Math.max(0, Math.min(1, (time - arrival.start) / arrival.duration)) } : sceneFade?.arrive && sceneFade.revealAt !== null ? { progress: 0 } : null,
-      shoreCaption: shoreCaption.update(state, { sceneKey, enabled: !worldPaused && !rewind }),
       target: aim?.target ?? null,
       touch, tappable: !aim && touch && viewActor === 1 && displayState.status === 'playing' ? new Set(abilityTargets(displayState, viewActor).map(o => o.id)) : null,
       rewind: rewindInfo,

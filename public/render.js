@@ -674,8 +674,6 @@ export function createRenderer(canvas, S) {
       };
     }
     const landing = options.arrival && landingFrame(options.arrival.progress, options.reduced);
-    const coda = options.shoreCaption;
-    const codaProgress = coda?.progress ?? 0;
     lastReset = options.cameraReset;
     effects.update(state, { dt, reduced: options.reduced, paused: options.paused && state.status !== 'won', sceneKey: options.sceneKey });
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -763,7 +761,7 @@ export function createRenderer(canvas, S) {
     if (options.aim) aimedCast(options.aim);
     if (options.throwArc) throwArc(options.throwArc);
     const selected = state.objects.find(o => o.id === target);
-    if (state.status === 'playing' && selected && !coda) {
+    if (state.status === 'playing' && selected) {
       const top = isEnemy(selected) ? enemyBox(selected).y - 26 : selected.kind === 'plant' ? selected.base - selected.height - 53 : selected.kind === 'mover' ? selected.y - 30 : selected.y - 62;
       const x = selected.kind === 'mover' ? selected.x + selected.w / 2 : selected.x;
       const words = options.touch ? S.tapLabels : { freeze: S.targetFreeze, wake: S.targetWake, hasten: S.targetHasten, max: S.targetMax };
@@ -772,21 +770,6 @@ export function createRenderer(canvas, S) {
       else label(x, top, selected.speed ? words.hasten : words.wake, gold);
     }
     ctx.restore();
-    if (coda) {
-      ctx.save(); ctx.setTransform(currentDpr, 0, 0, currentDpr, 0, 0);
-      ctx.globalAlpha = smooth(Math.min(1, codaProgress / .12)) * (1 - smooth(Math.max(0, (codaProgress - .85) / .15)));
-      const gradient = ctx.createLinearGradient(0, frameHeight * .55, 0, frameHeight);
-      gradient.addColorStop(0, '#10292500'); gradient.addColorStop(1, '#102925ed');
-      ctx.fillStyle = gradient; ctx.fillRect(0, frameHeight * .55, frameWidth, frameHeight * .45);
-      ctx.textAlign = 'center'; ctx.fillStyle = '#f0e9cd';
-      const fontSize = Math.min(26, Math.max(13, frameWidth / 36), frameHeight / 16);
-      ctx.font = `${fontSize}px Georgia, serif`;
-      ctx.shadowColor = '#061d18'; ctx.shadowBlur = 8;
-      ctx.fillText('The world stopped.', frameWidth / 2, frameHeight * .77);
-      ctx.globalAlpha *= Math.max(0, Math.min(1, (codaProgress - .16) / .12));
-      ctx.fillText('But something is still counting.', frameWidth / 2, frameHeight * .77 + fontSize * 1.6);
-      ctx.restore();
-    }
     if (options.rewind) rewindOverlay(options.rewind.progress, t);
   }
   return {
