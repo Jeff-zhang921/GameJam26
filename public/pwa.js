@@ -2,7 +2,7 @@ export function createPWA({ isBusy }) {
   let registration = null, installPrompt = null, updateLocked = false, destroyed = false, deferred = false;
   let hadController = !!navigator.serviceWorker?.controller;
   const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  const appWindow = window.matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches || navigator.standalone === true;
   const root = document.createElement('aside');
   root.className = 'pwa-tools'; root.setAttribute('aria-label', 'Application status');
   root.innerHTML = '<p class="pwa-offline" role="status" hidden>Offline. Online rooms need a connection.</p><div class="pwa-actions"><button type="button" class="pwa-install" hidden>Install Moonclock</button><button type="button" class="pwa-ios" hidden>Install on iPhone</button><button type="button" class="pwa-update" hidden>Update ready</button></div><div class="pwa-help" role="status" hidden><span></span><button type="button" class="pwa-dismiss" aria-label="Dismiss installation guidance">×</button></div><p class="pwa-update-status" role="status" hidden></p>';
@@ -16,8 +16,8 @@ export function createPWA({ isBusy }) {
     if (destroyed) return;
     const busy = !!isBusy();
     offline.hidden = navigator.onLine !== false;
-    install.hidden = !installPrompt || standalone || busy;
-    iosButton.hidden = !ios || standalone || busy;
+    install.hidden = !installPrompt || appWindow || busy;
+    iosButton.hidden = !ios || appWindow || busy;
     update.hidden = !registration?.waiting;
     update.disabled = busy || updateLocked;
     update.textContent = updateLocked ? 'Updating…' : busy ? 'Update ready · after this session' : 'Update ready';
