@@ -1,7 +1,7 @@
 export default {
   id: 'afterbloom',
   // Art and music by name, from public/themes.js (GROUNDS, BACKGROUNDS, MUSIC).
-  theme: { ground: 'cobbleMoss', background: 'chamber3', music: 'deathKnell' },
+  theme: { ground: 'sketchBridge', background: 'chamber3', music: 'deathKnell' },
   // Wide (3920): the wider throwing step keeps its original gap to the lift.
   width: 3920,
   // Start ground; the high ledge (220 up: only a mushroom gets you there) with a capped pillar that stops the upper

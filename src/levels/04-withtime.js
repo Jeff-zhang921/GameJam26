@@ -1,9 +1,7 @@
 export default {
   id: 'withtime',
   // Art and music by name, from public/themes.js (GROUNDS, BACKGROUNDS, MUSIC).
-  theme: { ground: 'cobbleMoss', background: 'chamber4', music: 'lordOfDream' },
-  // In this courtyard Bloom runs plant time backwards (Still is unchanged).
-  bloomReverses: true,
+  theme: { ground: 'watercolorStone', background: 'chamber4', music: 'lordOfDream' },
   width: 2800,
   // 0 start ground; 1 tunnel floor, 200 above it (out of jumping reach); 2 the tunnel roof, 69 above the floor, so a
   // full-grown cap leaves you facing rock; 3 the lower ground past the tunnel; 4 a hanging block, its top out of
@@ -18,16 +16,15 @@ export default {
   ],
   spawn: [{ x: 200, y: 520 }, { x: 270, y: 520 }],
   crates: [], seeds: [], startSeeds: 0, movers: [],
-  // The dead tree (a wilted mushroom about to vanish) and the thorny vine on the hanging block's right face, fully
-  // grown across the shaft to the cliff. Both pits only hold these plants.
+  // A sleeping flower seed and a mature thorny vine across the shaft. Bloom starts their clocks: the flower
+  // grows, holds, wilts and disappears; the vine ages until it withers and opens the way. These pits cannot be replanted.
   pits: [{ x: 640, y: 520, plantable: false }, { x: 1920, y: 370, wall: 1, plantable: false }],
-  plants: [{ pit: 0, age: 1915 }, { pit: 1, age: 960 }],
+  plants: [{ pit: 0, age: 0 }, { pit: 1, age: 960, barrier: true }],
   checkpoints: [{ x: 820, y: 320 }, { x: 1460, y: 520 }],
-  // Freeze is optional: it holds the tree near half height for longer.
+  // Freeze is optional: it holds the growing flower near half height for longer.
   freezeCharges: 1, freezePickups: [{ x: 420, y: 432 }], bloomPickups: [],
-  // The tree must be rewound by anyone still on the start ground; the vine by anyone on the lower ground (once it
-  // has rewound away the way is open).
-  rewindNeeds: [{ plant: 'plant-0', from: 0 }, { plant: 'plant-1', from: 3, goneOpens: true }],
-  // The shard sits above the vine's root: walk back onto the vine from the cliff before it rewinds away.
-  exit: { x: 2600, y: 380 }, shards: [{ x: 1980, y: 340 }], need: ['treeRewound', 'vineRewound'],
+  // Travellers left on the start ground need the flower; those in the shaft need the vine's clock to run.
+  plantNeeds: [{ plant: 'plant-0', from: 0 }, { plant: 'plant-1', from: 3, goneOpens: true }],
+  // The shard sits above the vine's root: walk back onto the vine from the cliff before it withers away.
+  exit: { x: 2600, y: 380 }, shards: [{ x: 1980, y: 340 }], need: ['treeLifted', 'withered'],
 };

@@ -2,8 +2,8 @@ import { describe, test, expect } from 'bun:test';
 import { setup, applyAction, validateAction, abilityCheck, meta } from '../src/logic.js';
 import { LEVELS } from '../src/levels/index.js';
 
-// Courtyard 4: Bloom rewinds. A dead tree in front of a low tunnel (hop in from the cap while it is about half
-// height), then a thorny vine closing the shaft in front of the exit cliff (rewound, it opens a gap by the cliff).
+// Courtyard 4 uses the same forward clock as the other gardens. Ride a growing flower into the low tunnel,
+// then let the mature thorny vine age and wither until it opens a gap beside the cliff.
 const act = (s, a) => { expect(validateAction(s, 'local', a).valid).toBe(true); return applyAction(s, 'local', a); };
 const tick = (s, n = 1) => { for (let i = 0; i < n; i++) s = applyAction(s, 'local', { type: 'tick' }); return s; };
 const STILL = 0, BLOOM = 1;
@@ -12,9 +12,9 @@ const [start, floor, roof, lower, block, cliff] = level.platforms;
 const get = (s, id) => s.objects.find(o => o.id === id);
 const stand = (s, who, x, y, on) => Object.assign(s.actors[who], { x, y, vx: 0, vy: 0, grounded: true, on });
 const { growTicks, maxHeight } = meta.plant;
-// Put the tree in its shrinking (young) phase at cap height h, awake or not.
+// Put the flower in its growing phase at petal height h, awake or not.
 const treeAt = (s, h) => Object.assign(get(s, 'plant-0'), { age: h / maxHeight * growTicks, height: h, withered: false });
-const vineAt = (s, length) => Object.assign(get(s, 'plant-1'), { age: length / meta.vine.maxLength * growTicks, height: length });
+const vineAt = (s, length) => Object.assign(get(s, 'plant-1'), { age: growTicks + meta.plant.matureTicks + (1 - length / meta.vine.maxLength) * meta.plant.witherTicks, height: length, withered: true });
 
 // Jump toward `dir` at every delay from standing to past the coyote grace; whether the feet ever rest on `goal`.
 function anyJumpReaches(build, goal, dir = 1) {
@@ -33,9 +33,9 @@ function anyJumpReaches(build, goal, dir = 1) {
 const solo = (prepare = () => {}) => () => { const s = setup({ level: 3 }); stand(s, BLOOM, 40, 520, 'platform-0'); prepare(s); return s; };
 
 describe('courtyard 4 layout', () => {
-  test('rewinding courtyard, six platforms in order, gate on the cliff', () => {
+  test('forward-time courtyard, six platforms in order, gate on the cliff', () => {
     const s = setup({ level: 3 });
-    expect(s.bloomReverses).toBe(true);
+    expect(s.bloomReverses).toBe(false);
     expect(s.width).toBe(2800);
     expect(start.y - floor.y).toBe(200);
     expect(roof.ceiling && roof.y + roof.h).toBe(251);
@@ -48,10 +48,9 @@ describe('courtyard 4 layout', () => {
     expect(s.objects.filter(o => o.kind === 'seed' || o.kind === 'crate' || o.kind === 'mover')).toHaveLength(0);
   });
 
-  test('the dead tree sleeps, withered and low; the vine sleeps, full and thorny', () => {
+  test('the flower starts as a sleeping seed; the vine sleeps, full and thorny', () => {
     const s = setup({ level: 3 });
-    expect(get(s, 'plant-0')).toMatchObject({ speed: 0, withered: true });
-    expect(get(s, 'plant-0').height).toBeLessThan(26);
+    expect(get(s, 'plant-0')).toMatchObject({ speed: 0, age: 0, height: 0, withered: false });
     expect(get(s, 'plant-1')).toMatchObject({ speed: 0, withered: false, wall: 1, x: block.x + block.w });
     expect(get(s, 'plant-1').height).toBeCloseTo(meta.vine.maxLength);
     expect(get(s, 'plant-1').x + get(s, 'plant-1').height).toBeCloseTo(cliff.x);
@@ -68,11 +67,11 @@ describe('courtyard 4 layout', () => {
 
 describe('courtyard 4: the tunnel', () => {
   const onCap = h => solo(s => { treeAt(s, h); stand(s, STILL, 640, 520 - h, 'plant-0'); });
-  const dead = solo(s => stand(s, STILL, 640, 520 - get(s, 'plant-0').height, 'plant-0'));
+  const seed = solo(s => stand(s, STILL, 640, 520, 'platform-0'));
 
-  test('out of reach from the start ground and from the dead tree', () => {
+  test('out of reach from the start ground and the unactivated seed', () => {
     for (const x of [700, 744]) expect(anyJumpReaches(solo(s => stand(s, STILL, x, 520, 'platform-0')), 'platform-1')).toBe(false);
-    expect(anyJumpReaches(dead, 'platform-1')).toBe(false);
+    expect(anyJumpReaches(seed, 'platform-1')).toBe(false);
   });
 
   test('reached from a cap around half height, not from a full-grown one', () => {
@@ -83,18 +82,27 @@ describe('courtyard 4: the tunnel', () => {
     expect(anyJumpReaches(full, 'platform-1')).toBe(false);
   });
 
-  test('rewound, the tree grows back to full, then shrinks through half height and vanishes', () => {
+  test('woken, the flower grows, holds, wilts through all stages and vanishes', () => {
     let s = setup({ level: 3 });
     stand(s, BLOOM, 560, 520, 'platform-0');
     s = act(s, { type: 'ability', actor: BLOOM, target: 'plant-0' });
-    let tallest = 0, half = false;
+    expect(get(s, 'plant-0').speed).toBe(1);
+    let tallest = 0, half = false, sawMature = false, sawWilt = false, lastAge = -1;
     for (let t = 0; t < 2000 && get(s, 'plant-0'); t++) {
       s = tick(s);
       const p = get(s, 'plant-0');
-      if (p) { tallest = Math.max(tallest, p.height); if (tallest > maxHeight - 1 && Math.abs(p.height - maxHeight / 2) < 2) half = true; }
+      if (p) {
+        expect(p.age).toBeGreaterThan(lastAge); lastAge = p.age;
+        tallest = Math.max(tallest, p.height);
+        if (p.age >= growTicks && !p.withered) sawMature = true;
+        if (p.withered) { sawWilt = true; expect(sawMature).toBe(true); }
+        if (sawWilt && Math.abs(p.height - maxHeight / 2) < 2) half = true;
+      }
     }
     expect(tallest).toBeGreaterThan(maxHeight - 1);
     expect(half).toBe(true);
+    expect(sawWilt).toBe(true);
+    expect(s.events.some(e => e.kind === 'unwither')).toBe(false);
     expect(get(s, 'plant-0')).toBeUndefined();
   });
 });
@@ -106,7 +114,7 @@ describe('courtyard 4: the shaft', () => {
     for (const x of [1940, 2040, 2140]) expect(anyJumpReaches(inShaft(undefined, x), 'platform-5')).toBe(false);
   });
 
-  test('rewound to 180 it leaves a gap by the cliff to jump up through', () => {
+  test('withered down to 180 it leaves a gap by the cliff to jump up through', () => {
     expect(anyJumpReaches(inShaft(180, 2135), 'platform-5')).toBe(true);
   });
 
@@ -118,27 +126,30 @@ describe('courtyard 4: the shaft', () => {
 });
 
 describe('courtyard 4 can be finished', () => {
-  test('rewind the tree, both hop into the tunnel, rewind the vine, both jump up, both reach the gate', () => {
+  test('grow the flower, both ride and hop into the tunnel, age the vine, both jump up and reach the gate', () => {
     let s = setup({ level: 3 });
-    stand(s, BLOOM, 560, 520, 'platform-0');
+    stand(s, STILL, 625, 520, 'platform-0'); stand(s, BLOOM, 655, 520, 'platform-0');
     s = act(s, { type: 'ability', actor: BLOOM, target: 'plant-0' });
-    // Wait for the shrinking phase at about 150 (past full height), then both stand on the cap and go.
-    for (let t = 0; t < 2000 && !(get(s, 'plant-0').age < growTicks && get(s, 'plant-0').height < 150); t++) s = tick(s);
-    const h = get(s, 'plant-0').height;
-    stand(s, STILL, 625, 520 - h, 'plant-0'); stand(s, BLOOM, 655, 520 - h, 'plant-0');
+    // Both start over the seed; its real growth lifts them into the tunnel's useful height range.
+    for (let t = 0; t < growTicks && get(s, 'plant-0').height < 125; t++) s = tick(s);
+    for (const who of [STILL, BLOOM]) expect(s.actors[who].on).toBe('plant-0');
     for (const who of [STILL, BLOOM]) s = act(s, { type: 'move', actor: who, dir: 1 });
     s = tick(s, 4);
     for (const who of [STILL, BLOOM]) s = act(s, { type: 'jump', actor: who });
     s = tick(s, 60);
     for (const who of [STILL, BLOOM]) expect(s.actors[who].on).toBe('platform-1');
-    expect(s.flags.treeRewound).toBe(true);
+    expect(s.flags.treeLifted).toBe(true);
+    expect(s.flags.treeRewound).toBe(false);
     // Through the tunnel and down to the shaft (positions set directly).
     stand(s, STILL, 2130, 520, 'platform-3'); stand(s, BLOOM, 2040, 520, 'platform-3');
     for (const who of [STILL, BLOOM]) s = act(s, { type: 'move', actor: who, dir: 0 });
     s = act(s, { type: 'ability', actor: BLOOM, target: 'plant-1' });
-    s = tick(s, 300);
+    // Let its mature phase finish, then wait until natural withering leaves a useful gap.
+    for (let t = 0; t < 1100 && get(s, 'plant-1').height >= 170; t++) s = tick(s);
     expect(get(s, 'plant-1').height).toBeLessThan(170);
-    expect(s.flags.vineRewound).toBe(true);
+    expect(get(s, 'plant-1').withered).toBe(true);
+    expect(s.flags.withered).toBe(true);
+    expect(s.flags.vineRewound).toBe(false);
     stand(s, BLOOM, 2140, 520, 'platform-3');
     // Let go of jump from the tunnel hop so this press counts as a new jump.
     for (const who of [STILL, BLOOM]) { s = act(s, { type: 'jumpRelease', actor: who }); s = act(s, { type: 'move', actor: who, dir: 1 }); s = act(s, { type: 'jump', actor: who }); }

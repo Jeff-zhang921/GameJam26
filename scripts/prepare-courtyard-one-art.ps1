@@ -79,6 +79,7 @@ foreach ($entry in @(@('1.png', 'leaf-grow'), @('11.png', 'leaf-wilt'), @('12.pn
   } finally { $image.Dispose() }
 }
 Import-Single 'picture/bridge/1.png' 'bridge'
+Import-Single 'picture/bridge/11.png' 'floating-platform'
 Import-Single 'picture/box/1.png' 'crate'
 Import-Single 'picture/道具/加速.png' 'bloom-charge'
 Import-Single 'picture/道具/减速.png' 'still-charge'
@@ -86,6 +87,10 @@ $bridgeImage = [System.Drawing.Bitmap]::new((Join-Path $destination 'bridge.png'
 try {
   $bridgeArt = [ordered]@{ width=$bridgeImage.Width; height=$bridgeImage.Height; walk=[CourtyardArt]::DeckRow($bridgeImage); base=($bridgeImage.Height - 1); legs=@([int][Math]::Floor($bridgeImage.Height * .62), [int][Math]::Floor($bridgeImage.Height * .74)) }
 } finally { $bridgeImage.Dispose() }
+$floatingImage = [System.Drawing.Bitmap]::new((Join-Path $destination 'floating-platform.png'))
+try {
+  $floatingArt = [ordered]@{ width=$floatingImage.Width; height=$floatingImage.Height; walk=[CourtyardArt]::DeckRow($floatingImage) }
+} finally { $floatingImage.Dispose() }
 # The first growth frame is the matching collectible planting seed.
 $seedImage = [CourtyardArt]::Load((Join-Path $projectRoot 'picture/生长平台/1.png'))
 try {
@@ -94,4 +99,5 @@ try {
 } finally { $seedImage.Dispose() }
 $json = $frames | ConvertTo-Json -Depth 6 -Compress
 $bridgeJson = $bridgeArt | ConvertTo-Json -Depth 3 -Compress
-Set-Content -LiteralPath (Join-Path $projectRoot 'public/courtyard-one-frames.js') -Value "// Generated from picture by scripts/prepare-courtyard-one-art.ps1.`nexport const LEAF_FRAMES = $json;`nexport const SKETCH_BRIDGE = $bridgeJson;" -Encoding utf8
+$floatingJson = $floatingArt | ConvertTo-Json -Depth 3 -Compress
+Set-Content -LiteralPath (Join-Path $projectRoot 'public/courtyard-one-frames.js') -Value "// Generated from picture by scripts/prepare-courtyard-one-art.ps1.`nexport const LEAF_FRAMES = $json;`nexport const SKETCH_BRIDGE = $bridgeJson;`nexport const SKETCH_FLOATING_PLATFORM = $floatingJson;" -Encoding utf8

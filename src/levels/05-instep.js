@@ -1,7 +1,7 @@
 export default {
   id: 'instep',
   // Art and music by name, from public/themes.js (GROUNDS, BACKGROUNDS, MUSIC).
-  theme: { ground: 'cobbleMoss', background: 'chamber5', music: 'behemoth' },
+  theme: { ground: 'moonlitStone', background: 'chamber5', music: 'behemoth' },
   // The hidden courtyard: here time keeps the travellers' pace. Teal things (`walker: 0`) follow Still's steps and gold
   // things (`walker: 1`) Bloom's: walking right runs their time on, walking left runs it back, standing still stops it.
   // Being carried is not walking, so nobody can drive what they ride: each traveller crosses on the other's colour.

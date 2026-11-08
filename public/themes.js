@@ -1,6 +1,7 @@
 import { LEVELS } from '../src/levels/index.js';
-import { SKETCH_BRIDGE } from './courtyard-one-frames.js';
+import { SKETCH_BRIDGE, SKETCH_FLOATING_PLATFORM } from './courtyard-one-frames.js';
 import { STONE_ART } from './courtyard-two-art.js';
+import { MOON_STONE_ART } from './courtyard-five-art.js';
 
 // The art and music a courtyard can use. Each level picks one of each by name with its `theme` parameter
 // (src/levels/*.js); anything a level leaves out falls back to DEFAULT_THEME.
@@ -10,6 +11,12 @@ import { STONE_ART } from './courtyard-two-art.js';
 // `scale` is world units per source px. A platform is capped with `left`, tiles of `fillL` / `fillR` either side
 // of `emblem` (alternately mirrored), then `right`; with no `emblem` the middle is all `fillR` tiles. fill: a texture that tiles both ways, drawn at `scale`.
 export const GROUNDS = {
+  moonlitStone: {
+    kind: 'watercolorStone', fitFloating: true,
+    surface: { src: '/sprites/courtyard-five/ground.png', ...MOON_STONE_ART.ground },
+    floating: { src: '/sprites/courtyard-five/floating-platform.png', ...MOON_STONE_ART['floating-platform'] },
+    fill: { src: '/sprites/ground-fill.png', scale: .6 },
+  },
   watercolorStone: {
     kind: 'watercolorStone',
     surface: { src: '/sprites/courtyard-two/ground.png', ...STONE_ART.ground },
@@ -21,6 +28,7 @@ export const GROUNDS = {
   sketchBridge: {
     kind: 'bridge',
     surface: { src: '/sprites/courtyard-one/bridge.png', x: 0, y: 0, ...SKETCH_BRIDGE, scale: 830 / SKETCH_BRIDGE.width, continuousShaft: true },
+    floating: { src: '/sprites/courtyard-one/floating-platform.png', ...SKETCH_FLOATING_PLATFORM },
     fill: { src: '/sprites/ground-fill.png', scale: .6 },
   },
   // One bridge span (`x`, `y`, `width`, `height` in source px; feet rest `walk` px below its top), drawn at the same

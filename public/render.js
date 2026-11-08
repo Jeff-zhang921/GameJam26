@@ -8,7 +8,8 @@ import { bridgeBands } from './bridge-layout.js';
 import { measureCharacterFrames, characterPlacement } from './character-sprites.js';
 import { guardAttackFrame } from './guard-animation.js';
 import { LEAF_FRAMES } from './courtyard-one-frames.js';
-import { ROPE_FRAMES } from './courtyard-two-art.js';
+import { ROPE_FRAMES, FLOWER_FRAMES, WATER_FRAMES } from './courtyard-two-art.js';
+import { DANDELION_FRAMES } from './courtyard-five-art.js';
 
 export function createRenderer(canvas, S) {
   const ctx = canvas.getContext('2d');
@@ -44,8 +45,8 @@ export function createRenderer(canvas, S) {
     if (!artCache.has(src)) { const img = new Image(); img.onload = () => { backgroundKey = null; }; img.src = src; artCache.set(src, img); }
     const img = artCache.get(src); return img.complete && img.naturalWidth > 0 ? img : null;
   }
-  let theme = themeFor(0), backgroundKey = null, firstCourtyard = false, secondCourtyard = false;
-  const courtyardArt = name => firstCourtyard ? art(`/sprites/courtyard-one/${name}.png`) : null;
+  let theme = themeFor(0), backgroundKey = null, courtyardOneArt = false, courtyardTwoArt = false, fourthCourtyard = false, fifthCourtyard = false, waterCycleArt = false;
+  const courtyardArt = name => courtyardOneArt ? art(`/sprites/courtyard-one/${name}.png`) : null;
   const leafWind = new Map();
   let leafWindScene;
   // The backdrop's average colour along its top and bottom edges, for the space beyond the world.
@@ -239,9 +240,20 @@ export function createRenderer(canvas, S) {
     }
     for (const band of bridgeBands(p, g, worldHeight, viewportBottom)) row(band.sy, band.sh, band.y);
   }
+  // Put the painted deck at the collision top and fit the stone face to the platform's solid thickness.
+  function floatingSlab(p) {
+    const g = theme.ground.floating, img = g && art(g.src);
+    if (!img) return false;
+    const rimH = g.walk * p.w / g.width;
+    ctx.drawImage(img, 0, 0, g.width, g.walk, p.x, p.y - rimH, p.w, rimH + .5);
+    const faceH = g.height - g.walk - (p.h > p.w ? 80 : 0);
+    ctx.drawImage(img, 0, g.walk, g.width, faceH, p.x, p.y, p.w, p.h);
+    return true;
+  }
   function stonePlatform(p) {
     const ground = theme.ground;
-    const g = p.ceiling ? ground.floating : p.h >= 200 ? ground.tall : ground.surface;
+    if (p.ceiling && ground.fitFloating) { floatingSlab(p); return; }
+    const g = p.ceiling ? ground.floating : p.h >= 200 ? (ground.tall ?? ground.surface) : ground.surface;
     const img = art(g.src);
     if (!img) return;
     const k = p.w / g.width, top = p.y - g.walk * k;
@@ -268,6 +280,13 @@ export function createRenderer(canvas, S) {
     if (theme.ground.kind === 'watercolorStone') return stonePlatform(p);
     const surface = art(theme.ground.surface.src);
     if (theme.ground.kind === 'bridge') {
+      if (theme.ground.floating && p.h <= 30) { floatingSlab(p); return; }
+      if (theme.ground.floating && p.w < 80) {
+        floatingSlab(p);
+        // The arrow-blocking pillar has wider hidden collision shoulders. Paint those exact shapes too.
+        for (const q of all.filter(q => q.hidden && q.x <= p.x && q.x + q.w >= p.x + p.w && q.y >= p.y && q.y < p.y + p.h).sort((a, b) => b.y - a.y)) floatingSlab(q);
+        return;
+      }
       if (surface) bridge(p, surface);
       return;
     }
@@ -333,7 +352,7 @@ export function createRenderer(canvas, S) {
   function crate(c, targeted, t) {
     ctx.save(); ctx.translate(c.x, c.y); const size = 24;
     if (c.frozen) { glow(ctx, 0, 0, 70, '#9de3e527'); circle(ctx, 0, 0, 41 + Math.sin(t * .002) * 2, null, '#a1e3e570'); circle(ctx, 0, 0, 34, null, '#a1e3e52e'); }
-    const watercolorCrate = secondCourtyard ? art('/sprites/courtyard-two/crate.png') : courtyardArt('crate');
+    const watercolorCrate = courtyardTwoArt ? art('/sprites/courtyard-two/crate.png') : courtyardArt('crate');
     if (watercolorCrate) ctx.drawImage(watercolorCrate, -27, -27, 54, 54);
     else if (loaded('crate')) { const h = 55, w = h * sprites.crate.naturalWidth / sprites.crate.naturalHeight; ctx.drawImage(sprites.crate, -w / 2, 27.5 - h, w, h); } // fills the 54x54 collision box
     else {
@@ -348,7 +367,7 @@ export function createRenderer(canvas, S) {
   function rope(o, targeted) {
     const { x, y, top } = o, bottom = 2 * y - top;
     const wear = Math.min(1, o.age / meta.rope.breakTicks);
-    const watercolorRope = secondCourtyard ? art('/sprites/courtyard-two/rope.png') : null;
+    const watercolorRope = courtyardTwoArt ? art('/sprites/courtyard-two/rope.png') : null;
     if (watercolorRope) {
       const [first, second] = meta.rope.frayAt;
       const frame = ROPE_FRAMES[wear >= .9 ? 3 : wear >= second ? 2 : wear >= first ? 1 : 0];
@@ -443,13 +462,16 @@ export function createRenderer(canvas, S) {
   }
   // Source cells have different transparent margins. Use measured art bounds, root anchors and the existing
   // authoritative canopy width / height, so switching art never changes collisions or where feet are supported.
-  function umbrellaLeaf(o, targeted, t, reduced) {
+  function watercolorPlant(o, targeted, t, reduced) {
     const { growTicks, matureTicks, witherTicks } = meta.plant;
     const idle = !o.withered && o.age >= growTicks;
-    const name = o.withered ? 'leaf-wilt' : idle ? 'leaf-idle' : 'leaf-grow';
-    const image = courtyardArt(name);
+    const prefix = fifthCourtyard ? 'dandelion' : fourthCourtyard ? 'flower' : 'leaf';
+    const frames = fifthCourtyard ? DANDELION_FRAMES : fourthCourtyard ? FLOWER_FRAMES : LEAF_FRAMES;
+    const plantArt = name => fifthCourtyard ? art(`/sprites/courtyard-five/${name}.png`) : fourthCourtyard ? art(`/sprites/courtyard-two/${name}.png`) : courtyardArt(name);
+    const name = `${prefix}-${o.withered ? 'wilt' : idle ? 'idle' : 'grow'}`;
+    const image = plantArt(name);
     // Preload the next stage before the plant reaches it.
-    courtyardArt('leaf-grow'); courtyardArt('leaf-idle'); courtyardArt('leaf-wilt');
+    for (const stage of ['grow', 'idle', 'wilt']) plantArt(`${prefix}-${stage}`);
     if (!image) return false;
     const progress = o.withered ? (o.age - growTicks - matureTicks) / witherTicks : o.age / growTicks;
     // Wind is decorative: an untouched mature plant can sway without starting its growth / ageing clock.
@@ -458,13 +480,25 @@ export function createRenderer(canvas, S) {
     if (!wind) { wind = { time: t, elapsed: 0 }; leafWind.set(o.id, wind); }
     if (idle && !o.frozen && !reduced) wind.elapsed += Math.min(50, Math.max(0, t - wind.time));
     wind.time = t;
-    const frame = idle ? (reduced ? 0 : Math.floor(wind.elapsed / 240) % 16) : Math.max(0, Math.min(15, Math.round(progress * 15)));
-    const crop = LEAF_FRAMES[name][frame], h = Math.max(1, o.height), w = Math.max(2, canopyWidth(o));
+    // Footstep-driven plants keep their pose while the walker rests and sway backwards when time reverses.
+    const cycle = o.walker !== undefined ? Math.floor((o.clock ?? 0) / 64) : Math.floor(wind.elapsed / 240);
+    const frame = idle ? (reduced ? 0 : ((cycle % 16) + 16) % 16) : Math.max(0, Math.min(15, Math.round(progress * 15)));
+    const crop = frames[name][frame], h = Math.max(1, o.height), w = Math.max(2, canopyWidth(o));
     timeRing(o.x, o.base - h / 2, Math.max(22, h / 2 + 12), o, t);
     // Horizontal foot contact stays centred at o.x, even on a bent wilt frame.
     const rootOffset = (crop.rootX / crop.w - .5) * w;
+    const sprout = fourthCourtyard && !o.withered ? Math.min(1, o.height / 14) : 1;
+    if (sprout < 1) {
+      // A sleeping seed has no standable height yet, but it must remain visible in its pit.
+      const seed = frames[`${prefix}-grow`][0], img = plantArt(`${prefix}-grow`), size = 16;
+      ctx.save(); ctx.globalAlpha *= 1 - sprout;
+      ctx.drawImage(img, seed.x, seed.y, seed.w, seed.h, o.x - size * seed.w / seed.h / 2, o.base - size, size * seed.w / seed.h, size);
+      ctx.restore();
+    }
+    ctx.save(); ctx.globalAlpha *= sprout;
     ctx.drawImage(image, crop.x, crop.y, crop.w, crop.h,
       o.x - w / 2 - rootOffset, o.base - h, w, h);
+    ctx.restore();
     if (targeted) { circle(ctx, o.x, o.base - h - 16, 13, '#d7bd7d10', '#e1c68a70'); star(ctx, o.x, o.base - h - 16, 5, gold); }
     return true;
   }
@@ -498,7 +532,7 @@ export function createRenderer(canvas, S) {
   }
   function plant(o, targeted, t, reduced) {
     if (o.wall) return vine(o, targeted, t);
-    if (firstCourtyard && umbrellaLeaf(o, targeted, t, reduced)) return;
+    if ((courtyardOneArt || fourthCourtyard || fifthCourtyard) && watercolorPlant(o, targeted, t, reduced)) return;
     if (loaded('seed', 'mushroom-grow', 'mushroom-die')) return mushroom(o, targeted, t);
     const h = o.height, x = o.x, y = o.base, dead = o.withered, g = Math.min(1, h / meta.plant.maxHeight), top = y - h;
     timeRing(x, y - h / 2, Math.max(22, h / 2 + 12), o, t);
@@ -526,10 +560,18 @@ export function createRenderer(canvas, S) {
     timeRing(o.x + o.w / 2, o.y + 10, o.w / 2 + 10, o, t);
     if (o.axis === 'y') line(ctx, [[o.x + o.w / 2, o.y1 + 10], [o.x + o.w / 2, o.y2 + 30]], '#b6bea133', 1);
     else line(ctx, [[o.x1 + 6, o.y + 26], [o.x2 + o.w - 6, o.y + 26]], '#b6bea133', 1);
-    const g = ctx.createLinearGradient(0, o.y, 0, o.y + 20); g.addColorStop(0, '#b9c0a4'); g.addColorStop(.4, '#647c66'); g.addColorStop(1, '#1b3839');
-    ctx.fillStyle = g; ctx.beginPath(); ctx.roundRect(o.x, o.y, o.w, 20, 4); ctx.fill();
-    const rim = o.walker !== undefined ? walkerColor(o) : null;
-    line(ctx, [[o.x, o.y - 1], [o.x + o.w, o.y - 1]], rim ?? '#e5ddba', rim ? 2.5 : 1.5); circle(ctx, o.x + o.w / 2, o.y + 10, 5, '#183e42', rim ?? (o.speed ? gold : '#8aa89b'), 1.5);
+    const painted = !!theme.ground.floating && floatingSlab({ x: o.x, y: o.y, w: o.w, h: 20 });
+    if (!painted) {
+      const g = ctx.createLinearGradient(0, o.y, 0, o.y + 20); g.addColorStop(0, '#b9c0a4'); g.addColorStop(.4, '#647c66'); g.addColorStop(1, '#1b3839');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.roundRect(o.x, o.y, o.w, 20, 4); ctx.fill();
+      const rim = o.walker !== undefined ? walkerColor(o) : null;
+      line(ctx, [[o.x, o.y - 1], [o.x + o.w, o.y - 1]], rim ?? '#e5ddba', rim ? 2.5 : 1.5); circle(ctx, o.x + o.w / 2, o.y + 10, 5, '#183e42', rim ?? (o.speed ? gold : '#8aa89b'), 1.5);
+    }
+    if (painted && o.walker !== undefined) {
+      const rim = walkerColor(o);
+      line(ctx, [[o.x + 3, o.y + 2], [o.x + o.w - 3, o.y + 2]], rim, 2.5);
+      circle(ctx, o.x + o.w / 2, o.y + 10, 5, '#183e42', rim, 1.5);
+    }
     if (targeted) { const a = o.w / 2 + 6, cx = o.x + o.w / 2, cy = o.y + 10; for (const [x, y] of [[-a, -18], [a, -18], [-a, 18], [a, 18]]) line(ctx, [[cx + x, cy + y - Math.sign(y) * 8], [cx + x, cy + y], [cx + x - Math.sign(x) * 8, cy + y]], gold); }
   }
   // A cloud (see cloudPhase): a small puff whose size and opacity follow how much cloud there is. Until it is fully
@@ -562,10 +604,14 @@ export function createRenderer(canvas, S) {
     }
     if (mist > .01) {
       const k = formed ? 1 : .55 + .45 * mist;
+      const img = waterCycleArt ? art('/sprites/courtyard-two/cloud.png') : null;
       ctx.save(); ctx.globalAlpha *= (formed ? 1 : .2 + .55 * mist) * cloudBlink(o);
-      ellipse(ctx, cx, bottom - 4, w / 2 * k, 9 * k, 0, '#b9c8d4');
-      ellipse(ctx, cx, bottom - 7, w / 2 * k, 9 * k, 0, '#e9f0f4');
-      for (const [dx, r] of CLOUD_PUFFS) circle(ctx, cx + dx * w * k, top - 4 + r * (2 - k), r * k, '#f6f9fb');
+      if (img) ctx.drawImage(img, cx - w * k / 2, top + h * (1 - k), w * k, h * k);
+      else {
+        ellipse(ctx, cx, bottom - 4, w / 2 * k, 9 * k, 0, '#b9c8d4');
+        ellipse(ctx, cx, bottom - 7, w / 2 * k, 9 * k, 0, '#e9f0f4');
+        for (const [dx, r] of CLOUD_PUFFS) circle(ctx, cx + dx * w * k, top - 4 + r * (2 - k), r * k, '#f6f9fb');
+      }
       ctx.restore();
     }
     // Where the cloud will stand, faint while the pool is full.
@@ -574,9 +620,21 @@ export function createRenderer(canvas, S) {
   }
   // The water in a cloud's pool, drawn over the travellers so whoever wades in it shows only above the surface. While
   // abilities act on the water, its time ring and target brackets are drawn around the pool.
+  function watercolorPool(o) {
+    const image = waterCycleArt ? art('/sprites/courtyard-two/water-pool.png') : null;
+    if (!image) return false;
+    const index = Math.max(0, Math.min(15, Math.round((1 - cloudPhase(o).fill) * 15)));
+    const frame = WATER_FRAMES[index], body = frame.body, p = o.pool;
+    const sx = p.w / body.w, sy = p.h / body.h;
+    // Anchor the stone rim and bottom, rather than the changing steam above it. Frame changes cannot move
+    // the basin, its water collision or the floor underneath; rain fills the same sheet in reverse.
+    ctx.drawImage(image, frame.x, frame.y, frame.w, frame.h,
+      p.x + (frame.x - body.x) * sx, p.y + (frame.y - body.y) * sy, frame.w * sx, frame.h * sy);
+    return true;
+  }
   function water(o, t, targeted) {
     const r = waterRect(o), p = o.pool;
-    if (r.h > .5) {
+    if (!watercolorPool(o) && r.h > .5) {
       const surface = x => r.y + Math.sin(x * .09 + t * .004) * 1.2;
       ctx.save(); ctx.beginPath(); ctx.moveTo(r.x, r.y + r.h);
       for (let x = r.x; x < r.x + r.w; x += 7) ctx.lineTo(x, surface(x));
@@ -857,7 +915,7 @@ export function createRenderer(canvas, S) {
     ctx.restore();
   }
   function timeSeed(c, y, name) {
-    const image = secondCourtyard ? art(`/sprites/courtyard-one/${name}.png`) : courtyardArt(name);
+    const image = courtyardTwoArt ? art(`/sprites/courtyard-one/${name}.png`) : courtyardArt(name);
     if (!image) return false;
     const h = 42, w = h * image.naturalWidth / image.naturalHeight;
     ctx.drawImage(image, c.x - w / 2, y - h / 2, w, h);
@@ -995,8 +1053,11 @@ export function createRenderer(canvas, S) {
     sampleFrame(time, state, options);
     resize();
     if (leafWindScene !== options.sceneKey) { leafWind.clear(); leafWindScene = options.sceneKey; }
-    firstCourtyard = state.level === 0;
-    secondCourtyard = state.level === 1;
+    courtyardOneArt = state.level === 0 || state.level === 2;
+    courtyardTwoArt = state.level === 1 || state.level === 3 || state.level === 4;
+    fourthCourtyard = state.level === 3;
+    fifthCourtyard = state.level === 4;
+    waterCycleArt = state.level === 1;
     theme = themeFor(state.level); worldWidth = state.width ?? 1280; worldHeight = state.height ?? 640; updateBackground();
     const dt = lastTime === null ? 0 : Math.min(.05, Math.max(0, (time - lastTime) / 1000));
     lastTime = time;

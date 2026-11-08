@@ -148,13 +148,13 @@ describe('ceilings', () => {
     expect(peak(s(), 490)).toBeLessThan(436 + 52 - 20);
   });});
 
-describe('rewindNeeds fail rule (courtyard 4)', () => {
+describe('required plant clocks (courtyard 4)', () => {
   const at = (s, who, x, y, on) => Object.assign(s.actors[who], { x, y, vx: 0, vy: 0, grounded: true, on });
   const fresh = () => { const s = setup({ level: 3 }); at(s, STILL, 300, 520, 'platform-0'); at(s, BLOOM, 400, 520, 'platform-0'); return s; };
 
   test('the tree gone with someone on the start ground is a dead end', () => {
     const s = fresh(); s.objects = s.objects.filter(o => o.id !== 'plant-0');
-    expect(failureReason(s)).toBe('rewound');
+    expect(failureReason(s)).toBe('plant');
     at(s, STILL, 900, 320, 'platform-1'); at(s, BLOOM, 1000, 320, 'platform-1');
     expect(failureReason(s)).toBe(null);
   });
@@ -163,13 +163,13 @@ describe('rewindNeeds fail rule (courtyard 4)', () => {
     const s = fresh();
     expect(failureReason(s)).toBe(null);
     s.bloomCharges = 0;
-    expect(failureReason(s)).toBe('rewound');
+    expect(failureReason(s)).toBe('plant');
   });
 
-  test('the vine: asleep with no charges is a dead end; rewound away it opens the way', () => {
+  test('the vine: asleep with no charges is a dead end; withered away it opens the way', () => {
     const s = fresh(); at(s, STILL, 1500, 520, 'platform-3'); at(s, BLOOM, 1600, 520, 'platform-3');
     s.bloomCharges = 0;
-    expect(failureReason(s)).toBe('rewound');
+    expect(failureReason(s)).toBe('plant');
     s.objects = s.objects.filter(o => o.id !== 'plant-1');
     expect(failureReason(s)).toBe(null);
   });
