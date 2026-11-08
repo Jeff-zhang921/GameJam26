@@ -11,5 +11,7 @@
 .cinematic-paper-stack { position:absolute; inset:0; padding:max(18px,var(--safe-top)) max(20px,var(--safe-right)) max(18px,var(--safe-bottom)) max(20px,var(--safe-left)); will-change:transform,opacity; }
 .cinematic-story { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; padding:inherit; box-sizing:border-box; opacity:0; will-change:opacity; }
 .cinematic-newspaper { position:absolute; left:0; top:0; width:1122px; height:1402px; max-width:none; transform-origin:0 0; will-change:transform,opacity; }
+.cinematic-caption { position:absolute; inset:0; display:grid; place-items:center; margin:0; padding:max(24px,var(--safe-top)) max(28px,var(--safe-right)) max(24px,var(--safe-bottom)) max(28px,var(--safe-left)); color:#f2ead8; text-align:center; font:400 clamp(22px,3.5vw,42px)/1.8 "Songti SC","Noto Serif SC",SimSun,serif; letter-spacing:.12em; opacity:0; will-change:opacity; }
+.cinematic-caption[hidden] { display:none; }
 body.cinematic-active .goal-panel,body.cinematic-active .game-bottom,body.cinematic-active .touch-controls,body.cinematic-active .touch-pause,body.cinematic-active .character-dialogue,body.cinematic-active .task-hints,body.cinematic-active .toast { opacity:0 !important; pointer-events:none; }
 body.story-starting #online-root,body.story-starting #online-room-badge { visibility:hidden; pointer-events:none; }
