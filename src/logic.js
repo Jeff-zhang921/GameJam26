@@ -529,7 +529,13 @@ function moveActors(state) {
     const impact = p.vy;
     const airborne = !p.grounded;
     p.y += p.vy;
-    if (p.vy < 0) for (const c of crates) if (!inside.includes(c) && p.x + 15 > c.x && p.x - 15 < c.x + c.w && previousY - 52 >= c.y + c.h && p.y - 52 < c.y + c.h) { p.y = c.y + c.h + 52; p.vy = 0; event(state, 'collision', p.x, p.y, { actor: p.id }); }
+    // Crates, platforms marked `ceiling` and thorny (`ceiling`) vines stop a rising head.
+    const ceilings = [
+      ...crates.filter(c => !inside.includes(c)),
+      ...state.platforms.filter(f => f.ceiling),
+      ...state.objects.filter(o => o.kind === 'plant' && o.wall && o.ceiling && o.height > 0).map(vineStrip),
+    ];
+    if (p.vy < 0) for (const c of ceilings) if (p.x + 15 > c.x && p.x - 15 < c.x + c.w && previousY - 52 >= c.y + c.h && p.y - 52 < c.y + c.h) { p.y = c.y + c.h + 52; p.vy = 0; event(state, 'collision', p.x, p.y, { actor: p.id }); }
     p.grounded = false; p.on = null;
     for (const f of solid) {
       if (f.id === p.carrying) continue;

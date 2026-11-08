@@ -110,3 +110,36 @@ describe('rewinding Bloom: plants age backwards', () => {
     expect(s.flags.treeLifted).toBe(false);
   });
 });
+
+describe('ceilings', () => {
+  // Jump straight up from x on the ground (y 540) and return the highest point the feet reach.
+  const peak = (s, x) => {
+    Object.assign(s.actors[STILL], { x, y: 540, vx: 0, vy: 0, grounded: true, on: 'platform-0' });
+    s = act(s, { type: 'jump', actor: STILL });
+    let top = 540;
+    for (let i = 0; i < 60; i++) { s = tick(s); top = Math.min(top, s.actors[STILL].y); }
+    return top;
+  };
+
+  test('a ceiling platform stops a rising head; an ordinary one lets it through', () => {
+    const roofed = rootriseArena(); roofed.platforms.push({ x: 300, y: 380, w: 200, h: 40, ceiling: true });
+    expect(peak(roofed, 400)).toBeGreaterThanOrEqual(420 + 52 - 0.01);
+    const open = rootriseArena(); open.platforms.push({ x: 300, y: 380, w: 200, h: 40 });
+    expect(peak(open, 400)).toBeLessThan(420 + 52 - 20);
+  });
+
+  test('a ceiling vine stops a rising head along its current length only', () => {
+    const { growTicks } = meta.plant;
+    const withVine = ceiling => {
+      const s = vineArena();
+      s.objects.push({ kind: 'plant', id: 'plant-9', pit: 'pit-1', x: 760, base: 420, age: growTicks, height: plantSize(-1, growTicks), withered: false, speed: 0, frozen: false, barrier: false, wall: -1, ...(ceiling && { ceiling: true }) });
+      s.pits[1].plant = 'plant-9';
+      return s;
+    };
+    // Full vine: x 520-760 at y 420, bottom 436.
+    expect(peak(withVine(true), 640)).toBeGreaterThanOrEqual(436 + 52 - 0.01);
+    expect(peak(withVine(false), 640)).toBeLessThan(436 + 52 - 20);
+    // Beside its tip there is nothing overhead.
+    expect(peak(withVine(true), 490)).toBeLessThan(436 + 52 - 20);
+  });
+});
