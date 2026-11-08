@@ -29,9 +29,12 @@ export default {
     { x1: 2970, x2: 3270, y: 200, w: 120, speed: 1, dir: -1 },
   ],
   // Two launchers on the left wall fire right across the start: darts at y 350 (pop on the high ledge's face) and
-  // y 238 (pop on the pillar). A rider on the mushroom is clear of both with its cap about 175-225 high.
+  // y 238 (pop on the pillar). A rider on the mushroom is clear of both with its cap about 175-225 high. The cap reaches
+  // the lower lane about 460 ticks after waking and takes about 250 more to rise through it, so that lane fires only
+  // every 420: wake the mushroom as a lower dart flies past (a window of about 150 ticks around it) and the next dart
+  // comes after the riders have cleared the lane.
   enemies: [
-    { kind: 'launcher', x: 20, y: 370, dir: [1, 0], every: 180 },
+    { kind: 'launcher', x: 20, y: 370, dir: [1, 0], every: 420 },
     { kind: 'launcher', x: 20, y: 258, dir: [1, 0], every: 180 },
   ],
   checkpoints: [{ x: 820, y: 300 }, { x: 2080, y: 200 }],
