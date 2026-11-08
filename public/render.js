@@ -373,23 +373,26 @@ export function createRenderer(canvas, S) {
   // art's left and right edge in the cell, and the y of the stem's top (where travellers stand). The frame for
   // the vine's length is stretched to exactly the standable strip and mirrored for a vine growing left. Withered,
   // it shrinks back through the frames and dries to yellow-brown.
-  const VINE = { cell: 443.5, scale: .67, frames: [[9, 111, 232], [10, 152, 232], [9, 206, 232], [9, 345, 232], [9, 338, 200], [10, 376, 200], [8, 431, 200], [8, 435, 200]] };
+  const VINE = { cell: 443.5, scale: .67, sprout: 48, frames: [[9, 111, 232], [10, 152, 232], [9, 206, 232], [9, 345, 232], [9, 338, 200], [10, 376, 200], [8, 431, 200], [8, 435, 200]] };
   let vineTint;
   function vine(o, targeted, t) {
     const L = o.height, a = anchor(o);
     timeRing(a.x, a.y, Math.max(22, L / 2 + 10), o, t);
-    if (L < .5) { sprite('seed', o.x + o.wall * 10, o.base + 9, 14, 1); return; }
-    if (!loaded('vine')) { line(ctx, [[o.x, o.base + 6], [o.x + o.wall * L, o.base + 6]], o.withered ? '#a08a52' : '#6f8f4a', 10); return; }
+    // Planted, it shows at once as the sheet's shortest vine poking out of the soil, never shorter than `sprout`
+    // (only the art: what can be stood on is still the vine's real length).
+    const drawn = Math.max(L, VINE.sprout);
+    if (!loaded('vine')) { line(ctx, [[o.x, o.base + 6], [o.x + o.wall * drawn, o.base + 6]], o.withered ? '#a08a52' : '#6f8f4a', 10); return; }
     const f = Math.max(0, Math.min(7, Math.round(L / meta.vine.maxLength * 7))), [left, right, top] = VINE.frames[f];
     const sx = f % 4 * VINE.cell + left, sy = Math.floor(f / 4) * VINE.cell, sw = right - left, sh = VINE.cell;
-    const k = VINE.scale, w = Math.ceil(L), h = Math.ceil(sh * k);
+    const k = VINE.scale, w = Math.ceil(drawn), h = Math.ceil(sh * k);
     vineTint ??= document.createElement('canvas');
     if (vineTint.width !== w || vineTint.height !== h) { vineTint.width = w; vineTint.height = h; }
     const c = vineTint.getContext('2d');
     c.globalCompositeOperation = 'source-over'; c.clearRect(0, 0, w, h);
     c.drawImage(sprites.vine, sx, sy, sw, sh, 0, 0, w, h);
     if (o.withered) { c.globalCompositeOperation = 'source-atop'; c.fillStyle = 'rgba(176, 140, 70, .55)'; c.fillRect(0, 0, w, h); }
-    ctx.save(); ctx.translate(o.x, o.base - top * k); ctx.scale(o.wall, 1);
+    // The root starts 6 inside the wall pit's soil, so the vine grows out of the bed rather than beside it.
+    ctx.save(); ctx.translate(o.x - o.wall * 6, o.base - top * k); ctx.scale(o.wall, 1);
     ctx.drawImage(vineTint, 0, 0);
     ctx.restore();
     if (targeted) { circle(ctx, a.x, o.base - 22, 13, '#d7bd7d10', '#e1c68a70'); star(ctx, a.x, o.base - 22, 5, gold); }
