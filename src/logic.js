@@ -695,6 +695,16 @@ export function assessFailure(state) {
   const level = LEVELS[state.level], stuck = belowExit(state);
   if (!level || !stuck.length) return { known: true, reason: null };
   if (level.exitNeedsPlant && state.seeds <= 0 && !state.objects.some(o => o.kind === 'seed' || o.kind === 'plant')) return { known: true, reason: 'stranded' };
+  // A courtyard whose way on is a plant to rewind (`rewindNeeds`): lost when someone still waits on platform `from`
+  // (not standing on something higher) and the plant can no longer be rewound — gone (unless its going opens the
+  // way), or asleep with no Bloom charge and no lightning left.
+  const bolt = state.pickups.some(c => c.kind === 'bolt' && !c.taken);
+  for (const need of level.rewindNeeds ?? []) {
+    const f = state.platforms[need.from];
+    if (!stuck.some(p => onLedge(f, p) && !state.platforms.some(g => g !== f && g.y < f.y && onLedge(g, p)))) continue;
+    const o = find(state, need.plant);
+    if (o ? o.speed === 0 && state.bloomCharges <= 0 && !bolt : !need.goneOpens) return { known: true, reason: 'rewound' };
+  }
   if (!level.crossingNeedsFreeze) return { known: true, reason: null };
   const start = level.crossingFrom === undefined ? null : state.platforms[level.crossingFrom];
   const ahead = start ? stuck.filter(p => onLedge(start, p)) : stuck;

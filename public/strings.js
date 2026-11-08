@@ -34,6 +34,7 @@ export const S = {
   warningTitle: 'You may no longer be able to finish this courtyard. Restart?',
   warningReasons: {
     stranded: 'Every seed and mushroom is gone, so no one else can reach the high ledge.',
+    rewound: 'Nothing is left for Bloom to rewind, so no one else can get through.',
     freeze: 'No Freeze charges, hourglasses or Freeze Areas are left, and the crossing needs one.',
     crates: 'Both crates are gone, so no one else can cross the gap.',
   },
