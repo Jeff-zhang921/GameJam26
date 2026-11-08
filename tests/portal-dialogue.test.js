@@ -1,6 +1,6 @@
 import { test, expect } from 'bun:test';
 import { portalFrame, arrivalFrame } from '../public/portal.js';
-import { dialogueFrame, CONVERSATIONS } from '../public/dialogue.js';
+import { dialogueFrame, CONVERSATIONS, lineHold, DIALOGUE_HOLD } from '../public/dialogue.js';
 
 test('both travellers approach the starlit arch and walk in without pushing', () => {
   expect(portalFrame(0)).toEqual({ approach: 0, opening: 0, walk: 0, fade: 0, focus: 0, zoom: 0 });
@@ -49,8 +49,12 @@ test('dialogue types progressively, gives time to read, then moves to the next s
   const lines = CONVERSATIONS[0], first = lines[0][1];
   expect(dialogueFrame(lines, 0).shown).toBe('');
   expect(dialogueFrame(lines, 280).shown).toBe(first.slice(0, 10));
-  expect(dialogueFrame(lines, first.length * 28 + 1000).shown).toBe(first);
-  expect(dialogueFrame(lines, first.length * 28 + 1800).opacity).toBeCloseTo(.5);
-  expect(dialogueFrame(lines, first.length * 28 + 2100).speaker).toBe(1);
+  const typed = first.length * 28, hold = lineHold(first);
+  expect(hold).toBeGreaterThanOrEqual(DIALOGUE_HOLD);
+  expect(dialogueFrame(lines, typed + 1000).shown).toBe(first);
+  // Fully visible while it is read, fading out over the last 600 ms.
+  expect(dialogueFrame(lines, typed + hold - 700).opacity).toBe(1);
+  expect(dialogueFrame(lines, typed + hold - 300).opacity).toBeCloseTo(.5);
+  expect(dialogueFrame(lines, typed + hold).speaker).toBe(1);
   expect(dialogueFrame(lines, 100000)).toBeNull();
 });

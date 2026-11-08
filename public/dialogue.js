@@ -5,10 +5,13 @@ export const CONVERSATIONS = [
   [[1, 'Something is wrong with my hands. Here, time runs backwards when I touch it.'], [0, 'Then let that dead tree be young again, just long enough to climb.']],
   [[1, 'Every step I take, the gold things take with me. Back a step, and they go back.'], [0, 'And the teal ones keep mine. Then neither of us can carry ourselves.'], [1, 'So you walk for me, and I walk for you.']],
 ];
+// How long a line stays up once typed (ms): long enough to read it, at least DIALOGUE_HOLD.
+export const DIALOGUE_HOLD = 3500;
+export const lineHold = text => Math.max(DIALOGUE_HOLD, text.length * 60);
 export function dialogueFrame(lines, elapsed) {
   let time = Math.max(0, elapsed);
   for (const [speaker, text] of lines) {
-    const typing = text.length * 28, duration = typing + 2100;
+    const typing = text.length * 28, duration = typing + lineHold(text);
     if (time < duration) return { speaker, text, shown: text.slice(0, Math.floor(time / 28)), typing: time < typing, opacity: Math.max(0, Math.min(1, time / 160, (duration - time) / 600)) };
     time -= duration;
   }
