@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import { setup, applyAction, validateAction, meta, atExit } from '../src/logic.js';
-import { classicCourtyard, rootriseArena } from './arena.js';
+import { classicCourtyard, rootriseArena, afterbloomArena } from './arena.js';
 
 const send = (state, type, actor = 0, extra = {}) => applyAction(state, 'local', { type, actor, ...extra });
 const step = (state, count = 1) => { for (let i = 0; i < count; i++) state = send(state, 'tick'); return state; };
@@ -173,8 +173,7 @@ describe('courtyard jump routes', () => {
     state = until(state, s => s.status === 'won', 5);
   });
 
-  function treeCheckpoint(level, x, height, ledge = 0) {
-    const state = setup({ level });
+  function treeCheckpoint(level, x, height, ledge = 0, state = setup({ level })) {
     state.objects = state.objects.filter(o => o.kind !== 'plant');
     state.objects.push({ id: 'route-tree', kind: 'plant', pit: 'pit-0', x, base: state.platforms[ledge].y, age: height / meta.plant.maxHeight * meta.plant.growTicks, height, frozen: true, withered: false, speed: 1 });
     Object.assign(state.actors[0], { x, y: state.platforms[ledge].y - height, on: 'route-tree' });
@@ -188,8 +187,8 @@ describe('courtyard jump routes', () => {
     expect(state.actors[0].y).toBe(180);
   });
 
-  test('a young sprout still launches onto the third courtyard cliff', () => {
-    let state = treeCheckpoint(2, 880, 30);
+  test('a young sprout still launches onto the old third courtyard\'s cliff', () => {
+    let state = treeCheckpoint(2, 880, 30, 0, afterbloomArena());
     state = send(send(state, 'move', 0, { dir: 1 }), 'jump');
     state = until(state, s => s.actors[0].on === 'platform-1');
     expect(state.flags.sproutJump).toBe(true);

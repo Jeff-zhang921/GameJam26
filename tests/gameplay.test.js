@@ -239,12 +239,13 @@ describe('role-specific resources', () => {
     expect(other.pickups.filter(c => c.kind === 'frost')).toHaveLength(2);
   });
 
-  test('each courtyard starts with one seed in Bloom\'s count (hands free) and three Hasten charges', () => {
+  test('each courtyard starts with its seeds in Bloom\'s count (hands free) and three Hasten charges', () => {
     for (let level = 0; level < 5; level++) {
       const s = setup({ level });
       expect(s.actors[BLOOM].carrying).toBe(null);
-      // Courtyards 1 and 2 are the exception: their only seed lies out in the courtyard.
-      expect(s.seeds).toBe(level <= 1 ? 0 : 1);
+      // Courtyards 1 and 2 are the exception: their only seed lies out in the courtyard. Courtyard 3 needs three
+      // (a mushroom and two vines).
+      expect(s.seeds).toBe(level <= 1 ? 0 : level === 2 ? 3 : 1);
       if (level <= 1) expect(s.objects.filter(o => o.kind === 'seed')).toHaveLength(1);
       expect(s.bloomCharges).toBe(3);
       expect(s.pickups.some(c => c.kind === 'bolt')).toBe(true);
