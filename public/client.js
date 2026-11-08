@@ -92,7 +92,7 @@ function clearSeedHold() { if (seedHold) clearTimeout(seedHold.timer); seedHold 
 let lastView = null, tapEffect = null;
 // Height (px) the bottom touch controls take up; the camera lowers the world only as far as keeps the
 // ground clear of them. Level select target awaiting the host's confirmation; last "waiting" notice shown.
-let controlsReserve = 0, pendingLevel = null, waitingKey = '';
+let controlsReserve = 0, pendingLevel = null, waitingKey = '', rewindNoticeScene = null;
 // Time-rewind restart: the courtyard's bounded history and the rewind being played (if any).
 const history = createHistory();
 history.reset(state);
@@ -352,6 +352,7 @@ function updateUI() {
   document.body.classList.toggle('touch-layout', layout);
   if (layoutChanged) viewport?.refresh();
   noticeWaiting();
+  noticeRewind();
   const charges = state.freezeCharges ?? 0, freezeCount = document.querySelector('#freeze-count');
   if (uiValues.charges !== charges) {
     freezeCount.textContent = S.freezeCount(charges); freezeCount.classList.toggle('empty', charges <= 0);
@@ -385,6 +386,12 @@ function resetTouchState() {
 function measureControls() {
   const base = document.querySelector('.joystick-base'), frameEl = document.querySelector('.game-frame');
   controlsReserve = base && frameEl && document.body.classList.contains('touch-layout') ? Math.max(0, frameEl.getBoundingClientRect().bottom - base.getBoundingClientRect().top) : 0;
+}
+// In a courtyard where Bloom runs time backwards, say so once per visit, as soon as play begins.
+function noticeRewind() {
+  if (!state.bloomReverses || modal || state.status !== 'playing' || rewindNoticeScene === sceneKey) return;
+  rewindNoticeScene = sceneKey;
+  toast(S.rewindNotice);
 }
 // One timekeeper reached the open moon gate: tell the players who is still on the way (once per arrival).
 function noticeWaiting() {

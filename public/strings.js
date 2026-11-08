@@ -44,6 +44,7 @@ export const S = {
   gateWaiting: ['Waiting for Still', 'Waiting for Bloom'],
   restartBothTitle: 'Restart for both players?', restartBothBody: 'The courtyard resets on both screens at once.', restartBoth: 'Restart for Both',
   onlinePauseNote: 'This menu only covers your screen. The shared courtyard keeps moving.',
+  rewindNotice: 'Time runs backwards in this courtyard: Bloom now rewinds plants instead of hastening them.',
   hintReady: 'A new courtyard whisper is ready. Open the pause menu for a hint.',
   pause: 'Pause', resume: 'Resume', help: 'Controls', settings: 'Settings', sound: 'Sound', music: 'Music', motion: 'Reduce Motion', on: 'On', off: 'Off', close: 'Close',
   objective: 'Suggestion', tip: 'Courtyard Whisper', memory: 'Time Shards', next: 'Onward to the Next Courtyard', replay: 'Play Again',

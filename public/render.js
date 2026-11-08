@@ -336,14 +336,6 @@ export function createRenderer(canvas, S) {
     ctx.save(); ctx.translate(o.x, o.base - top * k); ctx.scale(o.wall, 1);
     ctx.drawImage(vineTint, 0, 0);
     ctx.restore();
-    // A thorny vine (a ceiling) shows thorns along its underside.
-    if (o.ceiling) {
-      ctx.fillStyle = '#4a5a33';
-      for (let i = 10; i < L - 4; i += 18) {
-        const tx = o.x + o.wall * i;
-        ctx.beginPath(); ctx.moveTo(tx - 4, o.base + 14); ctx.lineTo(tx + 4, o.base + 14); ctx.lineTo(tx, o.base + 23); ctx.closePath(); ctx.fill();
-      }
-    }
     if (targeted) { circle(ctx, a.x, o.base - 22, 13, '#d7bd7d10', '#e1c68a70'); star(ctx, a.x, o.base - 22, 5, gold); }
   }
   function plant(o, targeted, t, reduced) {

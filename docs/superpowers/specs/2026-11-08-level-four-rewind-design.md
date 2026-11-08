@@ -32,10 +32,10 @@ Both travellers must reach the gate. All old placeholder content (crates, mover,
    - Freeze Areas slow rewinding the same way (`slow = frozenRate`).
 3. **Initial plant age.** A level plant may give `age` (ticks) instead of `grown`; `age` wins when both are set.
    A plant whose `age` is past `growTicks + matureTicks` starts `withered: true`.
-4. **Ceilings.** A platform or plant with `ceiling: true` stops a rising traveller's head, with the same rule crates
-   use today (`previousY - 52 >= bottom && p.y - 52 < bottom` → `p.y = bottom + 52`, `vy = 0`, `collision` event).
-   For a vine the bottom is `base + 16` over the vine strip's current x-range. Ordinary platforms and vines keep
-   letting you jump up through them.
+4. **Ceilings.** A platform with `ceiling: true`, and every vine (in every courtyard), stops a rising traveller's
+   head with the same rule crates use (`previousY - 52 >= bottom && p.y - 52 < bottom` → `p.y = bottom + 52`,
+   `vy = 0`, `collision` event). For a vine the bottom is `base + 16` over its current x-range: a vine can only be
+   stood on from above. Ordinary platforms keep letting you jump up through them.
 5. **Fail detection for rewinding (`rewindNeeds` on a level).** A list of `{ plant, from, goneOpens? }`: plant id and the platform
    index a traveller is stuck on until that plant has been rewound. `goneOpens: true` marks a plant whose vanishing
    opens the way (the vine), so its disappearance is not a failure. A traveller standing on a higher platform than
@@ -43,7 +43,9 @@ Both travellers must reach the gate. All old placeholder content (crates, mover,
    a traveller is still on platform `from` (by `onLedge`, not at the gate) and either the plant is gone (unless `goneOpens`), or it is
    still asleep (`speed === 0`) and Bloom has no charges and no bolt can still be collected. New string:
    `rewound: 'The tree has rewound into nothing, so no one else can reach the tunnel.'`
-6. **Visuals.** A rewinding plant shows reversed growth particles (moving inward/downward) and a cool tint; the Bloom
+6. **Telling the players.** On entering a courtyard with `bloomReverses`, once play begins, a toast says time runs
+   backwards here and Bloom now rewinds plants.
+7. **Visuals.** A rewinding plant shows reversed growth particles (moving inward/downward) and a cool tint; the Bloom
    cast shows a counter-clockwise swirl. HUD/tooltip for Bloom in this chamber reads "Rewind" instead of "Bloom".
 
 ## Timings (speed −1, frozen ×0.2)
@@ -71,12 +73,12 @@ by `rewindNeeds` and fail detection).
 - Start ground: `{ x: 0, y: 520, w: 760, h: 120 }` (platform 0). Spawn at x 200 / 270.
 - Pit `{ x: 640, y: 520, plantable: false }` with plant `{ pit: 0, age: 1915 }` (the dead tree, asleep).
 - Tunnel floor (cliff): `{ x: 760, y: 320, w: 640, h: 320 }` — 200 above the start ground, out of jump reach.
-- Tunnel roof: `{ x: 760, y: 0, w: 640, h: 261, ceiling: true }` — the tunnel is 59 tall (body 52).
+- Tunnel roof: `{ x: 760, y: 0, w: 640, h: 251, ceiling: true }` — the tunnel is 69 tall (body 52).
 - Who gets in, by cap height h (feet at 520 − h):
   - h < ≈ 35: a jump falls short of the floor at 320 (a jump from the cap at h 23 peaks 9 px short of the step-up line).
   - ≈ 35 ≤ h < 191: hop in (the roof stops the head; on the way down, step onto the floor).
-  - 191 ≤ h ≤ 207: walk straight in (feet within 9 of the floor, head below the roof at 261).
-  - h > 207 (incl. the full 235): the body overlaps the roof face, so the traveller cannot move in.
+  - 191 ≤ h ≤ 217: walk straight in (feet within 9 of the floor, head below the roof at 251).
+  - h > 217 (incl. the full 235): the body overlaps the roof face, so the traveller cannot move in.
   The working band is roughly "half height". On the way up through the wilt it lasts about 5 s, on the way down
   about 11 s; a Freeze Area on the tree stretches either by 5×.
 - Freeze: `freezeCharges: 1`, plus an hourglass on the start ground `{ x: 420, y: 494 }`.
@@ -88,7 +90,7 @@ by `rewindNeeds` and fail detection).
 - Lower ground: `{ x: 1400, y: 520, w: 760, h: 120 }` — the travellers drop out of the tunnel onto it.
 - Hanging block: `{ x: 1700, y: 200, w: 220, h: 180, ceiling: true }` — bottom at 380, so the travellers walk
   under it; its top (200) is out of reach from the ground and from the tunnel floor (125 up, 300 across).
-- Wall pit on its right face: `{ x: 1920, y: 370, wall: 1, plantable: false }` with plant `{ pit: 1, age: 960, ceiling: true }`. Full
+- Wall pit on its right face: `{ x: 1920, y: 370, wall: 1, plantable: false }` with plant `{ pit: 1, age: 960 }`. Full
   length 240 spans x 1920 → 2160, closing the shaft x 1920–2160 at y 370.
 - Exit cliff: `{ x: 2160, y: 380, w: 640, h: 260 }` — 140 above the ground (a normal jump would reach it).
 - With the full vine a jump from the shaft floor bumps its head at feet ≈ 438, below the cliff top — no way up.
@@ -121,7 +123,7 @@ by `rewindNeeds` and fail detection).
   - a Freeze Area makes the rewind 5× slower;
   - a rider on a shrinking cap goes down with it;
   - a plant given `age` starts at that age (withered if past maturity);
-  - a `ceiling: true` platform and a `ceiling: true` vine stop a rising head; an ordinary one does not;
+  - a `ceiling: true` platform and any vine stop a rising head; an ordinary platform does not;
   - `rewindNeeds` reports `rewound` when the tree is gone with someone on the start ground, and when it is asleep with
     no Bloom charges; nothing once everyone is past.
 - Level (`tests/level-four.test.js`, in the style of `tests/level-three.test.js`):

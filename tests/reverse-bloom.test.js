@@ -128,21 +128,19 @@ describe('ceilings', () => {
     expect(peak(open, 400)).toBeLessThan(420 + 52 - 20);
   });
 
-  test('a ceiling vine stops a rising head along its current length only', () => {
+  test('a vine stops a rising head along its current length only', () => {
     const { growTicks } = meta.plant;
-    const withVine = ceiling => {
-      const s = vineArena();
-      s.objects.push({ kind: 'plant', id: 'plant-9', pit: 'pit-1', x: 760, base: 420, age: growTicks, height: plantSize(-1, growTicks), withered: false, speed: 0, frozen: false, barrier: false, wall: -1, ...(ceiling && { ceiling: true }) });
-      s.pits[1].plant = 'plant-9';
-      return s;
+    const s = () => {
+      const a = vineArena();
+      a.objects.push({ kind: 'plant', id: 'plant-9', pit: 'pit-1', x: 760, base: 420, age: growTicks, height: plantSize(-1, growTicks), withered: false, speed: 0, frozen: false, barrier: false, wall: -1 });
+      a.pits[1].plant = 'plant-9';
+      return a;
     };
     // Full vine: x 520-760 at y 420, bottom 436.
-    expect(peak(withVine(true), 640)).toBeGreaterThanOrEqual(436 + 52 - 0.01);
-    expect(peak(withVine(false), 640)).toBeLessThan(436 + 52 - 20);
+    expect(peak(s(), 640)).toBeGreaterThanOrEqual(436 + 52 - 0.01);
     // Beside its tip there is nothing overhead.
-    expect(peak(withVine(true), 490)).toBeLessThan(436 + 52 - 20);
-  });
-});
+    expect(peak(s(), 490)).toBeLessThan(436 + 52 - 20);
+  });});
 
 describe('rewindNeeds fail rule (courtyard 4)', () => {
   const at = (s, who, x, y, on) => Object.assign(s.actors[who], { x, y, vx: 0, vy: 0, grounded: true, on });

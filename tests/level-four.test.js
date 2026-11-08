@@ -38,8 +38,8 @@ describe('courtyard 4 layout', () => {
     expect(s.bloomReverses).toBe(true);
     expect(s.width).toBe(2800);
     expect(start.y - floor.y).toBe(200);
-    expect(roof.ceiling && roof.y + roof.h).toBe(261);
-    expect(floor.y - (roof.y + roof.h)).toBe(59);
+    expect(roof.ceiling && roof.y + roof.h).toBe(251);
+    expect(floor.y - (roof.y + roof.h)).toBe(69);
     expect(lower.y).toBe(520);
     expect(block.ceiling && block.y + block.h).toBe(380);
     expect(lower.y - cliff.y).toBe(140);
@@ -52,7 +52,7 @@ describe('courtyard 4 layout', () => {
     const s = setup({ level: 3 });
     expect(get(s, 'plant-0')).toMatchObject({ speed: 0, withered: true });
     expect(get(s, 'plant-0').height).toBeLessThan(26);
-    expect(get(s, 'plant-1')).toMatchObject({ speed: 0, withered: false, ceiling: true, wall: 1, x: block.x + block.w });
+    expect(get(s, 'plant-1')).toMatchObject({ speed: 0, withered: false, wall: 1, x: block.x + block.w });
     expect(get(s, 'plant-1').height).toBeCloseTo(meta.vine.maxLength);
     expect(get(s, 'plant-1').x + get(s, 'plant-1').height).toBeCloseTo(cliff.x);
   });

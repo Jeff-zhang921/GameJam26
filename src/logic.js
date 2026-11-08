@@ -70,11 +70,11 @@ export const plantSize = (wall, age) => sizeAt(wall, age);
 export const canopyWidth = plant => plant.height * (plant.withered ? dieFrame(witherProgress(plant.age)).ratio : growFrame(plant.height, meta.plant.maxHeight, meta.plant.springHeight).ratio);
 
 // A level plant may start at a `grown` fraction of grow + mature, or at an exact `age` in ticks (which wins).
-// Past maturity it starts withered. `ceiling: true` makes a vine stop rising heads.
-function makePlant(id, pit, { grown = 0, age, barrier = false, ceiling = false } = {}) {
+// Past maturity it starts withered.
+function makePlant(id, pit, { grown = 0, age, barrier = false } = {}) {
   pit.plant = id;
   const start = age ?? grown * (meta.plant.growTicks + meta.plant.matureTicks);
-  return { kind: 'plant', id, pit: pit.id, x: pit.x, base: pit.y, age: start, height: sizeAt(pit.wall, start), withered: start > meta.plant.growTicks + meta.plant.matureTicks, speed: 0, frozen: false, barrier, ...(ceiling && { ceiling: true }), ...(pit.wall && { wall: pit.wall }) };
+  return { kind: 'plant', id, pit: pit.id, x: pit.x, base: pit.y, age: start, height: sizeAt(pit.wall, start), withered: start > meta.plant.growTicks + meta.plant.matureTicks, speed: 0, frozen: false, barrier, ...(pit.wall && { wall: pit.wall }) };
 }
 
 // A seed lying in the courtyard; Bloom collects it by touch.
@@ -529,11 +529,11 @@ function moveActors(state) {
     const impact = p.vy;
     const airborne = !p.grounded;
     p.y += p.vy;
-    // Crates, platforms marked `ceiling` and thorny (`ceiling`) vines stop a rising head.
+    // Crates, platforms marked `ceiling` and vines stop a rising head (a vine is only standable from above).
     const ceilings = [
       ...crates.filter(c => !inside.includes(c)),
       ...state.platforms.filter(f => f.ceiling),
-      ...state.objects.filter(o => o.kind === 'plant' && o.wall && o.ceiling && o.height > 0).map(vineStrip),
+      ...state.objects.filter(o => o.kind === 'plant' && o.wall && o.height > 0).map(vineStrip),
     ];
     if (p.vy < 0) for (const c of ceilings) if (p.x + 15 > c.x && p.x - 15 < c.x + c.w && previousY - 52 >= c.y + c.h && p.y - 52 < c.y + c.h) { p.y = c.y + c.h + 52; p.vy = 0; event(state, 'collision', p.x, p.y, { actor: p.id }); }
     p.grounded = false; p.on = null;
