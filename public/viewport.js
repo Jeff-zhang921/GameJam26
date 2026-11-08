@@ -49,13 +49,15 @@ export function createViewport({ isMobile, onBlocked, onResize }) {
     const visual = window.visualViewport;
     // Keep the layout steady while the browser magnifies the page.
     if (!visual || Math.abs(visual.scale - 1) < .01) {
+      const standalone = appWindow.matches || navigator.standalone === true;
+      const editing = !!document.activeElement?.closest('input,textarea,[contenteditable]:not([contenteditable="false"])');
+      const layoutHeight = standalone && !editing
+        ? Math.max(window.innerHeight, Math.ceil(root.getBoundingClientRect().height))
+        : window.innerHeight;
       const { width, height, left, top } = viewportBounds({
         width: visual?.width || window.innerWidth, height: visual?.height || window.innerHeight,
         offsetLeft: visual?.offsetLeft || 0, offsetTop: visual?.offsetTop || 0,
-      }, { width: window.innerWidth, height: window.innerHeight }, {
-        standalone: appWindow.matches || navigator.standalone === true,
-        editing: !!document.activeElement?.closest('input,textarea,[contenteditable]:not([contenteditable="false"])'),
-      });
+      }, { width: window.innerWidth, height: layoutHeight }, { standalone, editing });
       const next = `${width}:${height}:${left}:${top}`;
       if (next !== geometry) {
         geometry = next;
@@ -136,6 +138,7 @@ export function createViewport({ isMobile, onBlocked, onResize }) {
   });
   for (const name of ['resize', 'orientationchange', 'pageshow']) window.addEventListener(name, refresh);
   for (const name of ['resize', 'scroll']) window.visualViewport?.addEventListener(name, refresh);
+  for (const name of ['focusin', 'focusout']) document.addEventListener(name, refresh);
   orientation?.addEventListener('change', refresh);
   document.addEventListener('fullscreenchange', refresh);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { refresh(); void requestLandscape(); } });
