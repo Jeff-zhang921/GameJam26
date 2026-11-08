@@ -31,7 +31,7 @@ export function createRenderer(canvas, S) {
   const camera = createCamera(), effects = createParticles();
   let transform;
   const cyan = '#a1e3e5', gold = '#e1c68a', muted = '#8aa89b';
-  const sprites = Object.fromEntries(['crate', 'seed', 'mushroom-grow', 'mushroom-die', 'still', 'mage'].map(name => { const img = new Image(); img.src = `/sprites/${name}.png`; return [name, img]; }));
+  const sprites = Object.fromEntries(['crate', 'seed', 'mushroom-grow', 'mushroom-die', 'still', 'mage', 'snail', 'pit'].map(name => { const img = new Image(); img.src = `/sprites/${name}.png`; return [name, img]; }));
   const loaded = (...names) => names.every(name => sprites[name].complete && sprites[name].naturalWidth > 0);
   // Theme art (ground, background images) is loaded on first use, by path. `theme` is the current courtyard's.
   const artCache = new Map();
@@ -262,8 +262,16 @@ export function createRenderer(canvas, S) {
     if (!o.speed) return;
     ctx.save(); ctx.translate(x, y); ctx.rotate(t * .0012 * o.speed); ctx.setLineDash([6, 9]); circle(ctx, 0, 0, r, null, '#e1c68a88', 1.5); ctx.restore();
   }
+  // A stone-rimmed bed of soil (sprite 480x100, soil centred 38% down), drawn 100 wide with the soil just above
+  // the ground line so a mushroom rises out of it and the rim's front sinks a little into the ledge.
+  const PIT = { w: 100, soil: .38 };
   function pit(p) {
     if (!p.plant && p.plantable === false) return;
+    if (loaded('pit')) {
+      const img = sprites.pit, h = PIT.w * img.naturalHeight / img.naturalWidth;
+      ctx.drawImage(img, p.x - PIT.w / 2, p.y - 2 - h * PIT.soil, PIT.w, h);
+      return;
+    }
     ellipse(ctx, p.x, p.y - 1, 30, 7, 0, '#2a3d33'); ellipse(ctx, p.x, p.y - 3, 24, 4, 0, p.plant ? '#4d5a41' : '#1b2a25');
     if (!p.plant) for (let i = 0; i < 4; i++) circle(ctx, p.x - 15 + i * 10, p.y - 6 - (i % 2) * 2, 1.5, '#6f7d5a');
   }
@@ -327,14 +335,39 @@ export function createRenderer(canvas, S) {
     circle(ctx, cp.x, cp.y - 38, 7, cp.lit ? '#f4e2a6' : '#2c5050', cp.lit ? gold : '#8aa89b', 1.5);
     circle(ctx, cp.x + 3, cp.y - 40, 5, cp.lit ? '#e9cf86' : '#3d6563');
   }
+  // The guard is a clock-shelled snail: a 4x2 sheet of 300px walking frames facing right. The art (rows 76-244 of
+  // each cell) is scaled to the collision box's height, so its shell top is where travellers stand, with the shell
+  // (centred at x=128 of the cell) over the box and the head reaching out ahead. It steps through its frames as it
+  // travels, so it stands still when it stops and crawls when slowed. About to strike, it flushes red; slowed, it
+  // takes on the Freeze tint.
+  const SNAIL = { cell: 300, top: 76, bottom: 244, shellX: 128 };
+  let snailTint;
+  function snail(o, b, charge) {
+    const img = sprites.snail, k = b.h / (SNAIL.bottom - SNAIL.top), size = Math.ceil(SNAIL.cell * k);
+    const frame = Math.floor(Math.abs(o.x) / 6) % 8, sx = frame % 4 * SNAIL.cell, sy = Math.floor(frame / 4) * SNAIL.cell;
+    snailTint ??= document.createElement('canvas');
+    if (snailTint.width !== size) snailTint.width = snailTint.height = size;
+    const t = snailTint.getContext('2d');
+    t.globalCompositeOperation = 'source-over'; t.clearRect(0, 0, size, size);
+    t.drawImage(img, sx, sy, SNAIL.cell, SNAIL.cell, 0, 0, size, size);
+    const tint = charge > 0 ? `rgba(235, 35, 25, ${.8 * charge})` : o.frozen ? 'rgba(188, 238, 240, .35)' : null;
+    if (tint) { t.globalCompositeOperation = 'source-atop'; t.fillStyle = tint; t.fillRect(0, 0, size, size); }
+    const dir = o.dir < 0 ? -1 : 1;
+    ctx.save(); ctx.translate(b.x + b.w / 2, b.y - SNAIL.top * k); ctx.scale(dir, 1);
+    ctx.drawImage(snailTint, -SNAIL.shellX * k, 0);
+    ctx.restore();
+  }
   function enemy(o, targeted, t, reduced) {
     const b = enemyBox(o), cx = b.x + b.w / 2, cy = b.y + b.h / 2, f = lifeFraction(o);
     ctx.save(); ctx.globalAlpha = f > .9 ? 1 - (f - .9) / .1 * .6 : 1;
     timeRing(cx, cy, Math.max(b.w, b.h) / 2 + 12, o, t);
     const charge = attackCharge(o);
-    if (charge > 0) { glow(ctx, cx, cy, Math.max(b.w, b.h) * (.9 + charge * .8), `rgba(255, 50, 35, ${.3 + .5 * charge})`); if (!reduced) ctx.translate(Math.sin(t * .08) * 2.5 * charge, 0); }
+    // The snail shows its wind-up on its own body (it flushes red); other creatures glow and get a red outline.
+    const flush = o.kind === 'guard' && loaded('snail');
+    if (charge > 0) { if (!flush) glow(ctx, cx, cy, Math.max(b.w, b.h) * (.9 + charge * .8), `rgba(255, 50, 35, ${.3 + .5 * charge})`); if (!reduced) ctx.translate(Math.sin(t * .08) * 2.5 * charge, 0); }
     const ice = o.frozen ? '#bceef0' : null;
-    if (o.kind === 'guard') {
+    if (flush) snail(o, b, charge);
+    else if (o.kind === 'guard') {
       // About to strike, its body flushes red.
       ctx.fillStyle = `rgb(${61 + 159 * charge}, ${79 - 39 * charge}, ${88 - 53 * charge})`; ctx.beginPath(); ctx.roundRect(b.x, b.y + 6, b.w, b.h - 6, 8); ctx.fill();
       for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.moveTo(b.x + 8 + i * 12, b.y + 7); ctx.lineTo(b.x + 12 + i * 12, b.y); ctx.lineTo(b.x + 16 + i * 12, b.y + 7); ctx.fill(); }
@@ -367,7 +400,7 @@ export function createRenderer(canvas, S) {
       if (stage === 1) { const gap = (b.w - 16) / 4; for (let i = 0; i < 4; i++) { ctx.fillStyle = color; ctx.beginPath(); ctx.moveTo(b.x + 4 + i * gap, b.y + 10); ctx.lineTo(b.x + 4 + i * gap + gap / 2, b.y); ctx.lineTo(b.x + 4 + (i + 1) * gap, b.y + 10); ctx.fill(); } }
       circle(ctx, cx + o.dir * b.w * .3, b.y + b.h * .45, 2.5, '#1f1a14');
     }
-    if (charge > 0) { ctx.strokeStyle = `rgba(255, 70, 50, ${.4 + .6 * charge})`; ctx.lineWidth = 2 + charge * 2; ctx.beginPath(); ctx.roundRect(b.x - 4, b.y - 4, b.w + 8, b.h + 8, 8); ctx.stroke(); }
+    if (charge > 0 && !flush) { ctx.strokeStyle = `rgba(255, 70, 50, ${.4 + .6 * charge})`; ctx.lineWidth = 2 + charge * 2; ctx.beginPath(); ctx.roundRect(b.x - 4, b.y - 4, b.w + 8, b.h + 8, 8); ctx.stroke(); }
     if (ice) { ctx.strokeStyle = ice; ctx.lineWidth = 1.5; ctx.strokeRect(b.x - 2, b.y - 2, b.w + 4, b.h + 4); for (let i = 0; i < 4; i++) star(ctx, b.x + (i % 2 ? b.w + 4 : -4), b.y + (i < 2 ? -4 : b.h + 4), 2, '#c9f3ef'); }
     ctx.restore();
     if (targeted) { const a = Math.max(b.w, b.h) / 2 + 8; ctx.strokeStyle = cyan; ctx.lineWidth = 1.5; for (const [x, y] of [[-a, -a], [a, -a], [-a, a], [a, a]]) line(ctx, [[cx + x, cy + y - Math.sign(y) * 8], [cx + x, cy + y], [cx + x - Math.sign(x) * 8, cy + y]], gold); }

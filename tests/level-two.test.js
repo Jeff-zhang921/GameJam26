@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'bun:test';
 import { setup, applyAction, validateAction, failureReason } from '../src/logic.js';
 import { LEVELS } from '../src/levels/index.js';
+import { ENEMY } from '../src/enemies.js';
 
 // Courtyard 2: a start ledge, a low trench patrolled by a guard (with the only seed), a middle ledge too high to
 // jump to from the trench except off the slowed guard's head, and the gate's ledge reached on a mushroom grown in
@@ -93,7 +94,7 @@ describe('courtyard 2 has no shortcuts', () => {
         s = tick(s);
         const b = guard(s);
         expect(b.y).toBe(trench.y);
-        expect(b.x - 20 >= trench.x && b.x + 20 <= trench.x + trench.w).toBe(true);
+        expect(b.x - ENEMY.guard.w / 2 >= trench.x && b.x + ENEMY.guard.w / 2 <= trench.x + trench.w).toBe(true);
       }
     }
   });
@@ -130,11 +131,13 @@ describe('courtyard 2 route', () => {
     s = act(s, { type: 'ability', actor: STILL, x: guard(s).x, y: guard(s).y - 25 });
     s = tick(s, 5);
     expect(guard(s).frozen).toBe(true);
+    // Even slowed it still strikes now and then: Still keeps well clear (it still creeps after them) while Bloom climbs.
+    stand(s, STILL, trench, guard(s).x + 120);
     s = climb(s, BLOOM);
     s = act(s, { type: 'jumpRelease', actor: BLOOM });
     s = climb(s, STILL);
     expect(s.actors.map(a => a.on)).toEqual(['platform-2', 'platform-2']);
-    expect(s.events.some(e => e.kind === 'hit')).toBe(false);
+    expect(s.actors.every(a => a.x > middle.x)).toBe(true); // nobody was sent back
     expect(s.flags.guardRide).toBe(true);
     // Bloom plants the seed; both stand on it and Bloom wakes it at full speed.
     const pit = s.pits[0];

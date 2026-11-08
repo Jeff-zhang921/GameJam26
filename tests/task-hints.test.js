@@ -36,8 +36,25 @@ describe('shared tasks over the travellers', () => {
     s.actors[1].x = s.pits.find(p => p.plantable !== false).x;
     expect(hint(s, 1)).toContain('Plant the seed');
   });
-  test('level two progresses from planting to Speed, freezing and jumping', () => {
+  test('level two: fetch the seed, lure and freeze the snail, then climb off its shell', () => {
     const s = setup({ level: 1 });
+    const snail = s.objects.find(o => o.kind === 'guard'), trench = s.platforms[3];
+    for (const p of s.actors) Object.assign(p, { x: trench.x + 100, y: trench.y, grounded: true, on: 'platform-3' });
+    expect(hint(s, 1)).toContain('Grab the seed');
+    expect(hint(s, 0)).toContain('Freeze the snail');
+    s.seeds = 1; s.objects = s.objects.filter(o => o.kind !== 'seed');
+    expect(hint(s, 1)).toContain('Lure the snail');
+    snail.frozen = true;
+    expect(hint(s, 1)).toContain('slowed snail');
+    s.actors[1].on = snail.id;
+    expect(hint(s, 1)).toContain('ledge above');
+    onMiddle(s); s.actors[0].x = trench.x + 100; s.actors[0].y = trench.y;
+    expect(hint(s, 1)).toContain('Wait on the ledge for Still');
+    s.freezeCharges = 0; snail.frozen = false;
+    expect(hint(s, 0)).toContain('hourglass');
+  });
+  test('level two progresses from planting to Speed, freezing and jumping', () => {
+    const s = setup({ level: 1 }); onMiddle(s);
     expect(hint(s, 1)).toContain('seed');
     const p = s.pits[0];
     const mushroom = { kind: 'plant', id: 'new-plant', x: p.x, base: p.y, height: 0, speed: 0, withered: false, frozen: false };

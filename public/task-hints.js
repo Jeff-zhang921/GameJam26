@@ -15,6 +15,10 @@ export function taskHints(state) {
   const needsSeed = state.seeds <= 0 && !plant;
   const bank = state.platforms.filter(p => p.x >= start.x + start.w).sort((a, b) => a.x - b.x)[0];
   const crossing = state.level === 0 && bank && state.actors.some(p => p.x < bank.x);
+  // Level two: the middle ledge is climbed off the slowed snail in the trench below it.
+  const ledge = state.level === 1 ? state.platforms[2] : null;
+  const below = p => ledge && p.y > ledge.y + 2 && p.x < ledge.x + ledge.w;
+  const snail = state.objects.find(o => o.kind === 'guard');
 
   if (crossing) {
     const crates = state.objects.filter(o => o.kind === 'crate');
@@ -27,6 +31,13 @@ export function taskHints(state) {
       else if (actor === 0 && flying) hints[actor] = 'Cast Freeze around the flying crate.';
       else if (p.carrying) hints[actor] = 'Throw the crate across the gap.';
       else hints[actor] = actor === 0 ? 'Pick up a crate. Throw, then Freeze it.' : 'Pick up a crate; Still will slow it.';
+    });
+  } else if (state.actors.some(below)) {
+    state.actors.forEach((p, actor) => {
+      if (!below(p)) hints[actor] = `Wait on the ledge for ${actor === 0 ? 'Bloom' : 'Still'}.`;
+      else if (actor === 1 && needsSeed && looseSeed) hints[actor] = 'Grab the seed in the trench; mind the snail.';
+      else if (snail?.frozen) hints[actor] = p.on === snail.id ? 'Jump from the snail to the ledge above.' : 'Jump onto the slowed snail.';
+      else hints[actor] = actor === 0 ? 'Freeze the snail by the right wall.' : 'Lure the snail to the right wall.';
     });
   } else if (needsSeed && looseSeed) {
     hints[1] = bloom.carrying ? 'Throw the crate, then collect the seed.' : 'Walk over the seed to collect it.';

@@ -5,7 +5,7 @@
 export const FROZEN_RATE = 0.2;
 const STRIKE_CUE_RANGE = 520;
 export const ENEMY = {
-  guard: { w: 40, h: 50, life: 1200, patrol: 1.2, chase: 2.6, see: 260, seeHeight: 80, attackEvery: 30, windup: 15 },
+  guard: { w: 52, h: 50, life: 1200, patrol: 1.2, chase: 2.6, see: 260, seeHeight: 80, attackEvery: 30, windup: 15 },
   lantern: { w: 44, h: 44, life: 1200, fly: 1, notice: 320, giveUp: 480, bob: 6, attackEvery: 72, windup: 24 },
   launcher: { w: 40, h: 40, every: 180 },
   dart: { w: 36, h: 10, fly: 5 },
