@@ -112,9 +112,26 @@ export function updateEnemies(state, { event, nextId, walkSpeed, tickRate }) {
     if (!step || !limit(nx) || !supported(o, nx + Math.sign(step) * half)) return false;
     o.x = nx; return true;
   };
+  const crates = state.objects.filter(o => o.kind === 'crate' && o.held == null)
+    .map(o => ({ id: o.id, x: o.x - 27, y: o.y - 27, w: 54, h: 54, frozen: o.frozen }));
+  const walkGuard = (o, goal) => {
+    const { y, h, w } = enemyBox(o), half = w / 2;
+    const movingRight = goal > o.x;
+    let x = goal;
+    for (const box of crates) {
+      if (y >= box.y + box.h || y + h <= box.y) continue;
+      const center = box.x + box.w / 2;
+      // Stop at the crate's face and let the guard walk out of any existing overlap.
+      if (movingRight && o.x <= center) x = Math.min(x, Math.max(o.x, box.x - half));
+      if (!movingRight && o.x >= center) x = Math.max(x, Math.min(o.x, box.x + box.w + half));
+    }
+    o.x = x;
+    return x === goal;
+  };
   const blockers = [
     ...state.platforms,
-    ...state.objects.filter(o => (o.frozen && o.kind === 'crate') || (isSolidEnemy(o) && o.kind !== 'launcher')).map(o => ({ ...(o.kind === 'crate' ? { x: o.x - 27, y: o.y - 27, w: 54, h: 54 } : enemyBox(o)), id: o.id })),
+    ...crates.filter(box => box.frozen),
+    ...state.objects.filter(o => isSolidEnemy(o) && o.kind !== 'launcher').map(o => ({ ...enemyBox(o), id: o.id })),
   ];
   const fly = (o, spec) => {
     o.x += o.dx * spec.fly * pace(o); o.y += o.dy * spec.fly * pace(o);
@@ -161,7 +178,7 @@ export function updateEnemies(state, { event, nextId, walkSpeed, tickRate }) {
         const distance = p.x - o.x;
         if (Math.abs(distance) > 2) {
           o.dir = Math.sign(distance);
-          o.x = Math.max(left, Math.min(right, o.x + o.dir * Math.min(Math.abs(distance), walkSpeed * k)));
+          walkGuard(o, Math.max(left, Math.min(right, o.x + o.dir * Math.min(Math.abs(distance), walkSpeed * k))));
         }
       } else {
         const patrolLeft = Math.max(left, Math.min(right, o.minX ?? left));
@@ -169,8 +186,8 @@ export function updateEnemies(state, { event, nextId, walkSpeed, tickRate }) {
         if (o.x > patrolRight) o.dir = -1;
         else if (o.x < patrolLeft) o.dir = 1;
         const edge = o.dir > 0 ? patrolRight : patrolLeft, distance = edge - o.x;
-        o.x += Math.sign(distance) * Math.min(Math.abs(distance), spec.patrol * k);
-        if (Math.abs(o.x - edge) < .001) o.dir = -o.dir;
+        const nextX = o.x + Math.sign(distance) * Math.min(Math.abs(distance), spec.patrol * k);
+        if (!walkGuard(o, nextX) || Math.abs(o.x - edge) < .001) o.dir = -o.dir;
       }
     }
     if (o.kind === 'lantern') {
