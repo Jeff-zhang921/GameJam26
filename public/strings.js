@@ -55,13 +55,27 @@ export const S = {
   gateClosed: 'Reach the moon gate together', gateOpen: 'Waiting for your partner…',
   shard: 'Optional time shard',
   saved: 'Your journey has been saved', focus: 'The courtyard is waiting for you.', connected: 'Local Adventure',
+  // Ending screen after the last chamber. Edit names / roles here.
+  ending: {
+    eyebrow: 'THE MOONCLOCK TURNS AGAIN', title: 'One clock, two hands.',
+    body: 'Every moment you held and every moment you hastened is part of the garden now. Thank you for keeping time together.',
+    shards: (n, total) => `Time shards remembered · ${n} / ${total}`,
+    playAgain: 'Walk Again', mainMenu: 'Main Menu', hostNote: 'The host can start the journey again.',
+    creditsTitle: 'Credits',
+    credits: [
+      ['Made by', ['StephenYang', 'Kehao Zhou', 'Yihua Ren (Carol)', 'Jeff Zhang', 'Erised233']],
+      ['Music', ['The 1999 — 共生 · 她未曾见过的 · 叠子对望 · 瑞尼尔雪山的丧钟 · 梦境之主 · 贝希摩斯', 'Gymnopédie No. 1 — Erik Satie, performed by Kevin MacLeod (incompetech.com), CC BY 4.0']],
+      ['Built with', ['Bun · Canvas · WebSocket']],
+      ['Made for', ['Game Jam 2026 · 24 hours']],
+    ],
+  },
   levels: [
     { name: 'A Moment Held', en: 'THE STILL MOMENT', goal: 'Cross the gap on slowed crates, age the ancient mushroom out of your way, then grow a new one up to the moon gate.', lesson: 'Turn a fall into a stair.',
       hints: ['Two crates, two travellers: each crossing takes a crate caught in a Freeze Area. A crate that falls into the gap is gone. On the long ledge, an ancient mushroom blocks the way to the last pit.', 'Stand near the edge, hold E and point across the gap, then let go to throw. As Still, click or tap where the crate is flying (or hold F and point there); jump onto it while it drifts, then on to the long ledge. Still picks up the hourglass (one more Freeze) and Bloom the seed. Bloom wakes the ancient mushroom so it wilts and lets you pass, then plants the seed in the far pit and wakes it. Stand on it, ride it up and jump to the high ledge; a Freeze Area over it gives you more time.'] },
     { name: 'Rising Rings', en: 'WHERE ROOTS RISE', goal: 'Climb out of the snail\'s trench on its shell, then grow a mushroom up to the moon gate.', lesson: 'Even a threat can be a stair.',
       hints: ['The middle ledge is too high to jump to from the trench, but not from the snail\'s shell. Bloom needs the seed on the trench floor for the pit up there.', 'Lure the snail to the trench\'s right wall, then have Still cast a Freeze Area over it: it slows to a crawl and strikes rarely, though it still creeps after you, so keep clear of it. Jump onto its shell and on up to the middle ledge, one at a time, before it glows red. Plant the seed in the pit, stand on it and wake it with Bloom; ride it up and jump to the moon gate\'s ledge.'] },
     { name: 'Past the Prime', en: 'AFTER THE BLOOM', goal: 'Ride a mushroom up between the arrows, cross the canyon on vines and a lift, then ride the twin platforms over the chasm.', lesson: 'An ending is also a beginning.',
-      hints: ['Darts fly from the left wall at two heights; a mushroom can carry you up between them. The canyon has no floor, but vines grow from pits in its cliff walls, and a lift runs between them. Vines wither, so cross together; spare seeds lie on the ledges.', 'Plant a seed in the pit before the high ledge, stand on it together and wake it just as a low dart flies past: you rise through that lane before the next one. Jump to the high ledge while the cap is between the two lanes; Still\'s Freeze Area over the mushroom gives you longer, and one over a launcher slows its fire. At the canyon, Bloom stands just back from the edge and throws a seed straight down into the wall pit, then wakes the vine. From its tip, step onto the lift, throw a seed into the far cliff\'s pit and wake that vine too. Ride the lift up, walk across and hop onto the cliff. Over the chasm, ride the first platform and jump to the second where they meet.'] },
+      hints: ['Darts fly from the left wall at two heights; a mushroom can carry you up between them. The canyon has no floor, but vines grow from pits in its cliff walls, and a lift runs between them. Vines wither, so cross together; spare seeds lie on the ledges.', 'Plant a seed in the pit before the high ledge, stand on it together and wake it a moment after a low dart flies past: you rise through that lane before the next one. Jump to the high ledge while the cap is between the two lanes; Still\'s Freeze Area over the mushroom gives you longer, and one over a launcher slows its fire. At the canyon, Bloom drops onto the small step below the edge, throws a seed up into the wall pit and wakes the vine, then jumps up onto it. From its tip, step onto the lift, throw a seed into the far cliff\'s pit and wake that vine too. Ride the lift up, walk across and hop onto the cliff. Over the chasm, ride the first platform and jump to the second where they meet.'] },
     { name: 'Walking with Time', en: 'WITH TIME', goal: 'Grow, ride and freeze your way across the last rift.', lesson: 'Every clock you start is a promise.',
       hints: ['Some platforms are waiting for time, too.', 'Stand on a planted seed holding the crate and let it grow you up to the platform. Have Bloom wake the platform. At the far end, throw the crate, catch it in a Freeze Area, and hop across.'] },
     { name: 'The Trial Garden', en: 'TRIALS', goal: 'Cross the rift on a slowed dart, then age a mite out of your way.', lesson: 'Even danger keeps time.',

@@ -101,3 +101,24 @@ Coordinates are world units; a platform's `y` is its top. Jump reach is about 16
   directly where steering would be fragile).
 - Existing tests that assume chamber 3's old size or layout are updated.
 - Visual check in the browser of each section.
+
+## Revision after review and playtest (2026-11-08)
+
+The numbers above were the first draft; the level file and `tests/level-three.test.js` are authoritative. Changes:
+
+- **Hurt box covers the hat.** Travellers are hurt by hazards and strikes up to 66 above the feet (`hurtBox` in
+  `src/logic.js`); movement still uses the 52-tall body.
+- **Arrows.** Lower lane darts at y 350 every 420 ticks (riding up through it takes ~300 ticks, so a rider boards
+  ~20-130 ticks after a dart passes); upper lane at y 225 every 180 (the launcher moved up so a traveller standing on
+  the high ledge is clear). Safe band of cap heights ≈ 174-224; the grown mushroom (235) is in the upper lane.
+- **Stranded check.** New level field `plantFrom` (platform index): the `exitNeedsPlant` rule only counts travellers on
+  that platform. Chamber 3 sets `plantFrom: 0`.
+- **Canyon** widened to x 1400-2110 so the lift (x 1690, w 140, y 250-330) is out of jumping reach from both sides and
+  the vines are needed; at vine length 160 their tips are 130 / 120 from the lift. Far cliff x 2110, far wall pit at
+  x 2110, movers, exit ledge (x 3410), checkpoint, pickups and shard shifted accordingly.
+- **Step under the near pit**: platform-5 `{ x: 1400, y: 440, w: 60 }`. Bloom drops onto it and throws up-left into the
+  near pit; a jump from it reaches the vine (when grown) or back up to the high ledge, but not the lift.
+- **Spares** for one canyon redo: seeds on the high ledge and the far cliff, bolts on both. Rescue: Bloom on the far
+  cliff throws straight down into the far pit, rides vine 2 to the lift, and from its bottom stop plants and wakes the
+  near vine for Still.
+- **Wall pits** are drawn 8 px toward the wall so they sit against it.
