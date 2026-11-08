@@ -11,8 +11,8 @@ import { guardAttackFrame } from './guard-animation.js';
 export function createRenderer(canvas, S) {
   const ctx = canvas.getContext('2d');
   const background = document.createElement('canvas'); background.width = 1280; background.height = 640;
-  // World width of the courtyard being drawn (1280 unless a level is wider); the backdrop is built at this width.
-  let worldWidth = 1280;
+  // Gameplay coordinates stay independent of the image backdrop's viewport dimensions.
+  let worldWidth = 1280, worldHeight = 640;
   const b = background.getContext('2d');
   let currentDpr = 1, frameWidth = 1, frameHeight = 1, lastTime = null, visualTime = 0, lastReset = -1;
   const renderLevels = [1.75, 1.5, 1.25, 1];
@@ -76,18 +76,26 @@ export function createRenderer(canvas, S) {
   function glow(c, x, y, r, color) { const g = c.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, color); g.addColorStop(1, '#a4dfdf00'); c.fillStyle = g; c.fillRect(x - r, y - r, r * 2, r * 2); }
   // The backdrop canvas is rebuilt when the courtyard's background changes (or its image finishes loading).
   function updateBackground() {
-    const look = theme.background, img = look.image ? art(look.image) : null, W = worldWidth;
-    const key = `${theme.names.background}:${!!img}:${W}`;
+    const look = theme.background, img = look.image ? art(look.image) : null;
+    const W = look.image ? Math.ceil(frameWidth) : worldWidth, H = look.image ? Math.ceil(frameHeight) : worldHeight;
+    const key = `${theme.names.background}:${!!img}:${W}:${H}`;
     if (key === backgroundKey) return;
     backgroundKey = key;
     if (background.width !== W) background.width = W;
-    // The painted greenhouse is drawn for 1280 and stretched; an image covers the whole world, centred.
+    if (background.height !== H) background.height = H;
+    // Cover the viewport at the image's original aspect ratio, independently of gameplay camera zoom.
     if (!look.image) { b.save(); b.scale(W / 1280, 1); buildBackground(); b.restore(); }
     else {
-      b.fillStyle = '#86b4b0'; b.fillRect(0, 0, W, 640);
-      if (img) { const k = Math.max(W / img.naturalWidth, 640 / img.naturalHeight), w = img.naturalWidth * k, h = img.naturalHeight * k; b.drawImage(img, (W - w) / 2, (640 - h) / 2, w, h); }
+      b.fillStyle = '#efe8dd'; b.fillRect(0, 0, W, H);
+      if (img) {
+        const k = Math.max(W / img.naturalWidth, H / img.naturalHeight);
+        const w = img.naturalWidth * k, h = img.naturalHeight * k;
+        // Keep the clocktower in view when a narrow viewport needs the sides cropped; retain the image's top.
+        const x = Math.max(W - w, Math.min(0, W * .6 - w * (look.focusX ?? .5)));
+        b.drawImage(img, x, 0, w, h);
+      }
     }
-    edge = { top: averageRow(0), bottom: averageRow(636) };
+    edge = { top: averageRow(0), bottom: averageRow(H - 4) };
   }
   function averageRow(y) {
     const data = b.getImageData(0, y, background.width, 4).data; let r = 0, g = 0, bl = 0;
@@ -206,7 +214,7 @@ export function createRenderer(canvas, S) {
     };
     if (!g.scale || !g.base || !g.legs) return row(g.y, g.height, top);
     const viewportBottom = (frameHeight - transform.offsetY) / transform.scale;
-    for (const band of bridgeBands(p, g, background.height, viewportBottom)) row(band.sy, band.sh, band.y);
+    for (const band of bridgeBands(p, g, worldHeight, viewportBottom)) row(band.sy, band.sh, band.y);
   }
   // `all` is every platform of the courtyard, to find the ends that rest against a neighbour. A `hidden` platform is
   // never drawn: it only gives collision to art another platform draws wider than itself.
@@ -572,7 +580,7 @@ export function createRenderer(canvas, S) {
     const right = (frameWidth - transform.offsetX) / scale, bottom = (frameHeight - transform.offsetY) / scale;
     // Mirror each neighbouring tile across the shared edge, including corners.
     // The central world is painted below; this adds no collision geometry.
-    for (let row = Math.floor(top / H); row < Math.ceil(bottom / H); row++) {
+    if (!theme.background.image) for (let row = Math.floor(top / H); row < Math.ceil(bottom / H); row++) {
       for (let col = Math.floor(left / W); col < Math.ceil(right / W); col++) {
         if (row === 0 && col === 0) continue;
         const flipX = Math.abs(col % 2) === 1, flipY = Math.abs(row % 2) === 1;
@@ -824,7 +832,7 @@ export function createRenderer(canvas, S) {
   function draw(state, time, options = {}) {
     sampleFrame(time, state, options);
     resize();
-    theme = themeFor(state.level); worldWidth = state.width ?? 1280; updateBackground();
+    theme = themeFor(state.level); worldWidth = state.width ?? 1280; worldHeight = state.height ?? 640; updateBackground();
     const dt = lastTime === null ? 0 : Math.min(.05, Math.max(0, (time - lastTime) / 1000));
     lastTime = time;
     if (!options.paused && !options.reduced) visualTime += dt * 1000;
@@ -852,6 +860,7 @@ export function createRenderer(canvas, S) {
     effects.update(state, { dt, reduced: options.reduced, paused: options.paused && state.status !== 'won', sceneKey: options.sceneKey });
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = edge.top; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    if (theme.background.image) ctx.drawImage(background, 0, 0, canvas.width, canvas.height);
     ctx.setTransform(currentDpr * transform.scale, 0, 0, currentDpr * transform.scale, currentDpr * transform.offsetX, currentDpr * transform.offsetY);
     surroundings(state);
     // Clip to the world on whole device pixels: a clip edge through the middle of a pixel row lets the sky show
@@ -860,7 +869,7 @@ export function createRenderer(canvas, S) {
     const [cx0, cy0, cx1, cy1] = [ox, Math.min(0, oy), ox + state.width * k, oy + state.height * k].map(Math.round);
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.beginPath(); ctx.rect(cx0, cy0, cx1 - cx0, cy1 - cy0); ctx.clip();
     ctx.setTransform(k, 0, 0, k, ox, oy);
-    ctx.drawImage(background, 0, 0);
+    if (!theme.background.image) ctx.drawImage(background, 0, 0);
     if (theme.background.draw === 'greenhouse') { ctx.save(); ctx.translate(780, 158); ctx.rotate(t * .00003); line(ctx, [[0, 9], [0, -62]], '#d8c99777', 2); line(ctx, [[-28, 0], [8, 0]], '#d8c99777', 2); circle(ctx, 0, 0, 3, '#cfc7a1'); ctx.restore(); }
     for (const p of state.platforms) platform(p, state.platforms);
     for (const a of state.freezeAreas ?? []) freezeArea(a, t);

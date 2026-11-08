@@ -118,7 +118,7 @@ describe('production HTTP and WebSocket service', () => {
     send(host, { type: 'create' }); const room = [...manager.rooms.values()][0];
     send(guest, { type: 'join', code: room.code }); send(host, { type: 'select', character: 'still' }); send(guest, { type: 'select', character: 'bloom' });
     send(host, { type: 'ready', ready: true }); send(guest, { type: 'ready', ready: true }); send(host, { type: 'start' });
-    now += 3001; manager.advance();
+    now += 1; manager.advance();
     manager.disconnect(host); manager.disconnect(guest); const tick = room.game.tick;
     Object.defineProperty(room.game, 'objects', { get() { throw new Error('Unnecessary disconnected snapshot serialization'); } });
     now += 100; expect(() => manager.advance()).not.toThrow(); expect(room.game.tick).toBe(tick);

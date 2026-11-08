@@ -54,6 +54,15 @@ describe('shared pause', () => {
 });
 
 describe('rooms and shared lobby', () => {
+  test('the default start enters gameplay without a cutscene countdown', () => {
+    const f = fixture({ countdownMs: undefined }); f.ready();
+    f.send(f.host, { type: 'start' });
+    expect(f.last(f.host, 'snapshot').room.startDuration).toBe(0);
+    expect(f.last(f.guest, 'snapshot').room.startAt).toBe(f.last(f.host, 'snapshot').room.startAt);
+    f.advance(0);
+    expect(f.room.status).toBe('PLAYING'); expect(f.room.game.tick).toBe(0);
+    f.advance(17); expect(f.room.game.tick).toBeGreaterThan(0);
+  });
   test('authenticated retry waits for an active connection, then reclaims the same slot', () => {
     const f = fixture(), retry = f.socket();
     const resume = { type: 'resume', code: f.room.code, playerId: f.credentials.playerId, token: f.credentials.token };

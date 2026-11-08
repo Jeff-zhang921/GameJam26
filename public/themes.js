@@ -31,17 +31,17 @@ export const GROUNDS = {
 };
 
 // Background: `draw: 'greenhouse'` is the painted conservatory (arches, moon clock, lanterns). Or give an
-// `image`; it is scaled to cover the 1280 x 640 world and centred.
+// `image`; it covers the viewport proportionally, independent of the gameplay camera. `focusX` locates the clocktower.
 export const BACKGROUNDS = {
   greenhouse: { draw: 'greenhouse' },
   // Floating castles over a lilac sea of clouds (picture/background/1.png).
   skyCastles: { image: '/art/sky-castles.jpg' },
-  moonlitClocktower: { image: '/art/backgrounds/chamber-1.png' },
-  chamber1: { image: '/art/backgrounds/chamber-1.png' },
-  chamber2: { image: '/art/backgrounds/chamber-2.png' },
-  chamber3: { image: '/art/backgrounds/chamber-3.png' },
-  chamber4: { image: '/art/backgrounds/chamber-4.png' },
-  chamber5: { image: '/art/backgrounds/chamber-5.png' },
+  moonlitClocktower: { image: '/art/backgrounds/chamber-1.png', focusX: .7 },
+  chamber1: { image: '/art/backgrounds/chamber-1.png', focusX: .7 },
+  chamber2: { image: '/art/backgrounds/chamber-2.png', focusX: .665 },
+  chamber3: { image: '/art/backgrounds/chamber-3.png', focusX: .65 },
+  chamber4: { image: '/art/backgrounds/chamber-4.png', focusX: .72 },
+  chamber5: { image: '/art/backgrounds/chamber-5.png', focusX: .68 },
   chamber6: { image: '/art/backgrounds/chamber-6.png' },
 };
 

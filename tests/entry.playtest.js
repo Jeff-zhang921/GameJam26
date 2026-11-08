@@ -85,9 +85,8 @@ async function checkLocal(url, { reducedMotion = 'no-preference', finale = false
   ` }));
   await page.goto(url);
   if (finale) assert.match(await page.getByTestId('start').innerText(), /Continue Journey/);
-  await watchReveal(page);
   await page.getByTestId('start').click();
-  await page.locator('.scene-veil').waitFor({ state: 'visible' });
+  assert.equal(await page.getByTestId('online-entrance').count(), 0, 'Opening film must be removed');
   if (!finale) {
     await page.keyboard.down('KeyD');
     await ready(page);
@@ -95,7 +94,6 @@ async function checkLocal(url, { reducedMotion = 'no-preference', finale = false
     await page.keyboard.up('KeyD');
   } else await ready(page);
   const waiting = await snapshot(page);
-  assert.equal(await page.evaluate(() => window.swapOpacity), 1, 'The menu disappeared before the world was covered');
   assert.equal(waiting.level, level);
   assert.equal(waiting.actors[0].x, waiting.exit.x);
   assert.equal(waiting.status, 'playing');
@@ -113,14 +111,9 @@ async function checkLocal(url, { reducedMotion = 'no-preference', finale = false
     return;
   }
   await page.keyboard.down('ArrowRight');
-  await stage(page, 'celebration');
-  const began = Date.now();
+  await stage(page, 'ending');
   await page.keyboard.up('ArrowRight');
-  assert.equal(await page.getByTestId('next').count(), 0, 'Results opened before the animation');
-  if (finale && reducedMotion !== 'reduce') {
-    await page.waitForTimeout(1800);
-    await page.screenshot({ path: '.audit/win-finale.png' });
-  }
+  assert.equal(await page.getByTestId('epilogue').count(), 0, 'Ending film must be removed');
   if (finale) {
     // The last chamber ends on the ending screen with credits instead of looping straight back.
     await stage(page, 'ending');
@@ -154,7 +147,7 @@ async function checkOnline(server) {
   await host.getByTestId('character-still').click(); await guest.getByTestId('character-bloom').click();
   await host.getByTestId('ready').click(); await guest.getByTestId('ready').click();
   await host.getByTestId('start-game').click();
-  await host.getByTestId('online-entrance').waitFor({ state: 'visible' });
+  assert.equal(await host.getByTestId('online-entrance').count(), 0, 'Online opening film must be removed');
   await Promise.all([ready(host), ready(guest)]);
 
   const room = server.rooms.rooms.get(code);

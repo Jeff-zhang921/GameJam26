@@ -219,6 +219,8 @@ Railway 配置说明见 [Dockerfile 构建](https://docs.railway.com/guides/dock
 
 ## 运行检查
 
+片头和片尾动画已移除。本地开始及联机房间开始后直接进入关卡，最后一关通关后直接显示结算、再玩一次和返回菜单按钮。
+
 ```powershell
 bun test
 bun run build

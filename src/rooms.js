@@ -7,7 +7,7 @@ const inputTypes = new Set(['move', 'jump', 'jumpRelease', 'grab', 'plant', 'tak
 const codePattern = /^[A-Z0-9]{6}$/;
 const clone = value => JSON.parse(JSON.stringify(value));
 
-export function createRoomManager({ now = Date.now, countdownMs = 3000, reconnectMs = 30000, roomTtlMs = 30 * 60 * 1000, maxRooms = 500, rewindMs = 4000 } = {}) {
+export function createRoomManager({ now = Date.now, countdownMs = 0, reconnectMs = 30000, roomTtlMs = 30 * 60 * 1000, maxRooms = 500, rewindMs = 4000 } = {}) {
   const rooms = new Map();
   let lastAdvance = now(), accumulator = 0;
   function send(ws, message) { if (ws) { try { ws.send(JSON.stringify(message)); } catch { } } }
@@ -25,7 +25,7 @@ export function createRoomManager({ now = Date.now, countdownMs = 3000, reconnec
     return {
       code: room.code, status: room.status, hostId: room.hostId,
       players: room.players.map(({ id, character, ready, connected }) => ({ id, character, ready, connected })),
-      startAt: room.startAt, suspended: room.suspended,
+      startAt: room.startAt, startDuration: countdownMs, suspended: room.suspended,
       reconnectUntil: disconnected.length ? Math.min(...disconnected.map(p => p.disconnectedAt + reconnectMs)) : null,
       canReturnLobby: room.status === 'FINISHED' && room.suspended, epoch: room.epoch,
       rewinding: room.rewind ? { id: room.rewind.id, until: room.rewind.until, duration: rewindMs } : null,

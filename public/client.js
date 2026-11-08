@@ -8,7 +8,6 @@ import { createRenderer } from './render.js';
 import { createNetwork } from './network.js';
 import { readJoystick, skillAimOffset } from './joystick.js';
 import { createLobby } from './lobby.js';
-import { createEntrance } from './entrance.js';
 import { createPWA } from './pwa.js';
 import { createViewport } from './viewport.js';
 import { createDialogue } from './dialogue.js';
@@ -144,7 +143,7 @@ const sharedTasks = createTaskHints(document.querySelector('.task-hints'), {
   story: document.querySelector('.character-dialogue'), hud: document.querySelector('.game-bottom'),
 });
 let awaitingOnlineState = true;
-const stageBusy = () => !!(sceneFade || celebration || arrival || entrance.active);
+const stageBusy = () => !!(sceneFade || celebration || arrival);
 const canvas = document.querySelector('#game');
 const renderer = createRenderer(canvas, S);
 const debug = new URLSearchParams(location.search).has('debug');
@@ -152,14 +151,15 @@ const network = createNetwork({
   onRoom(room, playerId, serverTime) {
     const starting = room.status === 'STARTING' && !room.suspended && !room.canReturnLobby;
     if (starting && (sceneFade || celebration)) clearStage();
-    entrance.update(room, serverTime);
     lobby.update(room, playerId, serverTime);
     if (['WAITING', 'READY', 'STARTING'].includes(room.status) || room.canReturnLobby) {
       if (!starting && stageBusy()) clearStage();
       nextPending = false;
       modal = 'online'; renderModal();
-    } else if (room.status === 'PLAYING' && network.latest && modal === 'online' && !room.suspended && !entrance.active) {
-      modal = null; renderModal(); if (!stageBusy()) canvas.focus({ preventScroll: true });
+    } else if (room.status === 'PLAYING' && network.latest && modal === 'online' && !room.suspended) {
+      modal = null;
+      if (entryPending && !arrival && networkEpoch === room.epoch) startArrival();
+      renderModal(); if (!stageBusy()) canvas.focus({ preventScroll: true });
     }
   },
   onState(game, info) {
@@ -170,17 +170,17 @@ const network = createNetwork({
     if (!rewind) history.record(game);
     if (game.status === 'paused' && previous.status !== 'paused') resetTouchState();
     if (networkEpoch !== info.epoch) {
-      const from = live && !rewind && game.status === 'playing' && network.room.status !== 'STARTING' && !entrance.active
+      const from = live && !rewind && game.status === 'playing' && network.room.status !== 'STARTING'
         ? { state: previous, sceneKey, cameraReset } : null;
       networkEpoch = info.epoch; sceneKey++; cameraReset++; seenEvent = state.eventSeq;
       hitFeedback.reset(state.eventSeq);
-      entryPending = !rewind && !!(from || entrance.active || network.room.status === 'STARTING');
+      entryPending = !rewind && !!(from || network.room.status === 'STARTING');
       shownHint = 0; uiChapter = ''; resetTouchState(); history.reset(game);
       if (rewind) rewind.arrived = true; // the server has installed the courtyard's start
       nextPending = false;
       if (from) startFade(revealCourtyard, { from, arrive: true });
       else {
-        modal = network.room.status === 'STARTING' || entrance.active ? 'online' : null;
+        modal = network.room.status === 'STARTING' ? 'online' : null;
         if (entryPending && !modal) startArrival();
       }
     }
@@ -203,10 +203,9 @@ const network = createNetwork({
       if (['pause', 'help', 'settings', 'confirm-restart', 'confirm-level'].includes(modal)) modal = null;
       pauseContext = false; resetTouchState(); accumulator = 0; previousTick = null;
     }
-    if (!rewind && !network.room.rewinding && (network.room.status === 'STARTING' || network.room.canReturnLobby || entrance.active)) modal = 'online';
+    if (!rewind && !network.room.rewinding && (network.room.status === 'STARTING' || network.room.canReturnLobby)) modal = 'online';
     if (!sceneFade?.from) updateUI();
     if (modalRoot.dataset.phase !== String(modal)) { renderModal(); if (!modal && !stageBusy()) canvas.focus({ preventScroll: true }); }
-    entrance.confirm(network.room, info.epoch);
   },
   onReplay(replay, game) { startRewind({ end: replay.end, current: game, online: true }); },
   onConnection(status) {
@@ -235,20 +234,6 @@ const lobby = createLobby({
   leaveRoom() { leaveOnline(); },
   returnToLobby() { network.returnToLobby(); },
   retry() { network.retry(); },
-});
-const entrance = createEntrance({
-  reduced: () => reduced,
-  onStart() {
-    entranceDrawAt = null;
-    if (!reduced) chime({ kind: 'doorOpen' });
-    resetTouchState(); freezePreview = tapEffect = null;
-    lobby.setEntering(true); syncStage();
-  },
-  onFinish() {
-    lobby.setEntering(false); startArrival(); resetTouchState();
-    revealCourtyard(); canvas.focus({ preventScroll: true });
-  },
-  onCancel() { lobby.setEntering(false); syncStage(); },
 });
 const pwa = createPWA({ isBusy: () => onlineMode || stageBusy() || modal !== 'intro' });
 document.addEventListener('pointerdown', unlockAudioOnGesture, { capture: true });
@@ -448,7 +433,6 @@ function syncStage() {
   document.body.classList.toggle('scene-changing', !!sceneFade);
 }
 function clearStage() {
-  entrance.cancel();
   sceneFade = celebration = arrival = null;
   entryPending = false;
   pauseContext = false;
@@ -483,8 +467,8 @@ function startArrival(time = performance.now()) {
 function startCelebration() {
   resetTouchState(); freezePreview = tapEffect = null;
   document.querySelector('#toast').classList.remove('show');
-  const finale = state.level === levelCount - 1;
-  celebration = { start: performance.now(), duration: reduced ? 1200 : GATE_DURATION, finale };
+  if (state.level === levelCount - 1) { modal = 'ending'; syncStage(); renderModal(); return; }
+  celebration = { start: performance.now(), duration: reduced ? 1200 : GATE_DURATION };
   chime({ kind: 'gate' });
   // A newly opened chamber rings once the victory coda has settled (not on replays of a known chamber).
   if (state.unlocked > heardUnlocked) { const mine = celebration; setTimeout(() => { if (celebration === mine) chime({ kind: 'unlock' }); }, reduced ? 600 : 2600); }
@@ -498,9 +482,7 @@ function advanceStage(time) {
     canvas.focus({ preventScroll: true });
   }
   if (celebration && time - celebration.start >= celebration.duration) {
-    const finale = celebration.finale;
     celebration = null;
-    if (finale) { modal = 'ending'; syncStage(); renderModal(); return; }
     modal = 'advancing';
     if (onlineMode) {
       if (network.host && !nextPending) nextPending = dispatch({ type: 'next' }).valid;
@@ -615,8 +597,8 @@ function renderModal() {
       + `<button class="primary" data-action="play-again" data-testid="play-again">${E.playAgain}${icon('restart')}</button>`
       + `<div class="modal-actions"><button class="text-button" data-action="leave" data-testid="ending-leave">${onlineMode ? S.leaveRoom : E.mainMenu}</button></div>`
       + (onlineMode && !network.host ? `<p class="pause-note">${E.hostNote}</p>` : '')
-      + `<section class="ending-credits" aria-label="${E.creditsTitle}"><div class="goal-heading">${icon('leaf')}<span>${E.creditsTitle}</span></div><div class="credit-roll">${credits}</div></section>`;
-    root.innerHTML = `<div class="modal-backdrop ending-backdrop"><section class="modal ending" role="dialog" aria-modal="true" aria-label="${E.title}" data-testid="ending">${contents}</section></div>`;
+      + `<details class="ending-credits"><summary>${E.creditsTitle}</summary><div class="credit-roll">${credits}</div></details>`;
+    root.innerHTML = `<div class="modal-backdrop"><section class="modal ending results-reveal" role="dialog" aria-modal="true" aria-label="${E.title}" data-testid="ending">${contents}</section></div>`;
     if (onlineMode && !network.host) root.querySelectorAll('[data-action="play-again"]').forEach(button => { button.disabled = true; button.title = E.hostNote; });
     root.querySelector('button.primary:not(:disabled), button:not(:disabled)')?.focus({ preventScroll: true });
     return;
@@ -665,7 +647,7 @@ document.addEventListener('click', event => {
   if (action === 'start') {
     if (modal !== 'intro') return;
     clearInputs();
-    startFade(() => { persist(); revealCourtyard(); }, { arrive: true });
+    persist(); revealCourtyard(); startArrival();
     return;
   }
   if (action === 'sound') { sound = !sound; if (!sound) audioContext?.suspend(); initAudio(); updateUI(); persist(); if (['settings', 'intro', 'pause'].includes(modal)) renderModal(); else if (!modal) canvas.focus({ preventScroll: true }); return; }
@@ -710,7 +692,7 @@ document.addEventListener('keydown', event => {
   if (code === 'Escape') { event.preventDefault(); if (modal && !['intro', 'win', 'ending'].includes(modal)) resume(); else if (!modal) setModal('pause'); return; }
   if (modal) {
     if (code === 'Tab') {
-      const buttons = [...document.querySelectorAll('#modal-root button:not(:disabled)')];
+      const buttons = [...document.querySelectorAll('#modal-root button:not(:disabled), #modal-root summary')];
       const index = buttons.indexOf(document.activeElement);
       const next = (index + (event.shiftKey ? -1 : 1) + buttons.length) % buttons.length;
       event.preventDefault(); buttons[next]?.focus();
@@ -1190,9 +1172,8 @@ function blendTicks(a, b, t) {
   };
 }
 // The title screen and the pause / settings / help menus have their own music.
-const menuScreen = () => ['intro', 'online', 'pause', 'settings', 'help', 'confirm-restart', 'confirm-level'].includes(modal);
+const menuScreen = () => ['intro', 'online', 'pause', 'settings', 'help', 'confirm-restart', 'confirm-level', 'ending'].includes(modal);
 const currentTrack = () => menuScreen() ? MENU_MUSIC : themeFor(state.level).music;
-let entranceDrawAt = null;
 // The loop always schedules its next frame, even if this one fails: an error in one frame (a drawing glitch,
 // say) must never stop the game. Each distinct error is reported once.
 const frameErrors = new Set();
@@ -1213,7 +1194,6 @@ function runFrame(time) {
   pwa.refresh();
   if (lastTime === 0) lastTime = time;
   accumulator += Math.min(100, time - lastTime); lastTime = time;
-  entrance.advance(time);
   advanceStage(time);
   const step = 1000 / 60;
   if (!onlineMode && !viewport.blocked && !modal && !stageBusy() && !rewind && state.status === 'playing') {
@@ -1247,24 +1227,21 @@ function runFrame(time) {
   lastView = displayState;
   const tapAge = tapEffect ? (performance.now() - tapEffect.at) / 1400 : 1;
   if (tapAge >= 1) tapEffect = null;
-  if (!entrance.active || entranceDrawAt === null || time - entranceDrawAt >= 100) {
-    entranceDrawAt = entrance.active ? time : null;
-    renderer.draw(displayState, time, {
-      reduced, paused: worldPaused && !rewindInfo,
-      sceneKey: outgoing?.sceneKey ?? sceneKey, cameraReset: outgoing?.cameraReset ?? cameraReset,
-      followActor: !outgoing && !rewind ? onlineMode ? network.ownActor : state.actors[state.active] : undefined,
-      celebration: celebration && { progress: Math.max(0, Math.min(1, (time - celebration.start) / celebration.duration)), finale: celebration.finale },
-      arrival: !outgoing && arrival ? { kind: state.level === 0 ? 'left-run' : 'portal', progress: Math.max(0, Math.min(1, (time - arrival.start) / arrival.duration)) }
-        : !outgoing && (entryPending || onlineMode && ['WAITING', 'READY', 'STARTING'].includes(network.room?.status)) ? { kind: state.level === 0 ? 'left-run' : 'portal', progress: 0, waiting: true } : null,
-      target: aim?.target ?? null,
-      touch, tappable: !aim && touch && viewActor === 1 && displayState.status === 'playing' ? new Set(abilityTargets(displayState, viewActor).map(o => o.id)) : null,
-      rewind: rewindInfo,
-      aim, throwArc,
-      preview: freezePreview && !mouseAim && displayState.status === 'playing' ? cancelPreview ? { ...cancelPreview, cancel: true } : { ...freezePreview, radius: meta.freeze.radius, valid: freezeCheck(displayState, freezePreview) === 'ok' } : null,
-      tap: tapEffect && { ...tapEffect, age: tapAge },
-      bottomInset: touch ? controlsReserve : 0,
-    });
-  }
+  renderer.draw(displayState, time, {
+    reduced, paused: worldPaused && !rewindInfo,
+    sceneKey: outgoing?.sceneKey ?? sceneKey, cameraReset: outgoing?.cameraReset ?? cameraReset,
+    followActor: !outgoing && !rewind ? onlineMode ? network.ownActor : state.actors[state.active] : undefined,
+    celebration: celebration && { progress: Math.max(0, Math.min(1, (time - celebration.start) / celebration.duration)) },
+    arrival: !outgoing && arrival ? { kind: state.level === 0 ? 'left-run' : 'portal', progress: Math.max(0, Math.min(1, (time - arrival.start) / arrival.duration)) }
+      : !outgoing && (entryPending || onlineMode && ['WAITING', 'READY', 'STARTING'].includes(network.room?.status)) ? { kind: state.level === 0 ? 'left-run' : 'portal', progress: 0, waiting: true } : null,
+    target: aim?.target ?? null,
+    touch, tappable: !aim && touch && viewActor === 1 && displayState.status === 'playing' ? new Set(abilityTargets(displayState, viewActor).map(o => o.id)) : null,
+    rewind: rewindInfo,
+    aim, throwArc,
+    preview: freezePreview && !mouseAim && displayState.status === 'playing' ? cancelPreview ? { ...cancelPreview, cancel: true } : { ...freezePreview, radius: meta.freeze.radius, valid: freezeCheck(displayState, freezePreview) === 'ok' } : null,
+    tap: tapEffect && { ...tapEffect, age: tapAge },
+    bottomInset: touch ? controlsReserve : 0,
+  });
   if (!outgoing) {
     const camera = renderer.inspect().camera;
     sharedTasks.update(state, displayState, camera, !!camera && !worldPaused && !rewind, sceneKey);
