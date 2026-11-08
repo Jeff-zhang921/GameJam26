@@ -232,3 +232,37 @@ describe('aimed throws', () => {
     expect(crate(state).vy).toBe(0); // it has landed where the preview ends
   });
 });
+
+describe('crates against crates', () => {
+  const crate = (id, x, y, vx = 0, vy = 0) => ({ kind: 'crate', id, x, y, vx, vy, frozen: false, held: null, spawnX: x, spawnY: y });
+  const run = (state, n) => { for (let i = 0; i < n; i++) state = applyAction(state, 'a', { type: 'tick' }); return state; };
+  const arena = crates => {
+    const state = classicCourtyard({ players: ['a'] });
+    state.actors.forEach((p, i) => Object.assign(p, { x: 40 + i * 20 }));
+    state.objects = crates;
+    return state;
+  };
+
+  test('a crate sliding into another stops against its side instead of passing through', () => {
+    let state = arena([crate('crate-0', 300, 493), crate('crate-1', 220, 493, 8)]);
+    state = run(state, 60);
+    const [still, moved] = state.objects;
+    expect(still.x).toBe(300);
+    expect(moved.x).toBeCloseTo(300 - 54, 5);
+    expect(moved.y).toBe(493);
+  });
+
+  test('a crate thrown low at another stops against it and drops beside it', () => {
+    let state = arena([crate('crate-0', 300, 493), crate('crate-1', 150, 470, 10, 0)]);
+    state = run(state, 90);
+    const moved = state.objects.find(o => o.id === 'crate-1');
+    expect(moved.x).toBeLessThanOrEqual(300 - 54 + 1e-6);
+    expect(moved.y).toBe(493);
+  });
+
+  test('a crate dropped onto another still stacks on top', () => {
+    let state = arena([crate('crate-0', 300, 493), crate('crate-1', 300, 380)]);
+    state = run(state, 60);
+    expect(state.objects.find(o => o.id === 'crate-1')).toMatchObject({ x: 300, y: 493 - 54 });
+  });
+});

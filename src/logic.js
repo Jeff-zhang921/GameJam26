@@ -478,9 +478,11 @@ function stepItem(state, o, all) {
   let landed = null, wall = false;
   // A crate is solid to the travellers: it stops against their sides and comes to rest on their heads.
   const bodies = o.kind === 'crate' ? state.actors.map(p => ({ id: `actor-${p.id}`, x: p.x - 15, y: p.y - 52, w: 30, h: 51 })) : [];
+  // Other loose crates are solid from the side too (they already stack on top of each other).
+  const crates = state.objects.filter(c => c.kind === 'crate' && c.id !== o.id && free(c)).map(c => ({ id: c.id, x: c.x - 27, y: c.y - 27, w: 54, h: 54 }));
   o.vy += 0.3 * k; o.x += o.vx * k;
-  // Platform sides and mushroom stems are walls: an item flying into one stops against it instead of passing through.
-  for (const f of [...state.platforms, ...stemBoxes(state), ...bodies]) if (o.y + half > f.y + 3 && o.y - half < f.y + f.h && o.x + half > f.x && o.x - half < f.x + f.w) {
+  // Platform sides, mushroom stems and crates are walls: an item flying into one stops against it instead of passing through.
+  for (const f of [...state.platforms, ...stemBoxes(state), ...crates, ...bodies]) if (o.y + half > f.y + 3 && o.y - half < f.y + f.h && o.x + half > f.x && o.x - half < f.x + f.w) {
     o.x = o.x < f.x + f.w / 2 ? f.x - half : f.x + f.w + half; o.vx = 0; wall = true;
   }
   o.y += o.vy * k;
