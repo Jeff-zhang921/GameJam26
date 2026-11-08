@@ -75,6 +75,13 @@ test('installed Moonclock requests fullscreen from launch with landscape prefere
   expect(apple.readUInt32BE(16)).toBe(180); expect(apple.readUInt32BE(20)).toBe(180);
 });
 
+test('PWA launch and browser chrome match the dark menu backdrop', async () => {
+  const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
+  const manifest = JSON.parse(await readFile(new URL('../public/manifest.webmanifest', import.meta.url), 'utf8'));
+  expect(html).toContain('<meta name="theme-color" content="#0a202b"');
+  expect(manifest).toMatchObject({ theme_color: '#0a202b', background_color: '#0a202b' });
+});
+
 test('install precaches its release without forcibly activating and activation removes only obsolete Moonclock caches', async () => {
   const f = fixture(); await f.lifecycle('install');
   expect(f.skipped).toBe(0); expect(f.stored.size).toBe(assets.length);

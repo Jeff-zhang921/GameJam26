@@ -7,7 +7,9 @@
   overflow: auto;
   padding: max(28px, var(--safe-top)) max(24px, var(--safe-right)) max(28px, var(--safe-bottom)) max(7vw, calc(var(--safe-left) + 20px));
   color: #f5edce;
-  background: linear-gradient(90deg, #081923 0%, #081923ed 21%, #08192378 46%, transparent 72%),
+  /* Blend the artwork into the PWA's solid color at the system edge. */
+  background: linear-gradient(0deg, #0a202b 1px, #0a202b00 36px),
+    linear-gradient(90deg, #081923 0%, #081923ed 21%, #08192378 46%, transparent 72%),
     #0a202b url('/art/moonlit-conservatory.svg') 68% center / cover no-repeat;
 }
 .entry-content { width: min(100%, 430px); }
