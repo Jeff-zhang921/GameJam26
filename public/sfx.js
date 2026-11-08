@@ -135,6 +135,133 @@ export function playEffect(context, event) {
     oscillator.onended = () => { oscillator.disconnect(); envelope.disconnect(); };
     oscillator.start(start); oscillator.stop(start + duration + .01);
   }
+  // A rounded sine note with a few soft partials; used by bells, chimes and the warning.
+  function bell(midi, delay, duration, volume, partials = [[1, 1], [2, .18], [3, .05]]) {
+    const start = now + delay, frequency = 440 * 2 ** ((midi - 69) / 12);
+    for (const [partial, weight] of partials) {
+      const oscillator = context.createOscillator(), envelope = context.createGain();
+      oscillator.type = 'sine'; oscillator.frequency.value = frequency * partial;
+      envelope.gain.setValueAtTime(0, start);
+      envelope.gain.linearRampToValueAtTime(volume * weight, start + .02);
+      envelope.gain.exponentialRampToValueAtTime(.00001, start + duration);
+      oscillator.connect(envelope); envelope.connect(master);
+      oscillator.onended = () => { oscillator.disconnect(); envelope.disconnect(); };
+      oscillator.start(start); oscillator.stop(start + duration + .02);
+    }
+  }
+  // A slow noise swell (rise then fall) for air, doors and scene changes.
+  function swell(duration, volume, from, to, type = 'bandpass', delay = 0, brown = false) {
+    const start = now + delay;
+    const buffer = context.createBuffer(1, Math.ceil(context.sampleRate * duration), context.sampleRate);
+    const samples = buffer.getChannelData(0);
+    let soft = 0;
+    for (let i = 0; i < samples.length; i++) {
+      const noise = Math.random() * 2 - 1;
+      soft = (soft + .025 * noise) / 1.025;
+      samples[i] = brown ? soft * 6 : noise;
+    }
+    const source = context.createBufferSource(), filter = context.createBiquadFilter(), envelope = context.createGain();
+    source.buffer = buffer; filter.type = type; filter.Q.value = .6;
+    filter.frequency.setValueAtTime(from, start);
+    filter.frequency.exponentialRampToValueAtTime(to, start + duration);
+    const curve = new Float32Array(128);
+    for (let i = 0; i < curve.length; i++) curve[i] = volume * Math.sin(Math.PI * i / (curve.length - 1)) ** 2;
+    envelope.gain.setValueCurveAtTime(curve, start, duration);
+    source.connect(filter); filter.connect(envelope); envelope.connect(master);
+    source.onended = () => { source.disconnect(); filter.disconnect(); envelope.disconnect(); };
+    source.start(start); source.stop(start + duration);
+  }
+  if (kind === 'fire') {
+    // A crossbow twang: a short string pluck and a breath of air leaving the bolt.
+    tone(330, 190, .16, .02);
+    tone(660, 380, .07, .006);
+    texture(.1, .02, 2400, 700, 'bandpass', .01);
+    return;
+  }
+  if (kind === 'pop') {
+    // A soft, rounded pop with a puff of dust.
+    tone(520, 170, .14, .03);
+    texture(.16, .03, 1600, 300, 'bandpass', .02);
+    return;
+  }
+  if (kind === 'spawn') {
+    // Something small scrabbling out of the nest.
+    texture(.18, .025, 500, 1400, 'bandpass');
+    tone(210, 360, .16, .012, .04);
+    return;
+  }
+  if (kind === 'warning') {
+    // A low, gentle falling minor third: "something is wrong" without alarm.
+    bell(62, 0, 1.4, .012);
+    bell(59, .32, 1.8, .012);
+    return;
+  }
+  if (kind === 'moverTurn') {
+    // A wooden-mechanical knock as a platform reaches the end of its run and turns.
+    tone(150, 85, .12, .03);
+    texture(.08, .03, 900, 250, 'lowpass');
+    return;
+  }
+  if (kind === 'gear') {
+    // One small ratchet tooth; the pitch tells Still's teal gear (0) from Bloom's gold (1).
+    const base = event.walker === 1 ? 1500 : 1150;
+    texture(.035, .012, base, base * .6, 'bandpass');
+    tone(base / 2, base / 3, .03, .004);
+    return;
+  }
+  if (kind === 'deny') {
+    // Two soft muted taps: the action can't be done here.
+    tone(260, 220, .07, .018);
+    tone(220, 190, .09, .016, .09);
+    return;
+  }
+  if (kind === 'ui') { tone(1350, 1050, .035, .007); return; }
+  if (kind === 'modalOpen') { tone(520, 780, .14, .011); texture(.14, .006, 1200, 2600, 'bandpass'); return; }
+  if (kind === 'modalClose') { tone(760, 480, .12, .01); texture(.12, .005, 2400, 1100, 'bandpass'); return; }
+  if (kind === 'type') {
+    // A faint typewriter-like flick, a little higher for Bloom's lines.
+    const base = event.speaker === 1 ? 880 : 620;
+    tone(base * (.96 + Math.random() * .08), base * .8, .03, .0035);
+    return;
+  }
+  if (kind === 'sceneFade') { swell(.9, .012, 600, 2400, 'bandpass'); return; }
+  if (kind === 'arrive') { bell(69, 0, 1.6, .004); bell(76, .12, 1.4, .003); return; }
+  if (kind === 'gate') {
+    // The moon gate opens: a rising shimmer in time with the portal's opening phase.
+    swell(1.6, .012, 900, 3200, 'bandpass', .7);
+    for (const [midi, delay] of [[81, .8], [86, 1.0], [88, 1.2], [93, 1.45]]) bell(midi, delay, 1.6, .0022, [[1, 1], [2.01, .2]]);
+    return;
+  }
+  if (kind === 'unlock') {
+    // A new chamber opens: a single small bell after the coda has settled.
+    bell(78, 0, 2.4, .004);
+    bell(85, .18, 2.2, .003);
+    return;
+  }
+  if (kind === 'doorOpen') {
+    // The great door at the entrance: a low woody groan and a draught of air through the widening gap.
+    swell(1.9, .03, 220, 520, 'bandpass', .3, true);
+    swell(1.8, .006, 800, 2600, 'bandpass', .5);
+    tone(70, 55, 1.6, .012, .3);
+    return;
+  }
+  if (kind === 'fall') {
+    // Dropping out of the world: wind rushing past and falling away, a low sinking tone,
+    // then a muffled, far-off thud. Soft enough to repeat on every fall.
+    swell(.75, .03, 2600, 380, 'bandpass');
+    tone(392, 98, .8, .016);
+    tone(70, 34, .3, .05, .62);
+    texture(.26, .05, 420, 90, 'lowpass', .62);
+    return;
+  }
+  if (kind === 'hit') {
+    // Struck down: a hard body blow, a crack of grit and a sinking note as the traveller is knocked out.
+    tone(96, 38, .24, .06);
+    texture(.12, .06, 1800, 260, 'bandpass');
+    tone(330, 82, .5, .028, .04);
+    tone(247, 62, .55, .014, .1);
+    return;
+  }
   if (kind === 'strike' && event.sourceKind === 'guard') {
     tone(130, 48, .14, .035);
     texture(.13, .045, 900, 150, 'lowpass');
@@ -226,7 +353,8 @@ export function playEffect(context, event) {
     grab: [400, 650, .1, .02], drop: [500, 200, .12, .02],
     throw: [600, 160, .18, .025],
     wither: [420, 140, .4, .018], switch: [520, 780, .12, .018],
-    freeze: [1000, 1500, .4, .025], unfreeze: [1300, 600, .3, .02],
+    freeze: [1000, 1500, .4, .025], unfreeze: [1300, 600, .3, .02], thaw: [1200, 700, .4, .014],
+    unwither: [180, 430, .45, .016], seedStow: [900, 520, .1, .018],
     plant: [260, 520, .25, .025], vanish: [330, 80, .45, .02], crateLost: [240, 55, .5, .03],
     frost: [980, 1510, .2, .02], bolt: [690, 1290, .2, .02], seedPick: [620, 1240, .16, .022], seedTake: [620, 1240, .16, .022],
     shard: [880, 1760, .45, .025],
@@ -246,4 +374,28 @@ export function playEffect(context, event) {
   oscillator.connect(gain); gain.connect(master);
   oscillator.onended = () => { oscillator.disconnect(); gain.disconnect(); };
   oscillator.start(now); oscillator.stop(now + duration + .01);
+}
+// Ratchet ticks for platforms that keep a traveller's pace: one tooth per stretch of travel, so walking
+// faster spins the gears faster and standing still silences them.
+export function createGearAudio(tooth = 22) {
+  const tracked = new Map();
+  return {
+    sync(context, movers) {
+      const active = new Set(movers.map(m => m.id));
+      for (const id of tracked.keys()) if (!active.has(id)) tracked.delete(id);
+      for (const m of movers) {
+        const known = tracked.get(m.id);
+        if (!known) { tracked.set(m.id, { pos: m.pos, travel: 0 }); continue; }
+        const moved = Math.abs(m.pos - known.pos);
+        known.pos = m.pos;
+        // A big jump is a respawn or level change, not travel.
+        if (moved > 60) { known.travel = 0; continue; }
+        known.travel += moved;
+        if (known.travel >= tooth) {
+          known.travel %= tooth;
+          if (context) playEffect(context, { kind: 'gear', walker: m.walker });
+        }
+      }
+    },
+  };
 }

@@ -1,4 +1,4 @@
-import { playEffect, createGrowthAudio, createRewindAudio } from './sfx.js';
+import { playEffect, createGrowthAudio, createRewindAudio, createGearAudio } from './sfx.js';
 import { createMusic } from './music.js';
 import { themeFor, MENU_MUSIC } from './themes.js';
 import { setup, applyAction, validateAction, viewFor, hintLevel, levelCount, interactionFor, seedActionFor, aimedThrowVelocity, throwPath, abilityCheck, abilityTargets, bloomTargetAt, bloomSupport, anchor, exitStatus, freezeAreaAt, freezeCheck, meta } from '../src/logic.js';
@@ -20,6 +20,7 @@ import { createHitFeedback } from './hit-feedback.js';
 const music = createMusic();
 const growthAudio = createGrowthAudio();
 const rewindAudio = createRewindAudio();
+const gearAudio = createGearAudio();
 const hitFeedback = createHitFeedback();
 const icons = {
   moon: '<path d="M19 15.5A8 8 0 0 1 8.5 5a8.5 8.5 0 1 0 10.5 10.5Z"/><path d="m17 3 .5 2.5L20 6l-2.5.5L17 9l-.5-2.5L14 6l2.5-.5Z"/>',
@@ -69,6 +70,8 @@ const touchLayout = () => touchControls || touchDevice();
 let reduced = saved.reduced ?? window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 let best = Array.from({ length: levelCount }, (_, i) => Array.isArray(saved.best) && Number.isFinite(saved.best[i]) ? saved.best[i] : null);
 let modal = 'intro', seenEvent = 0, shownHint = 0, toastTimer, audioContext, pauseContext = false;
+// The furthest chamber already announced with an unlock bell.
+let heardUnlocked = state.unlocked;
 const clock = ticks => { const sec = Math.floor(ticks / 60); return `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`; };
 let lastTime = 0, accumulator = 0, frameCount = 0, sceneKey = 0, cameraReset = 0;
 let onlineMode = false, networkEpoch = null, networkStatus = 'offline';
@@ -136,7 +139,7 @@ const shell = document.querySelector('.shell');
 const modalRoot = document.querySelector('#modal-root');
 const veil = document.querySelector('.scene-veil');
 let sceneFade = null, celebration = null, arrival = null, nextPending = false, entryPending = true;
-const dialogue = createDialogue(document.querySelector('.character-dialogue'));
+const dialogue = createDialogue(document.querySelector('.character-dialogue'), { onType: speaker => chime({ kind: 'type', speaker }) });
 const sharedTasks = createTaskHints(document.querySelector('.task-hints'), {
   story: document.querySelector('.character-dialogue'), hud: document.querySelector('.game-bottom'),
 });
@@ -184,7 +187,7 @@ const network = createNetwork({
     const seenBefore = seenEvent;
     for (const e of state.events) if (e.id > seenEvent) {
       hitFeedback.handle(e, network.actor);
-      if (!(e.kind === 'return' && state.events.some(h => h.kind === 'hit' && h.actor === e.actor && h.id > seenBefore))) chime(e);
+      if (!(e.kind === 'return' && state.events.some(h => (h.kind === 'hit' || h.kind === 'fall') && h.actor === e.actor && h.id > seenBefore))) chime(e);
       if (e.kind === 'return' && e.actor === network.actor) cameraReset++; seenEvent = e.id;
     }
     if (game.status === 'won' && !rewind && !network.room.canReturnLobby) {
@@ -216,7 +219,7 @@ const network = createNetwork({
   },
   onError(message, code) {
     if (nextPending) { nextPending = false; if (modal === 'advancing') modal = null; renderModal(); }
-    lobby.setError(message); toast(S.errors[code] ?? message);
+    lobby.setError(message); refuse(S.errors[code] ?? message);
   },
 });
 const lobby = createLobby({
@@ -233,6 +236,7 @@ const entrance = createEntrance({
   reduced: () => reduced,
   onStart() {
     entranceDrawAt = null;
+    if (!reduced) chime({ kind: 'doorOpen' });
     resetTouchState(); freezePreview = tapEffect = null;
     lobby.setEntering(true); syncStage();
   },
@@ -288,6 +292,8 @@ function persist() {
   saved = data;
   try { localStorage.setItem('moonclock-v1', JSON.stringify(data)); } catch { }
 }
+// A toast for something that can't be done, with a soft refusal tap.
+function refuse(text) { toast(text); chime({ kind: 'deny' }); }
 function toast(text, ms = 3400) { const el = document.querySelector('#toast'); el.textContent = text; el.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), ms); }
 function initAudio() {
   if (!sound) return;
@@ -313,7 +319,7 @@ function dispatch(action, quiet = false) {
   }
   if (action.actor === undefined && ['move', 'jump', 'jumpRelease', 'grab', 'takeSeed', 'ability'].includes(action.type)) action = { ...action, actor: state.active };
   const result = validateAction(state, 'local', action);
-  if (!result.valid) { if (!quiet) toast(S.errors[result.error]); return result; }
+  if (!result.valid) { if (!quiet) refuse(S.errors[result.error]); return result; }
   const oldLevel = state.level, oldStatus = state.status;
   state = applyAction(state, 'local', action);
   if (action.type === 'switch') chime({ kind: 'switch' });
@@ -325,7 +331,7 @@ function dispatch(action, quiet = false) {
     if (entryPending && !sceneFade) startArrival();
   }
   const seenBefore = seenEvent;
-  for (const e of state.events) if (e.id > seenEvent) { hitFeedback.handle(e, state.active); if (!(e.kind === 'return' && state.events.some(h => h.kind === 'hit' && h.actor === e.actor && h.id > seenBefore))) chime(e); if (e.kind === 'return' && e.actor === state.active) cameraReset++; seenEvent = e.id; }
+  for (const e of state.events) if (e.id > seenEvent) { hitFeedback.handle(e, state.active); if (!(e.kind === 'return' && state.events.some(h => (h.kind === 'hit' || h.kind === 'fall') && h.actor === e.actor && h.id > seenBefore))) chime(e); if (e.kind === 'return' && e.actor === state.active) cameraReset++; seenEvent = e.id; }
   if (state.status === 'won' && oldStatus !== 'won') {
     best[state.level] = Math.min(best[state.level] ?? Infinity, state.elapsed); persist();
     startCelebration();
@@ -452,6 +458,7 @@ function startFade(swap, { from = null, revealOnly = false, arrive = false } = {
   arrival = null;
   resetTouchState(); freezePreview = tapEffect = null;
   sceneFade = { swap, from, arrive, start: now, half: reduced ? 90 : 450, covered: false, revealAt: revealOnly ? now : null };
+  if (!revealOnly) chime({ kind: 'sceneFade' });
   veil.style.opacity = revealOnly ? 1 : 0;
   veil.hidden = false;
   syncStage();
@@ -465,6 +472,7 @@ function revealCourtyard() {
 function startArrival(time = performance.now()) {
   entryPending = true;
   arrival = { start: time, duration: reduced ? 180 : ARRIVAL_DURATION };
+  chime({ kind: 'arrive' });
   accumulator = 0; previousTick = null;
   syncStage();
 }
@@ -473,6 +481,10 @@ function startCelebration() {
   document.querySelector('#toast').classList.remove('show');
   const finale = state.level === levelCount - 1;
   celebration = { start: performance.now(), duration: reduced ? 1200 : GATE_DURATION, finale };
+  chime({ kind: 'gate' });
+  // A newly opened chamber rings once the victory coda has settled (not on replays of a known chamber).
+  if (state.unlocked > heardUnlocked) { const mine = celebration; setTimeout(() => { if (celebration === mine) chime({ kind: 'unlock' }); }, reduced ? 600 : 2600); }
+  heardUnlocked = Math.max(heardUnlocked, state.unlocked);
   modal = 'celebration'; syncStage(); renderModal();
 }
 function advanceStage(time) {
@@ -557,12 +569,14 @@ function setModal(type) {
     pauseContext = true;
   }
   if (type && modal === null) { clearInputs(); if (!onlineMode && state.status === 'playing') dispatch({ type: 'pause' }, true); }
+  if (type && modal === null) chime({ kind: 'modalOpen' });
   modal = type; renderModal();
 }
 function resume() {
   if (pauseContext && modal !== 'pause') { modal = 'pause'; renderModal(); return; }
   if (onlineMode && (pauseContext || state.status === 'paused')) { clearInputs(); network.pause(false); return; }
   if (state.status === 'paused') dispatch({ type: 'pause' }, true);
+  if (modal !== null) chime({ kind: 'modalClose' });
   pauseContext = false; modal = null; accumulator = 0;
   renderModal(); canvas.focus({ preventScroll: true });
 }
@@ -636,6 +650,7 @@ document.addEventListener('click', event => {
   if (button.dataset.action === 'join-room') { enterOnline(); lobby.showJoin(); return; }
   if (button.dataset.action === 'return-lobby') { clearInputs(); network.returnToLobby(); return; }
   initAudio();
+  if (button.dataset.action !== 'sound') chime({ kind: 'ui' });
   if (button.dataset.level !== undefined) {
     const level = Number(button.dataset.level);
     if ((!modal || modal === 'pause') && !onlineMode) { clearInputs(); startFade(() => { dispatch({ type: 'level', level }); persist(); revealCourtyard(); }, { arrive: true }); }
@@ -775,7 +790,7 @@ function seedPress(actor, aim) {
   const kind = seedActionFor(ownState(), actor);
   if (kind === 'plant') { dispatch({ type: 'plant', actor }); return; }
   if (kind === 'take' && dispatch({ type: 'takeSeed', actor }, true).valid === false) return;
-  if (kind) aim(); else toast(S.errors[actor !== 1 ? 'role' : 'noSeeds']);
+  if (kind) aim(); else refuse(S.errors[actor !== 1 ? 'role' : 'noSeeds']);
 }
 
 function touchAction(type) {
@@ -793,7 +808,7 @@ function touchAction(type) {
     if (actor === 1) {
       const target = defaultBloomTarget(lastView);
       if (target) castSkill({ actor, target, reason: abilityCheck(lastView, actor, target) });
-      else toast(S.errors[lastView?.bloomCharges <= 0 ? 'noBloomCharges' : 'bloomRange']);
+      else refuse(S.errors[lastView?.bloomCharges <= 0 ? 'noBloomCharges' : 'bloomRange']);
     } else toast(S.aimTouch);
     return;
   }
@@ -893,7 +908,7 @@ function aimProblem(reason, actor) {
 }
 function castSkill(preview) {
   if (!preview) return;
-  if (preview.reason !== 'ok') { toast(aimProblem(preview.reason, preview.actor)); return; }
+  if (preview.reason !== 'ok') { refuse(aimProblem(preview.reason, preview.actor)); return; }
   document.querySelector('#toast').classList.remove('show');
   dispatch(preview.actor === 0 ? { type: 'ability', actor: 0, x: Math.round(preview.point.x), y: Math.round(preview.point.y) } : { type: 'ability', actor: preview.actor, target: preview.target });
 }
@@ -914,7 +929,8 @@ function finishSkillAim(event, released) {
   if (!released || overCancel || viewport.blocked || modal || stageBusy() || rewind || actor !== touchActor()) return;
   if (!aimed) {
     if (actor === 1 && defaultTarget) castSkill(preview);
-    else toast(actor === 1 ? S.errors[lastView?.bloomCharges <= 0 ? 'noBloomCharges' : 'bloomRange'] : S.aimTouch);
+    else if (actor === 1) refuse(S.errors[lastView?.bloomCharges <= 0 ? 'noBloomCharges' : 'bloomRange']);
+    else toast(S.aimTouch);
     return;
   }
   castSkill(preview);
@@ -1098,8 +1114,8 @@ function toggleFreeze(view, point) {
   const result = freezeCheck(view, point);
   tapEffect = { x: point.x, y: point.y, at: performance.now(), ok: result === 'ok', ring: result === 'range' ? 0 : null, ringRadius: meta.freeze.range, area: true };
   if (result === 'ok') { document.querySelector('#toast').classList.remove('show'); dispatch({ type: 'ability', actor: 0, x: point.x, y: point.y }); }
-  else if (result === 'noCharges') toast(S.noCharges);
-  else if (result === 'range') toast(S.freezeTooFar);
+  else if (result === 'noCharges') refuse(S.noCharges);
+  else if (result === 'range') refuse(S.freezeTooFar);
   return { result };
 }
 function tapWorld(clientX, clientY) {
@@ -1114,7 +1130,7 @@ function tapWorld(clientX, clientY) {
   const result = abilityCheck(view, actor, hit.id), at = anchor(hit);
   tapEffect = { x: at.x, y: at.y, at: performance.now(), ok: result === 'ok', ring: result === 'range' ? actor : null };
   if (result === 'ok') { document.querySelector('#toast').classList.remove('show'); dispatch({ type: 'ability', actor, target: hit.id }); }
-  else toast(result === 'range' ? S.tapTooFar : result === 'unsupported' ? S.tapUnsupported[actor] : S.errors[result] ?? S.errors.invalid);
+  else refuse(result === 'range' ? S.tapTooFar : result === 'unsupported' ? S.tapUnsupported[actor] : S.errors[result] ?? S.errors.invalid);
   return { result, target: hit.id };
 }
 // A click casts the current traveller's skill, just like a direct touch.
@@ -1189,6 +1205,7 @@ function runFrame(time) {
   music.select(currentTrack()); music.sync(musicEnabled);
   const growthEnabled = sound && !viewport.blocked && !document.hidden && document.hasFocus() && !rewind && state.status === 'playing' && !modal && (!onlineMode || (network.connected && !network.room?.suspended));
   growthAudio.sync(audioContext, growthEnabled ? state.objects.filter(o => o.kind === 'plant' && o.speed > 0 && o.age < meta.plant.growTicks && !o.withered).map(o => ({ id: o.id, rate: o.speed * (o.frozen ? meta.time.frozenRate : 1) })) : []);
+  gearAudio.sync(audioContext, growthEnabled ? state.objects.filter(o => o.kind === 'mover' && o.walker !== undefined).map(o => ({ id: `${state.level}:${o.id}`, pos: o.axis === 'y' ? o.y : o.x, walker: o.walker })) : []);
   pwa.refresh();
   if (lastTime === 0) lastTime = time;
   accumulator += Math.min(100, time - lastTime); lastTime = time;

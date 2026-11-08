@@ -17,7 +17,8 @@ export function dialogueFrame(lines, elapsed) {
   }
   return null;
 }
-export function createDialogue(root) {
+// `onType(speaker)` is called for every few letters typed, so the line can be heard being written.
+export function createDialogue(root, { onType } = {}) {
   const body = root.querySelector('.dialogue-text'), label = root.querySelector('.dialogue-speaker');
   const accessible = root.querySelector('.dialogue-announcement');
   let scene, elapsed = 0, previous = null, skipped = false, lastLine = null;
@@ -37,7 +38,12 @@ export function createDialogue(root) {
         label.textContent = frame.speaker === 0 ? 'STILL' : 'BLOOM';
         accessible.textContent = `${label.textContent}: ${frame.text}`;
       }
-      if (body.textContent !== frame.shown) body.textContent = frame.shown;
+      if (body.textContent !== frame.shown) {
+        const before = body.textContent, typed = frame.shown;
+        // Tick on every other new letter (skipping spaces) while the line is still typing out.
+        if (frame.typing && typed.startsWith(before) && typed.length > before.length && Math.floor(typed.length / 2) > Math.floor(before.length / 2) && typed.at(-1) !== ' ') onType?.(frame.speaker);
+        body.textContent = typed;
+      }
       root.classList.toggle('typing', frame.typing);
     },
   };

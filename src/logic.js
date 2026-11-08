@@ -505,11 +505,14 @@ function ageObjects(state) {
     }
     if (o.kind === 'mover' && walked !== null) {
       const k = o.axis === 'y' ? 'y' : 'x', { at, dir } = moverAt(o, o.clock);
+      if (dir !== o.dir) event(state, 'moverTurn', o.x + o.w / 2, o.y, { mover: o.id });
       o[k] = at; o.dir = dir;
     } else if (o.kind === 'mover' && o.speed > 0) {
       const [k, lo, hi] = o.axis === 'y' ? ['y', o.y1, o.y2] : ['x', o.x1, o.x2];
       o[k] += o.dir * o.speed * meta.time.moverSpeed * slow;
+      const was = o.dir;
       if (o[k] >= hi) { o[k] = hi; o.dir = -1; } else if (o[k] <= lo) { o[k] = lo; o.dir = 1; }
+      if (o.dir !== was) event(state, 'moverTurn', o.x + o.w / 2, o.y, { mover: o.id });
     }
   }
 }
@@ -691,7 +694,7 @@ function moveActors(state) {
     if (p.grounded && p.jumpBuffer > 0) launch();
     if (p.jumpBuffer > 0) p.jumpBuffer--;
     if (!p.grounded && !wasGrounded && p.coyote > 0) p.coyote--;
-    if (p.y > 710) { state.falls++; respawn(state, p, 'return'); }
+    if (p.y > 710) { state.falls++; event(state, 'fall', p.x, Math.min(p.y, state.height), { actor: p.id }); respawn(state, p, 'return'); }
     for (const cp of state.checkpoints) if (p.checkpoint !== cp.id && rectOverlap(body(), { x: cp.x - 12, y: cp.y - 40, w: 24, h: 40 })) {
       cp.lit = true; p.checkpoint = cp.id; event(state, 'checkpoint', cp.x, cp.y - 40, { actor: p.id });
     }
