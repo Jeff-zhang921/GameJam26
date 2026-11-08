@@ -12,6 +12,8 @@ import { createEntrance } from './entrance.js';
 import { createPWA } from './pwa.js';
 import { createViewport } from './viewport.js';
 import { createShoreCaption } from './shore-caption.js';
+import { createDialogue } from './dialogue.js';
+import { createTaskHints } from './task-hints.js';
 
 // One music player: menus play MENU_MUSIC, a courtyard plays the track its theme names (themes.js).
 const music = createMusic();
@@ -72,7 +74,7 @@ let onlineMode = false, networkEpoch = null, networkStatus = 'offline';
 let viewport;
 const held = new Set();
 const touchPointers = new Map();
-let touchJumpActor = null, uiChapter = '', uiProgress = '', uiMode = '', touchKey = '';
+let touchJumpActor = null, uiChapter = '', uiMode = '', touchKey = '';
 const uiValues = { actor: null, sound: null, hud: null, charges: null, seeds: null };
 let skillAim = null;
 // Aiming a throw: drag the interact button while carrying a crate (touch). Shares the cancel button with skill aim.
@@ -81,7 +83,7 @@ let throwAim = null;
 // `mouseClient` is the last mouse position on screen (turned into a world point each frame, as the camera moves).
 let mouseAim = null, mouseClient = null;
 // Touch: the last drawn world (for tap hit-testing) and the short-lived feedback of the last tap.
-let lastView = null, tapEffect = null, tapIntroShown = false;
+let lastView = null, tapEffect = null;
 // Height (px) the bottom touch controls take up; the camera lowers the world only as far as keeps the
 // ground clear of them. Level select target awaiting the host's confirmation; last "waiting" notice shown.
 let controlsReserve = 0, pendingLevel = null, waitingKey = '';
@@ -101,10 +103,11 @@ app.innerHTML = `
     </header>
     <main class="game-frame">
       <canvas id="game" aria-label="${S.title}" tabindex="0"></canvas>
-      <section class="goal-panel" aria-label="${S.objective}">
-        <div class="eyebrow" id="chapter-en"></div><h2 id="chapter-name"></h2>
-        <div class="goal-heading">${icon('arrow')}<span>${S.objective}</span><span id="goal-count"></span></div>
-        <p id="objective"></p><ul class="checklist" id="checklist" aria-live="polite"></ul>
+      <div class="task-hints" aria-label="Shared character tasks" data-testid="task-hints"></div>
+      <section class="character-dialogue" data-testid="dialogue" aria-label="Traveller dialogue" hidden>
+        <span class="dialogue-portrait" aria-hidden="true"></span>
+        <span class="dialogue-speaker"></span><button type="button" data-testid="skip-dialogue" aria-label="Skip dialogue">Skip ${icon('arrow')}</button>
+        <p class="dialogue-text" aria-hidden="true"></p><p class="dialogue-announcement" aria-live="polite"></p>
       </section>
       <div class="game-bottom"><div class="status-strip"><span class="live-dot"></span><span id="hud"></span><span class="freeze-count" id="freeze-count" data-testid="freeze-count"></span><span class="seed-chip" data-testid="seed-counter" role="img" hidden><img src="/sprites/seed.png" alt="" draggable="false"><b></b></span><span id="stage-count"></span></div>
         <div class="action-strip"><span class="controls-strip" id="controls"></span><button class="ability-chip" data-action="ability" id="ability" data-testid="ability">${icon('hourglass')}<span id="ability-label"></span>${key('F')}</button><button class="text-button switch-button" data-action="switch" aria-label="${S.switchRole}">${icon('swap')}${key('Tab')}</button></div>
@@ -129,9 +132,11 @@ app.innerHTML = `
 const shell = document.querySelector('.shell');
 const modalRoot = document.querySelector('#modal-root');
 const veil = document.querySelector('.scene-veil');
-let sceneFade = null, celebration = null, nextPending = false;
+let sceneFade = null, celebration = null, arrival = null, nextPending = false;
+const dialogue = createDialogue(document.querySelector('.character-dialogue'));
+const sharedTasks = createTaskHints(document.querySelector('.task-hints'));
 let awaitingOnlineState = true;
-const stageBusy = () => !!(sceneFade || celebration || entrance.active);
+const stageBusy = () => !!(sceneFade || celebration || arrival || entrance.active);
 const canvas = document.querySelector('#game');
 const renderer = createRenderer(canvas, S);
 const debug = new URLSearchParams(location.search).has('debug');
@@ -163,7 +168,7 @@ const network = createNetwork({
       shownHint = 0; uiChapter = ''; resetTouchState(); history.reset(game);
       if (rewind) rewind.arrived = true; // the server has installed the courtyard's start
       nextPending = false;
-      if (from) startFade(revealCourtyard, { from });
+      if (from) startFade(revealCourtyard, { from, arrive: true });
       else modal = network.room.status === 'STARTING' || entrance.active ? 'online' : null;
     }
     const seenBefore = seenEvent;
@@ -172,12 +177,7 @@ const network = createNetwork({
       if (e.kind === 'return' && e.actor === network.actor) cameraReset++; seenEvent = e.id;
     }
     if (game.status === 'won' && !rewind && !network.room.canReturnLobby) {
-      if (game.level === 0) {
-        modal = 'advancing';
-        if (network.host && !nextPending) nextPending = dispatch({ type: 'next' }).valid;
-      }
-      else if (live && !info.changedScene && previous.status === 'playing' && !celebration) startCelebration();
-      else if (!celebration) modal = 'win';
+      if (!celebration && !sceneFade && !nextPending && modal !== 'advancing') startCelebration();
     }
     else if (game.status === 'paused' && (!modal || modal === 'online')) modal = 'pause';
     else if (game.status === 'playing' && modal === 'pause' && previous.status === 'paused') modal = null;
@@ -194,13 +194,13 @@ const network = createNetwork({
     if (stageBusy() || nextPending) {
       const wasTransitioning = stageBusy();
       clearStage();
-      if (wasTransitioning || modal === 'advancing') modal = state.status === 'won' ? 'win' : null;
+      if (wasTransitioning || modal === 'advancing') modal = null;
       renderModal();
     }
     resetTouchState();
   },
   onError(message, code) {
-    if (nextPending) { nextPending = false; if (modal === 'advancing') modal = 'win'; renderModal(); }
+    if (nextPending) { nextPending = false; if (modal === 'advancing') modal = null; renderModal(); }
     lobby.setError(message); toast(S.errors[code] ?? message);
   },
 });
@@ -305,11 +305,7 @@ function dispatch(action, quiet = false) {
   for (const e of state.events) if (e.id > seenEvent) { if (!(e.kind === 'return' && state.events.some(h => h.kind === 'hit' && h.actor === e.actor && h.id > seenBefore))) chime(e); if (e.kind === 'return' && e.actor !== undefined) cameraReset++; seenEvent = e.id; }
   if (state.status === 'won' && oldStatus !== 'won') {
     best[state.level] = Math.min(best[state.level] ?? Infinity, state.elapsed); persist();
-    if (state.level === 0) {
-      modal = 'advancing';
-      startFade(() => { dispatch({ type: 'next' }); persist(); revealCourtyard(); });
-      renderModal();
-    } else startCelebration();
+    startCelebration();
   }
   if (action.type !== 'tick' || state.status !== oldStatus) updateUI();
   return { valid: true };
@@ -324,19 +320,9 @@ function updateUI() {
   if (hud !== uiValues.hud) { document.querySelector('#hud').innerHTML = hud; uiValues.hud = hud; }
   const chapterKey = `${state.level}:${state.unlocked}:${onlineMode}`;
   if (chapterKey !== uiChapter) {
-    document.querySelector('#chapter-en').textContent = `${S.chapter} 0${state.level + 1} / ${chapter.en}`;
-    document.querySelector('#chapter-name').textContent = chapter.name;
-    document.querySelector('#objective').textContent = chapter.goal;
     document.querySelector('#stage-count').textContent = `${String(state.level + 1).padStart(2, '0')} / ${String(levelCount).padStart(2, '0')}`;
     document.querySelector('#chapter-nav').innerHTML = Array.from({ length: levelCount }, (_, i) => i).map(i => `<button class="chapter-button ${i < state.unlocked ? 'done' : ''}" data-level="${i}" ${onlineMode ? 'disabled' : ''} aria-label="${S.levels[i].name}" ${i === state.level ? 'aria-current="step"' : ''}><span>${String(i + 1).padStart(2, '0')}</span></button>`).join('');
     uiChapter = chapterKey;
-  }
-  const progress = `${state.level}:${state.needs.map(k => Number(state.flags[k])).join('')}`;
-  if (progress !== uiProgress) {
-    document.querySelector('#checklist').innerHTML = state.needs.map(k => `<li class="${state.flags[k] ? 'done' : ''}">${S.flags[k]}</li>`).join('');
-    document.querySelector('#goal-count').textContent = `${state.needs.filter(k => state.flags[k]).length}/${state.needs.length}`;
-    if (uiProgress && !reduced) document.querySelector('.goal-panel').animate([{ borderColor: '#dcba63', background: '#fffce9' }, {}], { duration: 900 });
-    uiProgress = progress;
   }
   if (uiMode !== String(onlineMode)) {
     document.querySelector('#controls').innerHTML = `<span>${key('A D')}${S.move}</span><span>${key('Space')}${S.jump}</span><span>${key('E')}${S.touchGrab}</span>`;
@@ -407,21 +393,21 @@ function clearInputs() {
 const smoothFade = t => t * t * (3 - 2 * t);
 function syncStage() {
   shell.inert = modalRoot.inert = stageBusy() || !!viewport?.blocked;
-  document.body.classList.toggle('celebrating', !!celebration);
+  document.body.classList.toggle('celebrating', !!(celebration || arrival || sceneFade?.arrive));
   document.body.classList.toggle('scene-changing', !!sceneFade);
 }
 function clearStage() {
   entrance.cancel();
-  sceneFade = celebration = null;
+  sceneFade = celebration = arrival = null;
   nextPending = false;
   veil.hidden = true;
   syncStage();
 }
-function startFade(swap, { from = null, revealOnly = false } = {}) {
+function startFade(swap, { from = null, revealOnly = false, arrive = false } = {}) {
   const now = performance.now();
   celebration = null;
   resetTouchState(); freezePreview = tapEffect = null;
-  sceneFade = { swap, from, start: now, half: reduced ? 90 : 450, covered: false, revealAt: revealOnly ? now : null };
+  sceneFade = { swap, from, arrive, start: now, half: reduced ? 90 : 450, covered: false, revealAt: revealOnly ? now : null };
   veil.style.opacity = revealOnly ? 1 : 0;
   veil.hidden = false;
   syncStage();
@@ -434,13 +420,23 @@ function startCelebration() {
   resetTouchState(); freezePreview = tapEffect = null;
   document.querySelector('#toast').classList.remove('show');
   const finale = state.level === levelCount - 1;
-  celebration = { start: performance.now(), duration: reduced ? 350 : finale ? 2500 : 1600, finale };
+  celebration = { start: performance.now(), duration: reduced ? 550 : 2400, finale };
   modal = 'celebration'; syncStage(); renderModal();
 }
 function advanceStage(time) {
+  if (arrival && time - arrival.start >= arrival.duration) {
+    arrival = null; accumulator = 0; previousTick = null; syncStage();
+    canvas.focus({ preventScroll: true });
+  }
   if (celebration && time - celebration.start >= celebration.duration) {
-    celebration = null; modal = state.status === 'won' ? 'win' : null; syncStage(); renderModal();
-    if (!modal) canvas.focus({ preventScroll: true });
+    celebration = null; modal = 'advancing';
+    if (onlineMode) {
+      if (network.host && !nextPending) nextPending = dispatch({ type: 'next' }).valid;
+      syncStage(); renderModal();
+    } else {
+      startFade(() => { dispatch({ type: 'next' }); persist(); revealCourtyard(); }, { arrive: true });
+      renderModal();
+    }
   }
   const fade = sceneFade;
   if (!fade) return;
@@ -455,7 +451,9 @@ function advanceStage(time) {
     const progress = Math.max(0, Math.min(1, (time - fade.revealAt) / fade.half));
     veil.style.opacity = 1 - smoothFade(progress);
     if (progress < 1) return;
+    const arrive = fade.arrive;
     clearStage(); resetTouchState(); accumulator = 0;
+    if (arrive) { arrival = { start: time, duration: reduced ? 180 : 900 }; syncStage(); }
     if (!modal) canvas.focus({ preventScroll: true });
   }
 }
@@ -523,7 +521,6 @@ function renderModal() {
   if (modal === 'confirm-level' && pendingLevel !== null) contents = `<div class="intro-icon">${icon('arrow')}</div><div class="eyebrow">${S.chapter} 0${pendingLevel + 1}</div><h2>${S.levelBothTitle(S.levels[pendingLevel].name)}</h2><p>${S.levelBothBody}</p><button class="primary" data-action="confirm-level" data-testid="confirm-level">${S.levelBoth}${icon('arrow')}</button><div class="modal-actions"><button class="text-button" data-action="pause" data-testid="cancel-level">${S.cancel}</button></div>`;
   if (modal === 'warning') contents = `${close}<div class="eyebrow">${S.chapter} 0${state.level + 1} · ${S.levels[state.level].en}</div><h2>${S.warningTitle}</h2><p data-testid="warning-reason">${S.warningReasons[state.failure] || ''}</p><button class="primary" data-action="rewind-restart" data-testid="warning-restart">${S.warningRestart}${icon('restart')}</button>${onlineMode && !network.host ? `<p class="pause-note">${S.warningHostOnly}</p>` : ''}<div class="modal-actions"><button class="text-button" data-action="close" data-testid="warning-close">${S.keepTrying}</button></div>`;
   if (modal === 'confirm-restart') contents = `<div class="intro-icon">${icon('restart')}</div><div class="eyebrow">${S.restartLevel}</div><h2>${S.restartBothTitle}</h2><p>${S.restartBothBody}</p><button class="primary" data-action="confirm-restart" data-testid="confirm-restart">${S.restartBoth}${icon('restart')}</button><div class="modal-actions"><button class="text-button" data-action="pause" data-testid="cancel-restart">${S.cancel}</button></div>`;
-  if (modal === 'win') contents = `<div class="intro-icon">${icon('leaf')}</div><div class="eyebrow">CHAMBER 0${state.level + 1} · RESTORED</div><h2>${state.level === levelCount - 1 ? S.complete : S.chamberComplete}</h2><p>${state.level === levelCount - 1 ? S.completeBody : S.chamberCompleteBody}</p><p>${S.clear} ${clock(state.elapsed)} · ${S.best} ${clock(best[state.level] ?? state.elapsed)}</p><div class="win-stars">✦ ${state.shards[0].taken ? '✦' : '◇'} ✦</div><p>${S.memory} ${state.shards.filter(s => s.taken).length} / ${state.shards.length}</p><button class="primary" data-action="next" data-testid="next">${state.level === levelCount - 1 ? S.replay : S.next}${icon('arrow')}</button>`;
   if (modal === 'intro') {
     root.innerHTML = `<section class="entry-screen" role="dialog" aria-modal="true" aria-labelledby="entry-title">
       <div class="entry-content">
@@ -536,13 +533,10 @@ function renderModal() {
     </section>`;
     root.querySelector('.primary').focus({ preventScroll: true }); return;
   }
-  root.innerHTML = `<div class="modal-backdrop${modal === 'win' ? ' results-reveal' : ''}"><section class="modal" role="dialog" aria-modal="true" aria-label="${modal === 'win' ? S.clear : S[modal] || S.title}">${contents}</section></div>`;
+  root.innerHTML = `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="${S[modal] || S.title}">${contents}</section></div>`;
   if (onlineMode) {
     if (!network.host) root.querySelectorAll('[data-action="next"],[data-action="restart"],[data-action="rewind-restart"]').forEach(button => { button.disabled = true; button.title = S.hostControls; });
-    if (modal === 'win') {
-      if (nextPending) root.querySelector('[data-testid="next"]').disabled = true;
-      const back = document.createElement('button'); back.className = 'text-button'; back.dataset.action = 'return-lobby'; back.textContent = S.returnLobby; root.querySelector('.modal').append(back);
-    }
+
   }
   root.querySelector('button.primary:not(:disabled), button:not(:disabled)')?.focus({ preventScroll: true });
 }
@@ -587,15 +581,6 @@ document.addEventListener('click', event => {
   if (action === 'confirm-restart') { if (!onlineMode || !network.host) return; requestRestart(); return; }
   if (action === 'rewind-restart') { if (onlineMode && !network.host) return; requestRestart(); return; }
   if (action === 'leave') { if (onlineMode) leaveOnline(); else returnToMenu(); return; }
-  if (action === 'next') {
-    if (modal !== 'win' || nextPending) return;
-    if (onlineMode) {
-      if (network.host && dispatch({ type: 'next' }).valid) { nextPending = true; button.disabled = true; }
-    } else {
-      startFade(() => { dispatch({ type: 'next' }); persist(); revealCourtyard(); });
-    }
-    return;
-  }
   if (modal) return;
   canvas.focus({ preventScroll: true });
   if (action === 'switch') { clearInputs(); dispatch({ type: 'switch' }); return; }
@@ -1021,6 +1006,7 @@ touchMedia.addEventListener('change', () => { updateUI(); viewport.refresh(); })
 window.__moonclock = {
   snapshot: () => ({ ...viewFor(state, onlineMode ? network.playerId : 'local'), phase: modal || state.status, players: structuredClone(state.actors) }),
   presentation: () => renderer.inspect(),
+  transition: () => ({ phase: celebration ? 'entering' : sceneFade ? 'crossing' : arrival ? 'landing' : null }),
   history: () => ({ frames: history.frames.length, stride: history.stride, bytes: history.bytes(), first: history.frames[0]?.tick ?? null, last: history.frames[history.frames.length - 1]?.tick ?? null }),
   rewind: () => rewind && { progress: rewind.u, frames: rewind.frames.length, online: rewind.online },
   connection: () => ({ online: onlineMode, status: networkStatus, room: network.room, playerId: network.playerId, actor: network.actor }),
@@ -1085,6 +1071,7 @@ function runFrame(time) {
   // Online, a local menu does not stop the shared world, so keep animating behind it.
   const localMenu = ['pause', 'help', 'settings', 'confirm-restart', 'confirm-level'].includes(modal);
   const worldPaused = (!onlineMode && viewport.blocked) || stageBusy() || (onlineMode ? modal !== null && !localMenu : !!modal) || state.status !== 'playing' || (onlineMode && (!network.connected || network.room?.suspended));
+  dialogue.update({ sceneKey, level: state.level, time, enabled: !worldPaused && !rewind });
   const touch = touchLayout(), viewActor = onlineMode ? network.actor : state.active;
   updateSkillAim(); updateThrowAim();
   const aim = aimPreview(displayState), throwArc = throwPreview(displayState);
@@ -1098,6 +1085,7 @@ function runFrame(time) {
       reduced, mode: touch ? 'coop' : 'solo', paused: worldPaused && !rewindInfo,
       sceneKey: outgoing?.sceneKey ?? sceneKey, cameraReset: outgoing?.cameraReset ?? cameraReset,
       celebration: celebration && { progress: Math.max(0, Math.min(1, (time - celebration.start) / celebration.duration)), finale: celebration.finale },
+      arrival: arrival ? { progress: Math.max(0, Math.min(1, (time - arrival.start) / arrival.duration)) } : sceneFade?.arrive && sceneFade.revealAt !== null ? { progress: 0 } : null,
       shoreCaption: shoreCaption.update(state, { sceneKey, enabled: !worldPaused && !rewind }),
       target: aim?.target ?? null,
       touch, tappable: !aim && touch && viewActor === 1 && displayState.status === 'playing' ? new Set(abilityTargets(displayState, viewActor).map(o => o.id)) : null,
@@ -1109,8 +1097,9 @@ function runFrame(time) {
     });
   }
   if (!outgoing) {
+    const camera = renderer.inspect().camera;
+    sharedTasks.update(state, displayState, camera, !!camera && !worldPaused && !rewind);
     updateTouchControls(displayState);
-    if (touch && !tapIntroShown && !modal && !stageBusy() && state.status === 'playing') { tapIntroShown = true; toast(S.tapIntro); }
     checkWarning();
     frameCount++; if (frameCount % 10 === 0) updateUI();
   }
