@@ -36,8 +36,9 @@ export function taskHints(state) {
   const cloud = state.level === 1 && state.objects.find(o => o.kind === 'cloud');
   const cloudHint = (p, actor) => {
     const { form } = cloudPhase(cloud);
-    // Once someone has landed on it, the cloud blinks and fades within three seconds.
+    // Once someone has landed on it, the cloud blinks and fades within three seconds (one with both on it).
     const fading = cloud.vanish !== null && cloud.vanish !== undefined;
+    if (p.on === cloud.id && state.actors.every(a => a.on === cloud.id)) return 'Both on it: it fades in a second. Jump right!';
     if (p.on === cloud.id) return fading ? 'It is fading: walk right and jump to the gate.' : 'Walk to its right end; jump to the gate\'s ledge.';
     if (form === 'cloud' && fading) return 'The cloud is fading: jump on now.';
     if (form === 'cloud') return actor === 0 && !cloud.frozen && state.freezeCharges > 0 ? 'Freeze the cloud so it waits for you.' : 'Jump onto the cloud together.';
