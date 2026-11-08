@@ -51,7 +51,8 @@ export function makeEnemy(kind, data, id) {
   const base = { kind, id, x: data.x, y: data.y, speed: 0, age: 0, frozen: false, timer: 0, attack: 0 };
   if (kind === 'guard') return { ...base, minX: data.minX, maxX: data.maxX, dir: 1, chasing: false, target: null, targetLockUntil: 0, platformIndex: null, strikeSeq: 0 };
   if (kind === 'lantern') return { ...base, homeX: data.x, homeY: data.y, chasing: false, bob: 0 };
-  if (kind === 'launcher') return { ...base, dx: data.dir[0], dy: data.dir[1], every: data.every ?? ENEMY.launcher.every, shot: data.shot ?? 'dart' };
+  // A launcher with a `mover` (its id) stands on that moving platform, its middle `at` from the platform's left end.
+  if (kind === 'launcher') return { ...base, dx: data.dir[0], dy: data.dir[1], every: data.every ?? ENEMY.launcher.every, shot: data.shot ?? 'dart', ...(data.mover && { mover: data.mover, at: data.at ?? 0 }) };
   if (kind === 'nest') return { ...base, every: data.every ?? ENEMY.nest.every, max: data.max ?? ENEMY.nest.max, spawned: 0 };
   if (kind === 'mite') return { ...base, nest: data.nest, homeX: data.homeX, dir: data.dir ?? 1 };
   const len = Math.hypot(data.dx, data.dy) || 1;
@@ -183,6 +184,9 @@ export function updateEnemies(state, { event, nextId, walkSpeed, tickRate }) {
       if (len <= v) { o.x = tx; o.y = ty; } else { o.x += dx / len * v; o.y += dy / len * v; }
     }
     if (o.kind === 'launcher') {
+      // Riding a moving platform (already moved this tick), so it fires from where the platform is now.
+      const base = o.mover && state.objects.find(m => m.id === o.mover);
+      if (base) { o.x = base.x + o.at; o.y = base.y; }
       o.timer += k;
       if (o.timer >= o.every) {
         o.timer -= o.every;

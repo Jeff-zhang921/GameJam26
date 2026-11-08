@@ -4,8 +4,8 @@ export default {
   theme: { ground: 'cobbleMoss', background: 'chamber3', music: 'deathKnell' },
   // Wide (3840): three sections left to right.
   width: 3840,
-  // Start ground; the high ledge (220 up: only a mushroom gets you there) with a pillar that stops the upper arrow
-  // lane before the canyon; the far cliff across the canyon; the exit ledge across the chasm; and a small step jutting
+  // Start ground; the high ledge (220 up: only a mushroom gets you there) with a capped pillar that stops the upper
+  // arrow lane before the canyon (travellers jump up onto its cap and drop off the far side); the far cliff across the canyon; the exit ledge across the chasm; and a small step jutting
   // out of the near cliff below its wall pit (platform-5), from which Bloom throws a seed up-left into the pit (then
   // climbs back up before waking it: a grown vine overhead stops a rising head). No floors in between.
   platforms: [
@@ -15,6 +15,11 @@ export default {
     { x: 2110, y: 200, w: 400, h: 440 },
     { x: 3410, y: 200, w: 430, h: 440 },
     { x: 1400, y: 440, w: 60, h: 30 },
+    // The pillar is drawn with a mossy cap much wider than the pillar (x 1144-1252, down to y 180) and stones under
+    // it (x 1168-1231, down to y 212). These two blocks are not drawn (`hidden`); they make that cap solid, so a
+    // head under its overhang stops there and the way over is up onto the cap.
+    { x: 1144, y: 160, w: 108, h: 20, hidden: true },
+    { x: 1168, y: 180, w: 63, h: 32, hidden: true },
   ],
   spawn: [{ x: 190, y: 520 }, { x: 265, y: 520 }],
   crates: [],
@@ -29,9 +34,12 @@ export default {
   // ledge, 230 from the step and 280 from the far cliff, out of jumping reach, so the vines are needed: at vine length
   // 160 their tips are 130 and 120 from it, an easy jump. Bloom can wake either vine from the lift's nearer end
   // (within 300).
+  // A crossbow stands on the lift's left end (x 1690-1730) and fires left, back at the near cliff, at 15-25 above the
+  // lift: low on the lift its bolts sweep vine 1 and pop on the high ledge's face, high on it they cross the ledge's
+  // last stretch and pop on the pillar. Still's Freeze over it slows its fire and its bolts.
   // Two movers in opposite phase cross the chasm and meet in the middle (a 30 gap). All three start running.
   movers: [
-    { axis: 'y', x: 1690, w: 140, y1: 250, y2: 330, speed: 1, dir: -1 },
+    { axis: 'y', x: 1690, w: 140, y1: 250, y2: 330, speed: 1, dir: -1, crossbow: { at: 20, dir: [-1, 0], every: 180 } },
     { x1: 2530, x2: 2830, y: 200, w: 120, speed: 1 },
     { x1: 2980, x2: 3280, y: 200, w: 120, speed: 1, dir: -1 },
   ],

@@ -121,11 +121,17 @@ describe('ceilings', () => {
     return top;
   };
 
-  test('a ceiling platform stops a rising head; an ordinary one lets it through', () => {
+  test('every platform stops a rising head, marked ceiling or not', () => {
     const roofed = rootriseArena(); roofed.platforms.push({ x: 300, y: 380, w: 200, h: 40, ceiling: true });
     expect(peak(roofed, 400)).toBeGreaterThanOrEqual(420 + 52 - 0.01);
-    const open = rootriseArena(); open.platforms.push({ x: 300, y: 380, w: 200, h: 40 });
-    expect(peak(open, 400)).toBeLessThan(420 + 52 - 20);
+    const plain = rootriseArena(); plain.platforms.push({ x: 300, y: 380, w: 200, h: 40 });
+    expect(peak(plain, 400)).toBeGreaterThanOrEqual(420 + 52 - 0.01);
+  });
+
+  test('a moving platform stops a rising head', () => {
+    const s = rootriseArena();
+    s.objects.push({ kind: 'mover', id: 'mover-9', x: 300, y: 400, w: 200, x1: 300, x2: 300, dir: 1, speed: 0, frozen: false });
+    expect(peak(s, 400)).toBeGreaterThanOrEqual(420 + 52 - 0.01);
   });
 
   test('a vine stops a rising head along its current length only', () => {
