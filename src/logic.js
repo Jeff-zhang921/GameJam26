@@ -527,11 +527,11 @@ function stepItem(state, o, all) {
   let landed = null, wall = false;
   // A crate is solid to the travellers: it stops against their sides and comes to rest on their heads.
   const bodies = o.kind === 'crate' ? state.actors.map(p => ({ id: `actor-${p.id}`, x: p.x - 15, y: p.y - 52, w: 30, h: 51 })) : [];
-  // Other loose crates are solid from the side too (they already stack on top of each other).
-  const crates = state.objects.filter(c => c.kind === 'crate' && c.id !== o.id && free(c)).map(c => ({ id: c.id, x: c.x - 27, y: c.y - 27, w: 54, h: 54 }));
+  // Loose crates and guards block crates from the side as well as supporting them from below.
+  const obstacles = state.objects.filter(c => c.id !== o.id &&
+    ((c.kind === 'crate' && free(c)) || (o.kind === 'crate' && c.kind === 'guard'))).map(objectBox);
   o.vy += 0.3 * k; o.x += o.vx * k;
-  // Platform sides, mushroom stems and other crates are walls: an item flying into one stops against it instead of passing through.
-  for (const f of [...state.platforms, ...stemBoxes(state), ...crates, ...bodies]) if (o.y + half > f.y + 3 && o.y - half < f.y + f.h) {
+  for (const f of [...state.platforms, ...stemBoxes(state), ...obstacles, ...bodies]) if (o.y + half > f.y + 3 && o.y - half < f.y + f.h) {
     // Only crossing a side is a horizontal impact. An existing overlap (a traveller moving into
     // a slowed crate, or a shallow top contact) must not erase the crate's stored flight velocity.
     const embeddedWall = state.platforms.includes(f) && previousX + half > f.x && previousX - half < f.x + f.w;

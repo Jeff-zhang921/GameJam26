@@ -7,6 +7,7 @@ function step(state, n = 1) { for (let i = 0; i < n; i++) state = applyAction(st
 function action(state, value) { expect(validateAction(state, 'local', value).valid).toBe(true); return applyAction(state, 'local', value); }
 const get = (state, id) => state.objects.find(o => o.id === id);
 const ofKind = (state, kind) => state.objects.filter(o => o.kind === kind);
+const looseCrate = (x, vx = 0) => ({ ...get(classicCourtyard(), 'crate-0'), x, y: 513, vx });
 
 // A flat test courtyard: one floor at y=540, the given enemies, and actors parked far away.
 function arena(enemies, actors = [{ x: 60 }, { x: 1220 }]) {
@@ -44,6 +45,36 @@ describe('guards', () => {
     for (let i = 0; i < 300; i++) { s = step(s); min = Math.min(min, get(s, 'g').x); max = Math.max(max, get(s, 'g').x); }
     expect(min).toBeGreaterThanOrEqual(450); expect(max).toBeLessThanOrEqual(550);
     expect(max - min).toBeGreaterThan(80);
+  });
+
+  test('a pursuing guard stops against either face of a loose crate', () => {
+    for (const dir of [-1, 1]) {
+      let s = arena([{ kind: 'guard', id: 'g', x: 500, y: 540 }], [{ x: 500 + dir * 160 }, { x: 1220 }]);
+      s.objects.push(looseCrate(500 + dir * 60));
+      s = step(s, 45);
+      expect(get(s, 'g')).toMatchObject({ target: 0, x: 500 + dir * 7 });
+      expect(get(s, 'crate-0').x).toBe(500 + dir * 60);
+      expect(s.actors[0].respawnTick).toBeNull();
+      s.objects = s.objects.filter(o => o.kind !== 'crate');
+      s = step(s);
+      expect((get(s, 'g').x - 500) * dir).toBeGreaterThan(7);
+    }
+  });
+
+  test('a patrolling guard turns at a crate', () => {
+    const s = arena([{ kind: 'guard', id: 'g', x: 500, y: 540 }]);
+    s.objects.push(looseCrate(556));
+    const turned = step(s, 3);
+    expect(get(turned, 'g')).toMatchObject({ x: 503, dir: -1, chasing: false });
+    expect(get(step(turned), 'g').x).toBeLessThan(503);
+  });
+
+  test('a crate sliding along the ground stops at the guard', () => {
+    const s = arena([{ kind: 'guard', id: 'g', x: 500, y: 540, minX: 500, maxX: 500 }]);
+    s.objects.push(looseCrate(425, 10));
+    const next = step(s, 16);
+    expect(get(next, 'crate-0')).toMatchObject({ x: 447, vx: 0 });
+    expect(get(next, 'g').x).toBe(500);
   });
 
   test('ignores an actor across a gap on a separate ledge of the same height', () => {
