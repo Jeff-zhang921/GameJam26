@@ -70,3 +70,17 @@ describe('riders', () => {
     expect(s.actors[1].x).toBeLessThan(x); // free to walk away
   });
 });
+
+describe('hurt box', () => {
+  // A dart flying right through where Bloom stands, its box bottom at `bottom` (darts are 10 tall).
+  const dartAt = bottom => {
+    let s = rootriseArena(); const p = s.actors[1];
+    s.objects.push(makeEnemy('dart', { x: p.x - 40, y: bottom, dx: 1, dy: 0 }, 'dart-x'));
+    return tick(s, 20).actors[1].invuln > 0; // Still stands further left, out of the way
+  };
+  test('a dart grazing the hat hurts; one flying just over it does not', () => {
+    const feet = rootriseArena().actors[1].y;
+    expect(dartAt(feet - 56)).toBe(true); // box feet-66..feet-56: above the 52-tall body, through the hat
+    expect(dartAt(feet - 67)).toBe(false); // box feet-77..feet-67: clear of the hat
+  });
+});

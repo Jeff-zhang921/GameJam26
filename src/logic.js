@@ -27,6 +27,8 @@ export const levelCount = LEVELS.length;
 const clone = value => JSON.parse(JSON.stringify(value));
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const rectOverlap = (a, b) => a.x + a.w > b.x && a.x < b.x + b.w && a.y + a.h > b.y && a.y < b.y + b.h;
+// Where a traveller can be hurt: the collision body (52 tall) plus the hat the sprite draws above it.
+const hurtBox = p => ({ x: p.x - 15, y: p.y - 66, w: 30, h: 65 });
 const find = (state, id) => state.objects.find(o => o.id === id);
 const free = o => o.held === undefined || o.held === null;
 
@@ -551,7 +553,7 @@ function moveActors(state) {
     }
     if (p.invuln > 0) p.invuln--;
     else {
-      const hazard = state.objects.find(o => isHazard(o) && rectOverlap(body(), enemyBox(o)));
+      const hazard = state.objects.find(o => isHazard(o) && rectOverlap(hurtBox(p), enemyBox(o)));
       if (hazard) {
         if (hazard.kind === 'dart' || hazard.kind === 'orb') state.objects = state.objects.filter(o => o !== hazard);
         respawn(state, p, 'hit');
@@ -601,7 +603,7 @@ function resolveStrikes(state, strikes) {
   for (const id of strikes) {
     const o = find(state, id); if (!o) continue;
     const b = enemyBox(o), reach = { x: b.x - 2, y: b.y - 2, w: b.w + 4, h: b.h + 4 };
-    for (const p of state.actors) if (p.invuln <= 0 && rectOverlap({ x: p.x - 15, y: p.y - 52, w: 30, h: 51 }, reach)) respawn(state, p, 'hit');
+    for (const p of state.actors) if (p.invuln <= 0 && rectOverlap(hurtBox(p), reach)) respawn(state, p, 'hit');
   }
 }
 
