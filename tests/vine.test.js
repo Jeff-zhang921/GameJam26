@@ -1,8 +1,7 @@
 import { describe, test, expect } from 'bun:test';
-import { validateAction, applyAction, meta, setup } from '../src/logic.js';
+import { validateAction, applyAction, meta, setup, objectBox, anchor } from '../src/logic.js';
 import { LEVELS } from '../src/levels/index.js';
 import { vineArena } from './arena.js';
-import { objectBox, anchor } from '../src/logic.js';
 
 function step(state, n = 1) { for (let i = 0; i < n; i++) state = applyAction(state, 'local', { type: 'tick' }); return state; }
 function action(state, value) { expect(validateAction(state, 'local', value)).toEqual({ valid: true }); return applyAction(state, 'local', value); }
@@ -61,13 +60,20 @@ describe('vine body', () => {
     s = step(s, 30);
     expect(s.actors[1].on).not.toBe('plant-0');
   });
-  test('a vine is not a wall: a traveller walks under and through its height', () => {
+  test('a vine is not a wall: a traveller on it walks through the height above its strip', () => {
     let s = withVine(200);
-    Object.assign(s.actors[1], { x: 640, y: 440, vy: 0, grounded: false, on: null }); // feet below the vine
-    s = step(s, 1);
+    Object.assign(s.actors[1], { x: 700, y: 420, vy: 0, grounded: true, on: 'plant-0' });
     s = action(s, { type: 'move', actor: 1, dir: 1 });
-    const x = s.actors[1].x; s = step(s, 5);
-    expect(s.actors[1].x).toBeGreaterThan(x);
+    s = step(s, 15);
+    expect(s.actors[1].x).toBeGreaterThan(730);
+  });
+  test('a growing vine does not lift its rider', () => {
+    let s = withVine(100);
+    Object.assign(vineOf(s), { speed: 1, age: 400 });
+    Object.assign(s.actors[1], { x: 700, y: 420, vy: 0, grounded: true, on: 'plant-0' });
+    s = step(s, 60);
+    expect(s.actors[1].y).toBe(420);
+    expect(s.flags.treeLifted).toBeFalsy();
   });
   test('box and anchor sit along the vine', () => {
     const v = withVine(200).objects.find(o => o.id === 'plant-0');

@@ -63,16 +63,14 @@ const vineStrip = o => ({ x: o.wall === 1 ? o.x : o.x - o.height, y: o.base, w: 
 // A vine reaches out while growing, holds while mature, then shrinks back evenly while withered.
 const vineLengthAt = age => { const { growTicks, matureTicks } = meta.plant; return age > growTicks + matureTicks ? Math.max(0, 1 - witherProgress(age)) * meta.vine.maxLength : Math.min(age, growTicks) / growTicks * meta.vine.maxLength; };
 // A plant's size: a mushroom's height, or a vine's length (a vine is a plant in a wall pit).
-const sizeAt = (plant, age) => plant.wall ? vineLengthAt(age) : heightAt(age);
+const sizeAt = (wall, age) => wall ? vineLengthAt(age) : heightAt(age);
 // The standable cap is as wide as the mushroom art drawn at this height.
 export const canopyWidth = plant => plant.height * (plant.withered ? dieFrame(witherProgress(plant.age)).ratio : growFrame(plant.height, meta.plant.maxHeight, meta.plant.springHeight).ratio);
 
 function makePlant(id, pit, grown = 0, barrier = false) {
   pit.plant = id;
   const age = grown * (meta.plant.growTicks + meta.plant.matureTicks);
-  const plant = { kind: 'plant', id, pit: pit.id, x: pit.x, base: pit.y, age, height: 0, withered: false, speed: 0, frozen: false, barrier, ...(pit.wall && { wall: pit.wall }) };
-  plant.height = sizeAt(plant, age);
-  return plant;
+  return { kind: 'plant', id, pit: pit.id, x: pit.x, base: pit.y, age, height: sizeAt(pit.wall, age), withered: false, speed: 0, frozen: false, barrier, ...(pit.wall && { wall: pit.wall }) };
 }
 
 // A seed lying in the courtyard; Bloom collects it by touch.
@@ -341,7 +339,10 @@ function surfaces(state) {
   for (const o of state.objects) {
     if (o.kind === 'crate' && o.held === null) result.push({ id: o.id, x: o.x - 27, y: o.y - 27, w: 54, h: 54 });
     if (o.kind === 'mover') result.push({ id: o.id, x: o.x, y: o.y, w: o.w, h: 20 });
-    if (o.kind === 'plant' && o.height > 0) result.push(o.wall ? { id: o.id, ...vineStrip(o) } : (() => { const w = canopyWidth(o); return { id: o.id, x: o.x - w / 2, y: o.base - o.height, w, h: 16, spring: !o.withered && o.height <= meta.plant.springHeight }; })());
+    if (o.kind === 'plant' && o.height > 0) {
+      if (o.wall) result.push({ id: o.id, ...vineStrip(o) });
+      else { const w = canopyWidth(o); result.push({ id: o.id, x: o.x - w / 2, y: o.base - o.height, w, h: 16, spring: !o.withered && o.height <= meta.plant.springHeight }); }
+    }
     if (isSolidEnemy(o)) result.push({ id: o.id, ...enemyBox(o) });
   }
   return result;
@@ -360,7 +361,7 @@ function ageObjects(state) {
         continue;
       }
       if (!o.withered && o.age > growTicks + matureTicks) { event(state, 'wither', o.x, o.base); o.withered = true; if (o.barrier) state.flags.withered = true; }
-      const rise = sizeAt(o, o.age) - o.height;
+      const rise = sizeAt(o.wall, o.age) - o.height;
       o.height += rise;
       if (rise > 0 && state.tick % 60 === 0) event(state, 'growth', o.wall ? o.x + o.wall * o.height : o.x, o.wall ? o.base : o.base - o.height);
       // A rising cap lifts whoever stands on it; a vine only lengthens under them.
