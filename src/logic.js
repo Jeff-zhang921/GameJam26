@@ -99,7 +99,7 @@ function makeLevel(index, players, unlocked, totalShards, collected = LEVELS.map
     platforms: clone(level.platforms), objects, pits, nextPlant: level.plants.length, nextSeed: 0, nextEnemy: objects.length,
     checkpoints: (level.checkpoints ?? []).map((c, i) => ({ id: `cp-${i}`, x: c.x, y: c.y, lit: false })),
     exit: clone(level.exit), shards: level.shards.map((p, i) => ({ ...p, id: i, taken: false })),
-    flags: { frozenTouched: false, treeLifted: false, withered: false, sproutJump: false, moverRide: false, dartRide: false, miteGone: false, guardRide: false },
+    flags: { frozenTouched: false, treeLifted: false, treeRewound: false, vineRewound: false, withered: false, sproutJump: false, moverRide: false, dartRide: false, miteGone: false, guardRide: false },
     needs: clone(level.need), needsDone: 0, events: [], eventSeq: 0,
     started: false, elapsed: 0, lastProgressTick: 0, falls: 0,
     freezeAreas: [], nextArea: 0, freezeCharges: level.freezeCharges ?? 1, bloomCharges: meta.charges.bloomStart,
@@ -132,13 +132,14 @@ function actorAllowed(state, playerId, actor) {
 // Objects a time ability can ever act on (crates, plants, moving platforms, creatures).
 const timeObject = o => o.kind === 'plant' || o.kind === 'mover' || o.kind === 'crate' || isEnemy(o);
 // Still's area slows anything; Bloom hastens things that have a clock of their own (not crates).
-const canAffect = (actor, o) => timeObject(o) && (actor === STILL || o.kind !== 'crate');
+// In a rewinding courtyard Bloom's backwards time only takes hold of plants.
+const canAffect = (state, actor, o) => timeObject(o) && (actor === STILL || (o.kind !== 'crate' && (!state.bloomReverses || o.kind === 'plant')));
 
 // Everything this actor's ability can reach right now.
 export function abilityTargets(state, actor) {
   const p = state.actors[actor];
   if (!p) return [];
-  return state.objects.filter(o => canAffect(actor, o) && free(o) && dist(p, anchor(o)) <= meta.controls.range);
+  return state.objects.filter(o => canAffect(state, actor, o) && free(o) && dist(p, anchor(o)) <= meta.controls.range);
 }
 
 // Validate the target shown in a Bloom preview before sending the cast to the server.
@@ -146,9 +147,9 @@ export function abilityCheck(state, actor, id) {
   const p = state.actors[actor], o = find(state, id);
   if (!p || !o || !timeObject(o)) return 'missing';
   if (!free(o)) return 'held';
-  if (!canAffect(actor, o)) return 'unsupported';
+  if (!canAffect(state, actor, o)) return 'unsupported';
   if (dist(p, anchor(o)) > meta.controls.range) return 'range';
-  if (actor === BLOOM && o.speed >= meta.time.maxSpeed) return 'maxSpeed';
+  if (actor === BLOOM && Math.abs(o.speed) >= meta.time.maxSpeed) return 'maxSpeed';
   if (actor === BLOOM && state.bloomCharges <= 0) return 'noBloomCharges';
   return 'ok';
 }
@@ -221,7 +222,7 @@ export function bloomTargetAt(state, point, slop = 40) {
   const player = state.actors[BLOOM], support = bloomSupport(state);
   if (support && Math.abs(point.x - player.x) <= 26 && point.y >= player.y - 58 && point.y <= player.y + 16) return support;
   // Assistance stays near the aimed point; crates cannot steal a Speed tap.
-  return timeObjectAt(state, point, slop, candidates.filter(o => o.speed < meta.time.maxSpeed))
+  return timeObjectAt(state, point, slop, candidates.filter(o => Math.abs(o.speed) < meta.time.maxSpeed))
     ?? timeObjectAt(state, point, slop, candidates)
     ?? timeObjectAt(state, point, slop);
 }
@@ -341,7 +342,7 @@ export function validateAction(state, playerId, action) {
     if (action.target === undefined) return no('aim');
     const target = abilityTarget(state, action.actor, action);
     if (!target) return no('bloomRange');
-    if (target.speed >= meta.time.maxSpeed) return no('maxSpeed');
+    if (Math.abs(target.speed) >= meta.time.maxSpeed) return no('maxSpeed');
     if (state.bloomCharges <= 0) return no('noBloomCharges');
     return { valid: true };
   }
@@ -750,10 +751,14 @@ export function applyAction(state, playerId, action) {
       applyFreezeAreas(s);
       event(s, 'freeze', at.x, at.y, { caster: action.actor, area: id });
     } else {
-      // Bloom keeps its acceleration: wake a sleeping clock, or hasten it (up to the maximum).
+      // Bloom keeps its acceleration: wake a sleeping clock, or hasten it (up to the maximum). In a rewinding
+      // courtyard the same press runs it backwards, faster each time.
       const o = abilityTarget(s, action.actor, action);
       s.bloomCharges--;
-      const woke = o.speed === 0; o.speed++; event(s, woke ? 'wake' : 'grow', anchor(o).x, anchor(o).y, { caster: action.actor, target: o.id });
+      const woke = o.speed === 0;
+      o.speed += s.bloomReverses ? -1 : 1;
+      if (s.bloomReverses && o.kind === 'plant' && o.wall) s.flags.vineRewound = true;
+      event(s, woke ? 'wake' : 'grow', anchor(o).x, anchor(o).y, { caster: action.actor, target: o.id, ...(s.bloomReverses && { rewind: true }) });
     }
   }
   return s;

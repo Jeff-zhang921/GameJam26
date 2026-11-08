@@ -25,3 +25,36 @@ describe('plant size and starting age', () => {
     expect(young.bloomReverses).toBe(true);
   });
 });
+
+describe('rewinding Bloom: the cast', () => {
+  test('each cast lowers the speed by one and costs a charge, down to −maxSpeed', () => {
+    let s = reverseArena();
+    expect(s.bloomCharges).toBe(3);
+    s = rewind(s); expect(plant(s).speed).toBe(-1); expect(s.bloomCharges).toBe(2);
+    expect(s.events.at(-1)).toMatchObject({ kind: 'wake', rewind: true, target: 'plant-0' });
+    s = rewind(s); expect(plant(s).speed).toBe(-2);
+    expect(s.events.at(-1)).toMatchObject({ kind: 'grow', rewind: true });
+    s.bloomCharges = 3; s = rewind(s); expect(plant(s).speed).toBe(-3);
+    expect(abilityCheck(s, BLOOM, 'plant-0')).toBe('maxSpeed');
+    expect(validateAction(s, 'local', { type: 'ability', actor: BLOOM, target: 'plant-0' }).error).toBe('maxSpeed');
+  });
+
+  test('in a rewinding courtyard Bloom only acts on plants; Still is unchanged', () => {
+    const s = reverseArena();
+    s.objects.push({ kind: 'mover', id: 'mover-0', x: 450, y: 400, w: 120, x1: 450, x2: 550, dir: 1, speed: 0, frozen: false });
+    expect(abilityCheck(s, BLOOM, 'mover-0')).toBe('unsupported');
+    expect(abilityCheck(s, STILL, 'mover-0')).not.toBe('unsupported');
+    s.bloomReverses = false;
+    expect(abilityCheck(s, BLOOM, 'mover-0')).toBe('ok');
+  });
+
+  test('rewinding the vine sets vineRewound', () => {
+    let s = vineArena(); s.bloomReverses = true;
+    const { growTicks } = meta.plant;
+    s.objects.push({ kind: 'plant', id: 'plant-9', pit: 'pit-1', x: 760, base: 420, age: growTicks, height: plantSize(-1, growTicks), withered: false, speed: 0, frozen: false, barrier: false, wall: -1 });
+    s.pits[1].plant = 'plant-9';
+    Object.assign(s.actors[BLOOM], { x: 640, y: 540 });
+    s = rewind(s, 'plant-9');
+    expect(s.flags.vineRewound).toBe(true);
+  });
+});
