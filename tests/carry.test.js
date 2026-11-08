@@ -129,6 +129,16 @@ describe('online rendering of carried boxes', () => {
     expect(flying.actors[0].carrying).toBe(null);
   });
 
+  test('a seed just taken in hand shows up held before the snapshot has it', () => {
+    const server = classicCourtyard(); server.seeds = 1;
+    const predicted = send(server, 'takeSeed', 1);
+    const rendered = attachCarried({ ...server, actors: server.actors.map(a => ({ ...a })), objects: [...server.objects] }, predicted, 1);
+    const id = predicted.actors[1].carrying, seed = rendered.objects.find(o => o.id === id);
+    expect(seed).toMatchObject({ held: 1, ...heldPosition(seed, rendered.actors[1]) });
+    expect(rendered.actors[1].carrying).toBe(id);
+    expect(server.objects.some(o => o.id === id)).toBe(false);
+  });
+
   test('the server stays authoritative for the partner: a local prediction cannot steal their box', () => {
     const server = view();
     Object.assign(crate(server), { held: 1 }); server.actors[1].carrying = 'crate-0';

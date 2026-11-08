@@ -85,6 +85,8 @@ let mouseAim = null, mouseClient = null;
 // a shorter press does what grab always did.
 const SEED_HOLD_MS = 300;
 let seedHold = null;
+// What this player's own decisions (carrying? seed to take?) read: the predicted state online, the live state offline.
+const ownState = () => onlineMode ? network.predicted ?? lastView : state;
 function clearSeedHold() { if (seedHold) clearTimeout(seedHold.timer); seedHold = null; }
 // Touch: the last drawn world (for tap hit-testing) and the short-lived feedback of the last tap.
 let lastView = null, tapEffect = null;
@@ -601,6 +603,7 @@ document.addEventListener('keydown', event => {
   if (viewport.blocked) return;
   if (rewind) return;
   if (stageBusy()) { event.preventDefault(); return; }
+  if (code === 'Escape' && seedHold) { event.preventDefault(); clearSeedHold(); return; }
   if (code === 'Escape' && (skillAim || throwAim || mouseAim)) { event.preventDefault(); clearSkillAim(); clearThrowAim(); mouseAim = null; return; }
   if (code === 'Escape') { event.preventDefault(); if (modal && !['intro', 'win'].includes(modal)) resume(); else if (!modal) setModal('pause'); return; }
   if (modal) {
@@ -623,13 +626,13 @@ document.addEventListener('keydown', event => {
   if (code === 'Tab' && !onlineMode) { clearInputs(); dispatch({ type: 'switch' }); }
   if (['KeyW', 'Space', 'ArrowUp'].includes(code) && !alreadyJumping) dispatch({ type: 'jump', actor });
   if (['KeyE', 'Enter'].includes(code)) {
-    const view = lastView ?? state;
+    const view = ownState();
     if (interactionFor(view, actor).kind === 'throw') startMouseAim('throw', code, actor);
     else if (canTakeSeed(view, actor)) {
       clearSeedHold();
       seedHold = { key: code, actor, timer: setTimeout(() => {
         seedHold = null;
-        if (dispatch({ type: 'takeSeed', actor }).valid !== false) startMouseAim('throw', code, actor);
+        if (dispatch({ type: 'takeSeed', actor }, true).valid !== false) startMouseAim('throw', code, actor);
       }, SEED_HOLD_MS) };
     } else dispatch({ type: 'grab', actor });
   }
@@ -878,7 +881,7 @@ function finishMouseAim() {
     if (aim.actor === 1 && !preview?.target && castUnderfoot(view)) return;
     castSkill(preview); return;
   }
-  if (view.actors[aim.actor]?.carrying === null) return;
+  if (ownState()?.actors[aim.actor]?.carrying === null) return;
   const point = mouseWorld(), velocity = point && throwToward(view, aim.actor, point);
   dispatch(velocity ? { type: 'grab', actor: aim.actor, aim: velocity } : { type: 'grab', actor: aim.actor });
 }
@@ -895,15 +898,15 @@ for (const button of document.querySelectorAll('[data-touch]')) {
     if (button === abilityButton) {
       const { clientX: x, clientY: y, pointerId: pointer } = event;
       skillAim = { pointer, actor: touchActor(), x, y, startX: x, startY: y, started: performance.now(), travel: Math.max(76, button.clientWidth * 1.15), active: false, overCancel: false };
-    } else if (button === interactButton && interactionFor(lastView ?? state, touchActor()).kind === 'throw') {
+    } else if (button === interactButton && interactionFor(ownState(), touchActor()).kind === 'throw') {
       const { clientX: x, clientY: y, pointerId: pointer } = event;
       throwAim = { pointer, actor: touchActor(), x, y, startX: x, startY: y, travel: Math.max(90, button.clientWidth * 1.4), active: false, overCancel: false };
-    } else if (button === interactButton && canTakeSeed(lastView ?? state, touchActor())) {
+    } else if (button === interactButton && canTakeSeed(ownState(), touchActor())) {
       const { clientX: x, clientY: y, pointerId: pointer } = event, actor = touchActor();
       clearSeedHold();
       seedHold = { pointer, actor, x, y, timer: setTimeout(() => {
         const { x: nowX, y: nowY } = seedHold; seedHold = null;
-        if (dispatch({ type: 'takeSeed', actor }).valid === false) return;
+        if (dispatch({ type: 'takeSeed', actor }, true).valid === false) return;
         // Aim from where the finger went down, so a drag that began during the hold already counts.
         throwAim = { pointer, actor, x: nowX, y: nowY, startX: x, startY: y, travel: Math.max(90, button.clientWidth * 1.4), active: false, overCancel: false };
         updateThrowAim();
