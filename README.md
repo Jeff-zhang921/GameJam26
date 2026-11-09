@@ -2,39 +2,69 @@
 
 > Two travelers, one borrowed moment.
 
-Moonclock 是一款时间协作平台解谜游戏。两位旅人穿过钟塔、断桥与空中庭院，用不同的时间能力改变眼前的世界，寻找通往月门的道路。
+Moonclock is a cooperative puzzle platformer with **two-player online co-op**. Travel through five courtyards as Still and Bloom, using their time powers to turn falling crates, growing plants, and passing clouds into a path to the moon gate.
 
-![Moonclock 主菜单与月门](docs/screenshots/menu.png)
+## Play together online
 
-## 两位旅人，两种时间能力
+Create a room, share its room code with a friend, and choose a different traveler each. Once both players are ready, the host starts your shared journey. Each player controls one character, and both see the same world and time effects. Solve each courtyard together and bring both travelers to the moon gate.
 
-| 角色 | 能力 |
+Solo play is also available. Switch between Still and Bloom to plan both sides of the puzzle yourself.
+
+## Best experienced on mobile and tablets
+
+Play in landscape for the best touch experience, especially on an iPad. Use the on-screen movement, jump, and interact controls, and drag to aim your abilities. Hold movement while jumping or casting to keep your timing precise.
+
+You can play in a mobile browser or install Moonclock on your Home Screen. Desktop keyboard and mouse controls are supported too.
+
+## Two travelers, two time powers
+
+| Traveler | Ability |
 | --- | --- |
-| **Still** | 施放缓时领域，让物体与机关放慢，并定住成形的云，为跳跃、落脚和通过危险创造机会。 |
-| **Bloom** | 唤醒物体的时间，逐次加速至最高 3×，推动植物生长与机关运转；在特定庭院中还能让时间倒流。 |
+| **Still** | Cast a Freeze Area to slow objects and mechanisms, and hold fully formed clouds in place. Create time to jump, land, and cross hazards. |
+| **Bloom** | Wake an object's clock and hasten it up to 3× speed. Grow plants and set mechanisms in motion. In the rewind courtyard, turn time backwards instead. |
 
-## 在时间里解开谜题
+Carry and throw crates, collect and plant seeds, ride moving platforms, and find optional time shards. Every courtyard brings a different time puzzle, including plants that grow and wither, water that becomes a cloud, and objects that follow your footsteps.
 
-- 探索五座庭院，在不同的时间规则下寻找前进的方法。
-- 搬运与投掷箱子、收集和种下种子，借助植物与移动平台跨越断层。
-- 配合缓时与加速，把水与云的变化、机关的节奏变成通路。
-- 躲避敌人与飞来的箭矢，收集记忆碎片，让两位旅人一起抵达月门。
-- 有的机关需要等待，有的随脚步运转；同一个物体，也可能成为另一位旅人的落脚点。
+## Five courtyards on iPad
 
-## 一个人探索，或与朋友同行
+All screenshots show the game in an iPad-sized landscape viewport with touch controls.
 
-**单人模式**可以随时切换 Still 与 Bloom，安排两人的位置和施放时机。
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <strong>01 · A Moment Held</strong><br>
+      <img src="docs/screenshots/ipad-level-1.png" width="100%" alt="Courtyard 1, A Moment Held, with iPad touch controls">
+    </td>
+    <td width="50%" valign="top">
+      <strong>02 · Rising Rings</strong><br>
+      <img src="docs/screenshots/ipad-level-2.png" width="100%" alt="Courtyard 2, Rising Rings, with iPad touch controls">
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <strong>03 · Past the Prime</strong><br>
+      <img src="docs/screenshots/ipad-level-3.png" width="100%" alt="Courtyard 3, Past the Prime, with iPad touch controls">
+    </td>
+    <td width="50%" valign="top">
+      <strong>04 · Walking with Time</strong><br>
+      <img src="docs/screenshots/ipad-level-4.png" width="100%" alt="Courtyard 4, Walking with Time, with iPad touch controls">
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <strong>05 · In Step with Time</strong><br>
+      <img src="docs/screenshots/ipad-level-5.png" width="100%" alt="Courtyard 5, In Step with Time, with iPad touch controls">
+    </td>
+    <td width="50%"></td>
+  </tr>
+</table>
 
-**双人在线模式**通过房间码邀请朋友。各自选择一位角色，准备后一起出发，共同完成机关与关卡。
+## Credits
 
-电脑支持键盘操作；手机和平板支持横屏触控，可同时移动、跳跃，并通过拖动瞄准技能。
+Created by our five-person Game Jam team:
 
-## 游戏截图
-
-### 庭院中的时间协作
-
-![Still 与 Bloom 在庭院中探索并使用时间能力](docs/screenshots/gameplay.png)
-
-### 横屏触控游玩
-
-![Moonclock 横屏触控界面与虚拟摇杆、技能按钮](docs/screenshots/touch.png)
+- StephenYang
+- Kehao Zhou
+- Yihua Ren (Carol)
+- Jeff Zhang
+- Dorian Li
